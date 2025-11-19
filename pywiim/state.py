@@ -499,7 +499,8 @@ class StateSynchronizer:
             # IMPORTANT: Spotify source requires UPnP events for metadata - HTTP API does not provide
             # metadata when Spotify is the active source. Without UPnP events, Spotify metadata will be unavailable.
             # HTTP polling may have stale metadata (e.g., Spotify only sends metadata via UPnP)
-            # Only use HTTP if UPnP value is None/empty and HTTP has a value
+            # For radio streams: HTTP often returns empty metadata, but UPnP may have valid metadata
+            # Don't overwrite valid UPnP metadata with empty HTTP data
             if upnp_field.value:
                 _LOGGER.debug(
                     "State merge: field=%s, chose=upnp (metadata, UPnP has value, both fresh)",
@@ -513,7 +514,17 @@ class StateSynchronizer:
                 )
                 return http_field
             else:
-                # Both None/empty - use most recent
+                # Both None/empty - preserve existing metadata if we have it from merged state
+                # This prevents empty HTTP data from clearing valid metadata that was previously available
+                existing_merged: TimestampedField | None = getattr(self._merged_state, field_name, None)
+                if existing_merged is not None and existing_merged.value:
+                    _LOGGER.debug(
+                        "State merge: field=%s, preserving existing metadata "
+                        "(both sources empty, keeping previous value)",
+                        field_name,
+                    )
+                    return existing_merged
+                # No existing metadata - use most recent empty value
                 if upnp_field.timestamp > http_field.timestamp:
                     _LOGGER.debug(
                         "State merge: field=%s, chose=upnp (metadata, both empty, most recent)",

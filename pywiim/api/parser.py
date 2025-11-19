@@ -313,7 +313,15 @@ def parse_player_status(raw: dict[str, Any], last_track: str | None = None) -> t
             _LOGGER.debug("Error processing artwork URL %s: %s", cover, e)
 
     # No valid cover art available - use WiiM logo as fallback
-    if "entity_picture" not in data:
+    # Check if entity_picture is missing, None, empty, or invalid
+    entity_picture = data.get("entity_picture")
+    if not entity_picture or str(entity_picture).strip() in (
+        "unknow",
+        "unknown",
+        "un_known",
+        "",
+        "none",
+    ):
         from .constants import DEFAULT_WIIM_LOGO_URL
 
         data["entity_picture"] = DEFAULT_WIIM_LOGO_URL

@@ -460,6 +460,13 @@ class UpnpEventer:
                                 changes.update(metadata_changes)
                             elif var_name == "TrackSource":
                                 changes["source"] = var_value
+                            elif var_name in ("AVTransportURI", "CurrentURI"):
+                                # Extract stream URL for potential ICY metadata extraction
+                                # Store in changes but don't expose as a property (internal use)
+                                changes["_stream_uri"] = var_value
+                                _LOGGER.debug(
+                                    "Extracted stream URI from UPnP: %s", var_value[:100] if var_value else None
+                                )
 
                     # Parse RenderingControl service variables
                     elif service_type == "RenderingControl":

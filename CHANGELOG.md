@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.1] - 2025-11-19
+
+### Fixed
+- **Fixed default cover art not showing for radio streams**
+  - Improved `entity_picture` validation in parser to check for invalid values (None, empty, "unknown") not just missing key
+  - Default WiiM logo now properly displays when device returns empty or invalid cover art values
+  - Fixes issue where radio streams showed no cover art even though default logo should be used
+  - **Impact**: Radio streams and other media without cover art now consistently show WiiM logo
+
+- **Fixed metadata flickering when playing/pausing radio streams**
+  - Improved state merge logic to preserve existing metadata when both HTTP and UPnP return empty values
+  - Prevents empty HTTP polling data from overwriting valid UPnP metadata
+  - Fixes UI flickering issue where metadata would disappear when pausing/playing radio streams
+  - **Impact**: Stable metadata display for radio streams in Home Assistant and other integrations
+
+### Added
+- **Extract stream URI from UPnP events**
+  - Added extraction of `AVTransportURI` and `CurrentURI` from UPnP events
+  - Stream URI stored internally for potential future ICY metadata extraction
+  - Currently logged for debugging purposes
+  - **Impact**: Foundation for potential future radio metadata enhancement
+
 ## [1.0.89] - 2025-11-19
 
 ### Added
