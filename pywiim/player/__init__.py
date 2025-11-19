@@ -1,0 +1,636 @@
+"""Player class - represents a single device that can be solo, master, or slave.
+
+This module provides the Player class, which is a thin wrapper around WiiMClient
+that adds group awareness, role management, and cached state with getter methods.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Literal
+
+from ..client import WiiMClient
+from ..models import DeviceInfo, PlayerStatus
+from .audio import AudioConfiguration
+from .base import PlayerBase
+from .bluetooth import BluetoothControl
+from .coverart import CoverArtManager
+from .diagnostics import DiagnosticsCollector
+from .groupops import GroupOperations
+from .media import MediaControl
+from .playback import PlaybackControl
+from .properties import PlayerProperties
+from .statemgr import StateManager
+from .volume import VolumeControl
+
+if TYPE_CHECKING:
+    from ..group import Group
+    from ..upnp.client import UpnpClient
+
+
+class Player(PlayerBase):
+    """Represents a single WiiM/LinkPlay device that can be solo, master, or slave.
+
+    A Player is a thin wrapper around WiiMClient that adds group awareness,
+    cached state, and convenient getter methods for accessing device information.
+    The role (solo/master/slave) is computed from group membership, not stored.
+
+    Volume and mute behavior in groups:
+    - When a master calls set_volume() or set_mute(), changes propagate to ALL
+      slaves proportionally (same absolute change in percentage points)
+    - When a slave calls set_volume() or set_mute(), only that device changes
+      (slaves have independent volume control in LinkPlay protocol)
+
+    The Player caches status and device_info for efficient access via getter
+    methods. Use refresh() to update the cache. The Player integrates with
+    StateSynchronizer to merge HTTP polling and UPnP event data.
+
+    Example:
+        ```python
+        player = Player(WiiMClient("192.168.1.100"))
+        await player.refresh()
+
+        print(player.volume_level)
+        print(player.media_title)
+        print(player.role)
+
+        await player.set_volume(0.5)
+        await player.play()
+        ```
+
+    Args:
+        client: WiiMClient instance for this device.
+        upnp_client: Optional UPnP client for queue management and events.
+        on_state_changed: Optional callback function called when state is updated.
+        player_finder: Optional callback to find Player objects by host/IP.
+            Called as `player_finder(host)` and should return Player | None.
+            Used to automatically link Player objects when groups are detected on refresh.
+    """
+
+    def __init__(
+        self,
+        client: WiiMClient,
+        upnp_client: UpnpClient | None = None,
+        on_state_changed: Callable[[], None] | None = None,
+        player_finder: Callable[[str], Any] | None = None,
+    ) -> None:
+        """Initialize a Player instance."""
+        super().__init__(client, upnp_client, on_state_changed, player_finder)
+
+        # Initialize component managers
+        self._state_mgr = StateManager(self)
+        self._volume_ctrl = VolumeControl(self)
+        self._media_ctrl = MediaControl(self)
+        self._audio_config = AudioConfiguration(self)
+        self._playback_ctrl = PlaybackControl(self)
+        self._coverart_mgr = CoverArtManager(self)
+        self._properties = PlayerProperties(self)
+        self._group_ops = GroupOperations(self)
+        self._diagnostics = DiagnosticsCollector(self)
+        self._bluetooth_ctrl = BluetoothControl(self)
+
+    # === State Management ===
+
+    def apply_diff(self, changes: dict[str, Any]) -> bool:
+        """Apply state changes from UPnP events."""
+        return self._state_mgr.apply_diff(changes)
+
+    def update_from_upnp(self, data: dict[str, Any]) -> None:
+        """Update state from UPnP event data."""
+        self._state_mgr.update_from_upnp(data)
+
+    async def refresh(self) -> None:
+        """Refresh cached state from device."""
+        await self._state_mgr.refresh()
+
+    async def get_device_info(self) -> DeviceInfo:
+        """Get device information (always queries device)."""
+        return await self._state_mgr.get_device_info()
+
+    async def get_status(self) -> PlayerStatus:
+        """Get current player status (always queries device)."""
+        return await self._state_mgr.get_status()
+
+    async def get_play_state(self) -> str:
+        """Get current playback state by querying device."""
+        return await self._state_mgr.get_play_state()
+
+    # === Volume Control ===
+
+    async def set_volume(self, volume: float) -> None:
+        """Set volume level (0.0-1.0)."""
+        await self._volume_ctrl.set_volume(volume)
+
+    async def set_mute(self, mute: bool) -> None:
+        """Set mute state."""
+        await self._volume_ctrl.set_mute(mute)
+
+    async def get_volume(self) -> float | None:
+        """Get current volume level by querying device."""
+        return await self._volume_ctrl.get_volume()
+
+    async def get_muted(self) -> bool | None:
+        """Get current mute state by querying device."""
+        return await self._volume_ctrl.get_muted()
+
+    # === Media Control ===
+
+    async def play(self) -> None:
+        """Start playback (raw API call).
+
+        Note: On streaming sources when paused, this may restart the track.
+        Consider using resume() or media_play_pause() instead.
+        """
+        await self._media_ctrl.play()
+
+    async def pause(self) -> None:
+        """Pause playback (raw API call)."""
+        await self._media_ctrl.pause()
+
+    async def resume(self) -> None:
+        """Resume playback from paused state (raw API call).
+
+        Use this instead of play() when resuming paused content to avoid restarting.
+        """
+        await self._media_ctrl.resume()
+
+    async def stop(self) -> None:
+        """Stop playback (raw API call).
+
+        Note: WiFi/Webradio sources may not stay stopped. Consider using pause() for web streams.
+        """
+        await self._media_ctrl.stop()
+
+    async def media_play_pause(self) -> None:
+        """Toggle play/pause state intelligently (Home Assistant compatible).
+
+        Automatically uses resume() when paused to avoid restarting tracks.
+        This is the recommended method for Home Assistant's media_play_pause service.
+        """
+        await self._media_ctrl.media_play_pause()
+
+    async def next_track(self) -> None:
+        """Skip to next track."""
+        await self._media_ctrl.next_track()
+
+    async def previous_track(self) -> None:
+        """Skip to previous track."""
+        await self._media_ctrl.previous_track()
+
+    async def seek(self, position: int) -> None:
+        """Seek to position in current track."""
+        await self._media_ctrl.seek(position)
+
+    async def play_url(self, url: str, enqueue: Literal["add", "next", "replace", "play"] = "replace") -> None:
+        """Play a URL directly with optional enqueue support."""
+        await self._media_ctrl.play_url(url, enqueue)
+
+    async def play_playlist(self, playlist_url: str) -> None:
+        """Play a playlist (M3U) URL."""
+        await self._media_ctrl.play_playlist(playlist_url)
+
+    async def play_notification(self, url: str) -> None:
+        """Play a notification sound from URL."""
+        await self._media_ctrl.play_notification(url)
+
+    async def add_to_queue(self, url: str, metadata: str = "") -> None:
+        """Add URL to end of queue (requires UPnP client)."""
+        await self._media_ctrl.add_to_queue(url, metadata)
+
+    async def insert_next(self, url: str, metadata: str = "") -> None:
+        """Insert URL after current track (requires UPnP client)."""
+        await self._media_ctrl.insert_next(url, metadata)
+
+    async def play_preset(self, preset: int) -> None:
+        """Play a preset by number."""
+        await self._media_ctrl.play_preset(preset)
+
+    async def clear_playlist(self) -> None:
+        """Clear the current playlist."""
+        await self._media_ctrl.clear_playlist()
+
+    # === Audio Configuration ===
+
+    async def set_source(self, source: str) -> None:
+        """Set audio input source."""
+        await self._audio_config.set_source(source)
+
+    async def set_audio_output_mode(self, mode: str | int) -> None:
+        """Set audio output mode by friendly name or integer."""
+        await self._audio_config.set_audio_output_mode(mode)
+
+    async def select_output(self, output: str) -> None:
+        """Select output by name (hardware mode or specific BT device)."""
+        await self._audio_config.select_output(output)
+
+    async def set_led(self, enabled: bool) -> None:
+        """Set LED on/off state."""
+        await self._audio_config.set_led(enabled)
+
+    async def set_led_brightness(self, brightness: int) -> None:
+        """Set LED brightness level."""
+        await self._audio_config.set_led_brightness(brightness)
+
+    async def set_channel_balance(self, balance: float) -> None:
+        """Set channel balance (left/right stereo balance)."""
+        await self._audio_config.set_channel_balance(balance)
+
+    async def sync_time(self, ts: int | None = None) -> None:
+        """Synchronize device time."""
+        await self._audio_config.sync_time(ts)
+
+    async def set_eq_preset(self, preset: str) -> None:
+        """Set equalizer preset."""
+        await self._audio_config.set_eq_preset(preset)
+
+    async def set_eq_custom(self, eq_values: list[int]) -> None:
+        """Set custom 10-band equalizer values."""
+        await self._audio_config.set_eq_custom(eq_values)
+
+    async def set_eq_enabled(self, enabled: bool) -> None:
+        """Enable or disable the equalizer."""
+        await self._audio_config.set_eq_enabled(enabled)
+
+    async def get_eq(self) -> dict[str, Any]:
+        """Get current equalizer band values."""
+        return await self._audio_config.get_eq()
+
+    async def get_eq_presets(self) -> list[str]:
+        """Get list of available equalizer presets."""
+        return await self._audio_config.get_eq_presets()
+
+    async def get_eq_status(self) -> bool:
+        """Get current equalizer enabled status."""
+        return await self._audio_config.get_eq_status()
+
+    async def get_multiroom_status(self) -> dict[str, Any]:
+        """Get multiroom group status information."""
+        return await self._audio_config.get_multiroom_status()
+
+    async def get_audio_output_status(self) -> dict[str, Any] | None:
+        """Get current audio output status."""
+        return await self._audio_config.get_audio_output_status()
+
+    async def get_meta_info(self) -> dict[str, Any]:
+        """Get detailed metadata information about current track."""
+        return await self._audio_config.get_meta_info()
+
+    async def reboot(self) -> None:
+        """Reboot the device."""
+        await self._audio_config.reboot()
+
+    # === Playback Control ===
+
+    async def set_shuffle(self, enabled: bool) -> None:
+        """Set shuffle mode on or off, preserving current repeat state."""
+        await self._playback_ctrl.set_shuffle(enabled)
+
+    async def set_repeat(self, mode: str) -> None:
+        """Set repeat mode, preserving current shuffle state."""
+        await self._playback_ctrl.set_repeat(mode)
+
+    # === Cover Art ===
+
+    async def fetch_cover_art(self, url: str | None = None) -> tuple[bytes, str] | None:
+        """Fetch cover art image from URL."""
+        return await self._coverart_mgr.fetch_cover_art(url)
+
+    async def get_cover_art_bytes(self, url: str | None = None) -> bytes | None:
+        """Get cover art image bytes (convenience method)."""
+        return await self._coverart_mgr.get_cover_art_bytes(url)
+
+    # === Group Operations ===
+
+    async def create_group(self) -> Group:
+        """Create a new group with this player as master."""
+        return await self._group_ops.create_group()
+
+    async def join_group(self, master: Player) -> None:
+        """Join this player to another player."""
+        await self._group_ops.join_group(master)
+
+    async def leave_group(self) -> None:
+        """Leave the current group."""
+        await self._group_ops.leave_group()
+
+    # === Diagnostics ===
+
+    async def get_diagnostics(self) -> dict[str, Any]:
+        """Get comprehensive diagnostic information for this player."""
+        return await self._diagnostics.get_diagnostics()
+
+    # === Bluetooth ===
+
+    async def get_bluetooth_history(self) -> list[dict[str, Any]]:
+        """Get Bluetooth connection history."""
+        return await self._bluetooth_ctrl.get_bluetooth_history()
+
+    async def connect_bluetooth_device(self, mac_address: str) -> None:
+        """Connect to a Bluetooth device by MAC address."""
+        await self._bluetooth_ctrl.connect_bluetooth_device(mac_address)
+
+    async def disconnect_bluetooth_device(self) -> None:
+        """Disconnect the currently connected Bluetooth device."""
+        await self._bluetooth_ctrl.disconnect_bluetooth_device()
+
+    async def get_bluetooth_pair_status(self) -> dict[str, Any]:
+        """Get Bluetooth pairing status."""
+        return await self._bluetooth_ctrl.get_bluetooth_pair_status()
+
+    async def scan_for_bluetooth_devices(self, duration: int = 3) -> list[dict[str, Any]]:
+        """Scan for nearby Bluetooth devices."""
+        return await self._bluetooth_ctrl.scan_for_bluetooth_devices(duration)
+
+    # === Timer and Alarm (WiiM only) ===
+
+    async def set_sleep_timer(self, seconds: int) -> None:
+        """Set sleep timer to stop playback after specified seconds.
+
+        Args:
+            seconds: Duration in seconds (0=immediate, -1=cancel)
+
+        Note:
+            WiiM devices only. See client.set_sleep_timer() for details.
+        """
+        await self.client.set_sleep_timer(seconds)
+
+    async def get_sleep_timer(self) -> int:
+        """Get remaining sleep timer seconds.
+
+        Returns:
+            Remaining seconds, or 0 if no timer active.
+
+        Note:
+            WiiM devices only.
+        """
+        return await self.client.get_sleep_timer()
+
+    async def cancel_sleep_timer(self) -> None:
+        """Cancel active sleep timer.
+
+        Note:
+            WiiM devices only.
+        """
+        await self.client.cancel_sleep_timer()
+
+    async def set_alarm(
+        self,
+        alarm_id: int,
+        trigger: int,
+        operation: int,
+        time: str,
+        day: str | None = None,
+        url: str | None = None,
+    ) -> None:
+        """Set or configure an alarm.
+
+        Args:
+            alarm_id: Alarm slot index (0-2)
+            trigger: Trigger type (use ALARM_TRIGGER_* constants)
+            operation: Operation type (use ALARM_OP_* constants)
+            time: Alarm time in HHMMSS format (UTC)
+            day: Day parameter (format depends on trigger type)
+            url: Media URL or shell command (optional)
+
+        Note:
+            WiiM devices only. See client.set_alarm() for details.
+        """
+        await self.client.set_alarm(alarm_id, trigger, operation, time, day, url)
+
+    async def get_alarm(self, alarm_id: int) -> dict[str, Any]:
+        """Get specific alarm configuration.
+
+        Args:
+            alarm_id: Alarm slot index (0-2)
+
+        Returns:
+            Alarm configuration dictionary.
+
+        Note:
+            WiiM devices only.
+        """
+        return await self.client.get_alarm(alarm_id)
+
+    async def get_alarms(self) -> list[dict[str, Any]]:
+        """Get all alarm configurations (3 slots).
+
+        Returns:
+            List of 3 alarm configuration dictionaries.
+
+        Note:
+            WiiM devices only.
+        """
+        return await self.client.get_alarms()
+
+    async def delete_alarm(self, alarm_id: int) -> None:
+        """Delete (cancel) an alarm.
+
+        Args:
+            alarm_id: Alarm slot index (0-2)
+
+        Note:
+            WiiM devices only.
+        """
+        await self.client.delete_alarm(alarm_id)
+
+    async def stop_current_alarm(self) -> None:
+        """Stop currently ringing alarm.
+
+        Note:
+            WiiM devices only.
+        """
+        await self.client.stop_current_alarm()
+
+    # === Properties (read-only) ===
+
+    @property
+    def volume_level(self) -> float | None:
+        """Current volume level (0.0-1.0) from cached status."""
+        return self._properties.volume_level
+
+    @property
+    def is_muted(self) -> bool | None:
+        """Current mute state from cached status."""
+        return self._properties.is_muted
+
+    @property
+    def play_state(self) -> str | None:
+        """Current playback state from cached status."""
+        return self._properties.play_state
+
+    @property
+    def media_title(self) -> str | None:
+        """Current track title from cached status."""
+        return self._properties.media_title
+
+    @property
+    def media_artist(self) -> str | None:
+        """Current track artist from cached status."""
+        return self._properties.media_artist
+
+    @property
+    def media_album(self) -> str | None:
+        """Current track album from cached status."""
+        return self._properties.media_album
+
+    @property
+    def media_duration(self) -> int | None:
+        """Current track duration in seconds from cached status."""
+        return self._properties.media_duration
+
+    @property
+    def media_position(self) -> int | None:
+        """Current playback position in seconds with hybrid estimation."""
+        return self._properties.media_position
+
+    @property
+    def media_position_updated_at(self) -> float | None:
+        """Timestamp when media position was last updated."""
+        return self._properties.media_position_updated_at
+
+    @property
+    def media_image_url(self) -> str | None:
+        """Media image URL from cached status."""
+        return self._properties.media_image_url
+
+    @property
+    def source(self) -> str | None:
+        """Current source from cached status."""
+        return self._properties.source
+
+    @property
+    def shuffle_supported(self) -> bool:
+        """Whether shuffle can be controlled by the device in current state."""
+        return self._properties.shuffle_supported
+
+    @property
+    def repeat_supported(self) -> bool:
+        """Whether repeat mode can be controlled by the device in current state."""
+        return self._properties.repeat_supported
+
+    @property
+    def shuffle_state(self) -> bool | None:
+        """Shuffle state, or None if not controlled by device."""
+        return self._properties.shuffle_state
+
+    @property
+    def repeat_mode(self) -> str | None:
+        """Repeat mode ('one', 'all', 'off'), or None if not controlled by device."""
+        return self._properties.repeat_mode
+
+    @property
+    def eq_preset(self) -> str | None:
+        """Current EQ preset from cached status."""
+        return self._properties.eq_preset
+
+    @property
+    def shuffle(self) -> bool | None:
+        """Shuffle state from cached status (alias for shuffle_state)."""
+        return self._properties.shuffle
+
+    @property
+    def repeat(self) -> str | None:
+        """Repeat mode from cached status (alias for repeat_mode)."""
+        return self._properties.repeat
+
+    @property
+    def wifi_rssi(self) -> int | None:
+        """Wi-Fi signal strength (RSSI) from cached status."""
+        return self._properties.wifi_rssi
+
+    @property
+    def available_sources(self) -> list[str] | None:
+        """Available input sources from cached device info."""
+        return self._properties.available_sources
+
+    @property
+    def audio_output_mode(self) -> str | None:
+        """Current audio output mode as friendly name."""
+        return self._properties.audio_output_mode
+
+    @property
+    def audio_output_mode_int(self) -> int | None:
+        """Current audio output mode as integer."""
+        return self._properties.audio_output_mode_int
+
+    @property
+    def available_output_modes(self) -> list[str]:
+        """Available audio output modes for this device."""
+        return self._properties.available_output_modes
+
+    @property
+    def is_bluetooth_output_active(self) -> bool:
+        """Check if Bluetooth output is currently active."""
+        return self._properties.is_bluetooth_output_active
+
+    @property
+    def bluetooth_output_devices(self) -> list[dict[str, str]]:
+        """Paired Bluetooth output devices (Audio Sinks only).
+
+        Returns:
+            List of dicts with keys: name, mac, connected
+
+        Example:
+            [
+                {"name": "Sony SRS-XB43", "mac": "AA:BB:CC:DD:EE:FF", "connected": True},
+                {"name": "JBL Tune 750", "mac": "11:22:33:44:55:66", "connected": False}
+            ]
+        """
+        return self._properties.bluetooth_output_devices
+
+    @property
+    def available_outputs(self) -> list[str]:
+        """All available outputs (hardware modes + paired BT devices).
+
+        Returns:
+            List of output names. Bluetooth devices are prefixed with "BT: "
+
+        Example:
+            ["Line Out", "Optical Out", "BT: Sony Speaker"]
+        """
+        return self._properties.available_outputs
+
+    @property
+    def eq_presets(self) -> list[str] | None:
+        """Available EQ presets from cached state.
+
+        Returns:
+            List of EQ preset names, or None if not available.
+
+        Example:
+            ["flat", "acoustic", "bass", "rock", "jazz", "custom"]
+        """
+        return self._eq_presets
+
+    @property
+    def metadata(self) -> dict[str, Any] | None:
+        """Audio quality metadata from cached state.
+
+        Contains bitrate, sample rate, codec information for current track.
+
+        Returns:
+            Dict with audio quality info, or None if not available.
+
+        Example:
+            {
+                "bitrate": "320 kbps",
+                "sample_rate": "44100",
+                "codec": "mp3"
+            }
+        """
+        return self._metadata
+
+    @property
+    def audio_output_status(self) -> dict[str, Any] | None:
+        """Audio output status from cached state.
+
+        Contains current audio output configuration.
+
+        Returns:
+            Dict with audio output info, or None if not available.
+        """
+        return self._audio_output_status
+
+
+# Export Player class
+__all__ = ["Player"]

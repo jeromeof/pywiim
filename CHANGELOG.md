@@ -1,0 +1,1090 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [1.0.89] - 2025-11-19
+
+### Added
+- **WiiM logo as default cover art fallback**
+  - When no valid cover art is available (e.g., web radio without artwork), the WiiM logo is automatically used as a fallback
+  - `entity_picture` field now defaults to WiiM logo URL instead of None when cover art is missing or invalid
+  - `fetch_cover_art()` automatically fetches WiiM logo when no URL is provided
+  - Ensures consistent user experience with visible artwork in all playback scenarios
+  - **Impact**: Home Assistant and other integrations will always have cover art to display
+
+## [1.0.88] - 2025-11-19
+
+### Changed
+- **Refactored role tracking to use single source of truth**
+  - Role (`solo`, `master`, `slave`) is now computed from Group object membership instead of maintaining separate `_detected_role` field
+  - Eliminates dual representation that could get out of sync
+  - Master with no slaves correctly reports as "solo"
+  - Group structure is synced from device API during `refresh()` and updated optimistically during operations
+  - **Impact**: More reliable role detection with simpler, more maintainable code
+
+### Fixed
+- **Fixed optimistic state updates for group operations**
+  - Group membership changes now trigger immediate state change notifications to all group members (master + slaves)
+  - Both Group object structure and role property update optimistically without polling
+  - Fixes issue where role property was not updating after group operations
+  - **Impact**: Home Assistant entities and other integrations receive immediate updates when group membership changes
+
+### Added
+- **Added test script for verifying optimistic group notifications**
+  - New `scripts/test-optimistic-group-notification.py` demonstrates and verifies optimistic notification behavior
+  - Shows exact timestamps of state change callbacks with millisecond precision
+  - Validates that both master and slave receive immediate notifications during join operations
+  - Useful for testing and debugging group state synchronization
+
+## [1.0.87] - 2025-11-19
+
+### Fixed
+- **Fixed infinite recursion in Group volume and mute control**
+  - Removed incorrect auto-delegation logic from `Player.set_volume()` and `Player.set_mute()` that caused infinite loop when called from `Group.set_volume_all()` / `Group.mute_all()`
+  - Physical player methods now only control the device itself, not automatically trigger group-wide propagation
+  - Group-level operations must be explicitly called via `Group` object methods
+  - **Impact**: Group volume and mute operations now work correctly without hanging
+
+### Changed
+- **Simplified Player volume/mute API behavior**
+  - `Player.set_volume()` now only sets volume on that specific device (no group propagation)
+  - `Player.set_mute()` now only sets mute on that specific device (no group propagation)
+  - Group-wide operations require explicit calls to `Group.set_volume_all()` or `Group.mute_all()`
+  - Makes API behavior more explicit and predictable
+
+### Added
+- **Enhanced integration tests for multi-room group control**
+  - Comprehensive test coverage for volume propagation with different device combinations (master is MAX, slave1 is MAX, slave2 is MAX, all equal)
+  - Complete mute state permutation testing (all unmuted, all muted, mixed states)
+  - Boundary testing (0.0, 0.40 max volume)
+  - Tests include 5-second observation pauses for manual verification via WiiM app
+  - All tests query device states directly (not cached) to confirm actual hardware changes
+
+## [1.0.86] - 2025-11-18
+
+### Fixed
+- **Fixed solo/master/slave role detection in `get_device_group_info()`**
+  - Now correctly checks if master info (both IP and UUID) points to the device itself before classifying as slave
+  - Matches the logic used in `detect_role()` and the working Home Assistant integration
+  - Fixes issue where master devices with master_uuid/master_ip pointing to themselves were incorrectly detected as slaves
+  - **Impact**: Devices in groups now correctly identify as solo/master/slave, matching the behavior of the HA integration
+
+## [1.0.85] - 2025-11-18
+
+### Fixed
+- **Fixed role detection logic to correctly identify master devices**
+  - `get_device_group_info()` now checks if master info points to the device itself before treating it as a slave
+  - `detect_role()` now correctly identifies master devices even when they have master_uuid/master_ip set to themselves
+  - Fixed type error in `groupops.py` where `_detected_role` (str) was assigned to a Literal type variable
+  - **Impact**: Master devices in groups are now correctly identified, fixing group operations and state synchronization
+
+## [1.0.84] - 2025-11-18
+
+### Fixed
+- **Fixed timing issue where `on_state_changed` callback fires before Player properties are updated**
+  - `update_from_upnp()` now ensures `_status_model` is fully synchronized with merged state before callbacks fire
+  - All fields (including metadata like `media_title`, `media_artist`) are now updated from merged state, ensuring properties reflect latest data when callbacks fire
+  - Fixes issue where callbacks would read `None` for metadata even though state had changed
+  - **Impact**: Callbacks now have access to current Player properties (media_title, media_artist, etc.) when they fire, eliminating the need for workaround refresh calls
+
+## [1.0.83] - 2025-11-18
+
+## [1.0.82] - 2025-11-18
+
+### Fixed
+- **Monitor CLI now shows slaves for master devices even when Player objects aren't linked**
+  - Monitor CLI now fetches and caches device group info to display slave information directly from device API
+  - When a master device has slaves but Player objects aren't linked (e.g., when player_finder isn't available), monitor now shows slave count and IP addresses
+  - Fixed display showing "Master (no slaves)" when slaves actually exist according to device API
+  - **Impact**: Monitor CLI correctly displays multi-room group information even in single-device monitoring scenarios
+
+## [1.0.81] - 2025-11-18
+
+### Added
+- **Automatic Player object linking when groups are detected on startup/refresh**
+  - Added optional `player_finder` callback parameter to `Player` constructor
+  - When `player_finder` is provided, library automatically links Player objects together when groups are detected during `refresh()`
+  - Master players automatically find and link slave Player objects
+  - Slave players automatically find and link to master Player object
+  - New slaves are automatically linked when they appear
+  - **Impact**: Volume propagation and group operations now work immediately on startup, not just after join/unjoin operations
+  - **Usage**: Coordinators can provide `player_finder=lambda host: player_registry.get(host)` to enable auto-linking
+
+### Fixed
+- **Release script bug: CHANGELOG version numbering**
+  - Fixed release script using `CURRENT_VERSION` instead of `NEW_VERSION` when updating CHANGELOG
+  - CHANGELOG now correctly shows the new version number for releases
+
+## [1.0.80] - 2025-11-18
+
+### Fixed
+- **Master volume and mute changes now propagate to all slaves in group**
+  - When `set_volume()` is called on a master player with slaves, volume changes now propagate proportionally to ALL devices (master + slaves)
+  - When `set_mute()` is called on a master player with slaves, mute changes now apply to ALL devices
+  - Virtual master volume behavior: if master goes from 50% to 60% (+10 points), all slaves adjust by +10 points
+  - Slave players maintain independent volume control (calling set_volume on slave only affects that device)
+  - **Impact**: Home Assistant group entities now correctly adjust all devices when master/group volume is changed
+  - **Breaking**: None - this fixes expected behavior that was documented but not implemented
+
+## [1.0.79] - 2025-11-18
+
+### Fixed
+- Duplicate release (no changes - version numbering correction)
+
+## [1.0.78] - 2025-11-18
+
+### Fixed
+- **Code quality: Fixed linting errors that bypassed pre-release checks**
+  - Removed unused `group_changed` variable in `groupops.py` (F841 error)
+  - Fixed line length violation in `statemgr.py` log message (E501 error - 128 > 120 chars)
+  - Fixed syntax error in `test_models.py` (stray "1" character)
+  - **Impact**: All code now passes Ruff linting checks in CI/CD pipeline
+- **Tests: Fixed 12 failing tests related to v1.0.76 role detection architecture**
+  - Updated tests to set `_detected_role` instead of relying on Group structure
+  - Fixed group_helpers tests (5 tests) - build_group_state_from_players now checks _detected_role
+  - Fixed player role tests (2 tests) - is_master/is_slave properties now check _detected_role
+  - Fixed group operation tests (4 tests) - leave_group now checks _detected_role for is_solo
+  - Fixed API test for get_multiroom_status to expect getSlaveList fallback response
+  - **Impact**: Test suite now properly validates the v1.0.76 role detection architecture
+
+### Documentation
+- **Consolidated release documentation into single source of truth**
+  - Merged `RELEASE_WORKFLOW.md` into `RELEASE_PROCESS.md`
+  - Added guidelines for when to create RELEASE_NOTES files
+  - Removed duplicate/conflicting documentation
+
+## [1.0.78] - 2025-11-18
+
+### Fixed
+- **Available sources now include current non-physical sources**
+  - Fixed `available_sources` not including active streaming services (AirPlay, Spotify, Amazon, etc.)
+  - Fixed `available_sources` not including multi-room follower sources (e.g., "Master Bedroom")
+  - Current source is now always included when active, even if not a physical input
+  - Ensures Home Assistant can correctly display what's actually playing instead of showing "Unknown"
+  - **Impact**: Source dropdown now shows physical inputs + current active source for proper UI state
+
+### Changed
+- **Source names now preserve original casing for proper UI display**
+  - Removed lowercase normalization from `PlayerStatus.source` field
+  - Source names now display as received: "AirPlay" not "airplay", "Spotify" not "spotify"
+  - Multi-room sources preserve casing: "Master Bedroom" not "master bedroom"
+  - **Impact**: Home Assistant UI now shows professionally-cased source names
+
+## [1.0.77] - 2025-11-18
+
+### Fixed
+- **Slave players now receive ALL metadata from master**
+  - When slave Player is linked to master via Group, copy all playback metadata during refresh
+  - Copies: title, artist, album, cover art, play_state, position, duration
+  - Source already set to master's name
+  - All metadata cleared when device leaves group
+  - **Impact**: Home Assistant slave entities now show correct track info, progress, and artwork
+
+## [1.0.76] - 2025-11-18
+
+### Changed
+- **ARCHITECTURAL: Role detection consolidated to SINGLE source of truth**
+  - **Problem**: Role was determined in 5 different places (role.py, group.py, groupops.py, base.py), all potentially out of sync
+  - **Root cause**: `player.role` property checked Group.slaves (Python objects) instead of device API state
+  - **Solution**: 
+    - Added `player._detected_role` field updated during `refresh()` from device API state
+    - `player.role` now returns `_detected_role` directly - ONE source of truth
+    - Role comes from device API via `detect_role()` function, cached in Player
+    - Group objects are for linking Player objects (HA), role is independent of Group
+  - **Impact**: Role is always accurate whether monitoring one device or multiple devices
+  - **Breaking**: None - external API unchanged, internal architecture cleaned up
+
+### Documentation
+- Added clear "Multiroom / Group Role" section to API_REFERENCE.md
+- Updated HA_INTEGRATION.md with "Role vs Group Objects" explanation
+- Documented that role comes from device state, Group objects are for linking
+
+## [1.0.75] - 2025-11-18
+
+### Fixed
+- **Role detection consolidated to SINGLE source of truth**
+  - **Problem**: Role was checked in 5 different places, all potentially out of sync
+  - **Root cause**: `player.role` checked Group.slaves (Python objects) instead of device API state
+  - **Solution**: Added `_detected_role` field set during refresh from device API via `detect_role()`
+  - Role property now returns `_detected_role` - always accurate regardless of Group objects
+  - Group objects are for linking Player objects (HA coordinator), role is independent
+  - **Impact**: Role is always correct whether monitoring one device or multiple devices
+
+## [1.0.74] - 2025-11-18
+
+### Fixed
+- **Multiroom group detection failure on firmware with null multiroom field**
+  - Fixed `get_multiroom_status()` not detecting master devices when `getStatusEx` returns `multiroom: null`
+  - Added automatic fallback to `multiroom:getSlaveList` endpoint when multiroom field is empty
+  - Master devices now correctly report slave count and slave list even when firmware doesn't populate multiroom field
+  - Affects WiiM firmware 4.8.731953 and potentially other versions
+  - **Impact**: Monitor/CLI now correctly shows "master → slave" role, Home Assistant correctly tracks group membership
+- **Group state synchronization not notifying slave players**
+  - Fixed `_synchronize_group_state()` not calling `on_state_changed` callbacks when group membership changes
+  - Added notifications to all group members when slaves are added/removed during automatic group sync
+  - **Impact**: In Home Assistant, slave player entities now update immediately when master detects group changes
+
+## [1.0.73] - 2025-11-18
+
+### Fixed
+- **Source persisting in Idle state after leaving group**
+  - Fixed slaves showing stale master name as source when group disbanded while idle
+  - Added explicit check to clear source field when device becomes solo and idle
+  - Source now correctly shows as None (empty) after leaving group in idle state
+  - Previously only worked if device was playing when leaving group
+  - **Impact**: Home Assistant now shows correct empty source state for idle solo players
+
+## [1.0.72] - 2025-11-18
+
+### Fixed
+- **Volume optimistic state update unit mismatch**
+  - Fixed `set_volume()` passing incorrect format to state synchronizer (0.0-1.0 float instead of 0-100 int)
+  - Caused Home Assistant to briefly display 0% volume before device confirmation corrected it
+  - Volume changes now display correctly immediately without bouncing through zero
+
+## [1.0.71] - 2025-11-18
+
+### Added
+- **Source-aware shuffle and repeat control**
+  - Added `Player.shuffle_supported` property - checks if shuffle can be controlled on current source
+  - Added `Player.repeat_supported` property - checks if repeat can be controlled on current source
+  - Device-controlled sources: USB, Line In, Optical, Coaxial, Playlist, Preset, HTTP
+  - External-controlled sources: AirPlay, Bluetooth, DLNA, Spotify, Tidal, Amazon Music, Qobuz, Deezer, iHeartRadio, Pandora, TuneIn, Multiroom
+
+### Changed
+- **BREAKING: Shuffle and repeat properties now return None for external sources**
+  - `Player.shuffle_state` returns `None` instead of stale values when playing from AirPlay, Bluetooth, etc.
+  - `Player.repeat_mode` returns `None` instead of stale values when playing from external sources
+  - **Rationale**: External sources (AirPlay, Bluetooth, streaming services) control shuffle/repeat from the source app, not the WiiM device. Returning cached values is misleading.
+  - **Technical Background**: LinkPlay/WiiM devices operate as a "Split Brain" system where control authority shifts based on transport protocol:
+    - **AirPlay**: Device is passive sink; iOS device owns playback queue
+    - **Spotify Connect**: Hybrid model; shuffle state managed by Spotify Cloud API, not local `setPlayerCmd:loopmode`
+    - **Bluetooth/DLNA**: Source device/app controls transport
+    - **USB/Local**: WiiM device is control point; full API control (subject to ~1000-2000 track RAM queue limit on A98 hardware)
+  - The `setPlayerCmd:loopmode` endpoint in LinkPlay HTTP API is functional ONLY when device acts as control point
+  - Sending shuffle/repeat commands to AirPlay or Spotify sessions either fails silently or updates a local register that has no effect on actual playback
+  - See `docs/technical/LINKPLAY_ARCHITECTURE.md` for comprehensive analysis of transport protocols and hardware constraints
+  - Use `shuffle_supported` / `repeat_supported` to check before reading these properties
+  - **BREAKING: set_shuffle() and set_repeat() now raise WiiMError for external sources**
+  - Previously would send commands that did nothing or failed silently
+  - Now raises clear error: "Shuffle/Repeat cannot be controlled when playing from '<source>'"
+  - Prevents confusing behavior where commands appear to work but have no effect
+  - For Spotify automation: Use Spotify Web API (`spotify.shuffle` service in HA) instead of LinkPlay API
+  - For AirPlay automation: Control shuffle/repeat on source device (iOS/macOS)
+  - Monitor CLI now displays "N/A (controlled by source)" for shuffle/repeat when playing from AirPlay, Bluetooth, etc.
+
+### Fixed
+- **Monitor now properly detects shuffle and repeat mode changes**
+  - Added shuffle and repeat to state change tracking in `on_state_changed()`
+  - Previously, changing shuffle/repeat would not appear in "Recent Events" or trigger state change counter
+  - Monitor now shows shuffle/repeat changes in real-time when playing from supported sources
+
+## [1.0.70] - 2025-11-18
+
+### Changed
+- **Play state normalization: "stop" now maps to "pause" for modern UX**
+  - Devices reporting "stop" or "stopped" now appear as "paused" to users
+  - Aligns with Home Assistant conventions (no STATE_STOPPED for media players)
+  - Follows Sonos/soco library pattern (IDLE for empty queue, not STOPPED)
+  - Rationale: Modern streaming devices maintain position whether "paused" or "stopped" - the distinction is meaningless to users
+  - Affects: `Player.play_state` property, monitor CLI display, all state reporting
+  - Impact: Monitor will now show "PAUSED" instead of "STOPPED" when playback is halted
+  - Updated documentation: STATE_MANAGEMENT.md, API_REFERENCE.md
+
+## [1.0.70] - 2025-11-18
+
+### Fixed
+- **All player control methods now use optimistic state updates and fire callbacks immediately**
+  - Fixed shuffle/repeat methods (`set_shuffle()`, `set_repeat()`) to fire `on_state_changed` callbacks instead of calling `refresh()`
+  - Fixed media control methods (`play()`, `pause()`, `resume()`, `stop()`, `next_track()`, `previous_track()`, `seek()`) to fire callbacks
+  - Fixed playback methods (`play_url()`, `play_playlist()`, `play_notification()`, `play_preset()`, `clear_playlist()`) to fire callbacks
+  - Fixed volume methods (`set_volume()`, `set_mute()`) to update state synchronizer and fire callbacks
+  - Fixed audio configuration methods (`set_source()`, `set_audio_output_mode()`, EQ methods) to fire callbacks
+  - Fixed Bluetooth methods (`connect_bluetooth_device()`, `disconnect_bluetooth_device()`) to fire callbacks
+  - Removed all remaining `refresh()` calls from control methods (replaced with optimistic updates + callbacks)
+  - Home Assistant integrations now receive instant UI updates (<1ms) for all player commands
+  - Optimistic state updates ensure UI responsiveness before UPnP events or polling confirms changes
+
+### Changed
+- **Consistent state management pattern across all player control methods**
+  - All state-changing methods now follow the pattern: Call API → Update cached state → Fire callback
+  - Cached `_status_model` fields updated optimistically (play_state, volume, mute, loop_mode, source, eq_preset, position)
+  - State synchronizer updated for volume/mute changes
+  - Callbacks fire immediately after successful API calls, triggering coordinator listeners
+
+### Documentation
+- **Updated HA_INTEGRATION.md to reflect optimistic state update workflow**
+  - Added "Optimistic State Updates + Callbacks" as primary state update mechanism (<1ms latency)
+  - Documented that ALL player commands fire callbacks immediately, not just group operations
+  - Updated examples to show three-layer state update: callbacks (instant) → UPnP (immediate) → polling (5-10s)
+  - Clarified that UI updates happen instantly from cached state with no network delay
+
+## [1.0.69] - 2025-11-18
+
+### Added
+- **Smart play/pause method for Home Assistant integration**
+  - Added `player.media_play_pause()` method that intelligently handles play/pause/resume semantics
+  - Automatically uses `resume()` when paused to avoid restarting streaming tracks from the beginning
+  - Solves Issue #102 where `play()` restarts Amazon Music/Spotify tracks instead of resuming
+  - Recommended for Home Assistant's `media_play_pause` service implementation
+  - Follows HA media player conventions: resume when paused, pause when playing, play when stopped
+
+### Changed
+- **Enhanced media control method documentation**
+  - Added comprehensive docstrings to `play()`, `pause()`, `resume()`, `stop()`, and `media_play_pause()` methods
+  - Documented play vs resume behavior on streaming sources (play() may restart, resume() continues)
+  - Documented WebRadio/WiFi stop() behavior (may not stay stopped, use pause() instead)
+  - Added Home Assistant integration examples for proper usage
+
+### Documentation
+- **Added "Known Device Behaviors" section to README.md**
+  - Documented play vs resume distinction for streaming sources (Spotify, Amazon Music, etc.)
+  - Documented WebRadio/WiFi source stop behavior (Issues #49, #45)
+  - Added workarounds and best practices for Home Assistant integrations
+  - Explained that behaviors originate from LinkPlay firmware across all vendors
+- **Updated HA_INTEGRATION.md with service mapping guide**
+  - Added recommended service-to-method mapping table for media player services
+  - Shows proper usage of play/pause/resume/stop/media_play_pause methods
+
+## [1.0.68] - 2025-11-18
+
+### Added
+- **Device capability database for reliable input source detection**
+  - Created `pywiim/device_capabilities.py` with device-specific input definitions
+  - Database contains accurate physical input lists for WiiM Mini, Pro, Pro Plus, Amp, Ultra, and Arylic devices
+  - Replaces unreliable `plm_support` bitmask with authoritative hardware-based input lists
+  - Supports device-specific bit filtering (e.g., ignore USB bit for WiiM Pro where USB-C is power only)
+  - Enables vendor-agnostic input detection across WiiM, Arylic, and generic LinkPlay devices
+
+### Fixed
+- **Corrected input source enumeration across all device types**
+  - Fixed missing physical inputs (line_in, optical, coaxial) when `input_list` is None
+  - `plm_support` bitmask is now recognized as unreliable across ALL vendors:
+    - WiiM: Marks `plm_support` as "Reserved" in official docs (not a supported API field)
+    - Arylic: Documents `plm_support` but firmware often reports incomplete/incorrect values
+    - Reality: Tested devices show `plm_support` missing critical inputs like line_in
+  - Fixed WiiM Pro incorrectly showing coaxial input (has Coax OUT only, not Coax IN)
+  - Fixed WiiM Pro showing USB input (USB-C is power only, not audio input)
+  - Fixed Arylic UP2STREAM_AMP_V4 missing line_in and optical (not in `plm_support`)
+  - Fixed Arylic H50 missing line_in, optical, usb, phono, hdmi (not in `plm_support`)
+  - Added device-specific filtering to remove spurious inputs reported by `plm_support`
+  - Solution: Multi-layered approach using `plm_support` + `input_list` + device capability database
+
+### Changed
+- **Input source detection strategy updated to use device capability database**
+  - When `input_list` is None (common for all tested devices), device database is now authoritative source
+  - `plm_support` is parsed but filtered through device-specific ignore lists
+  - Database augments incomplete `plm_support` data with known hardware capabilities
+  - Logs debug warnings when `plm_support` parsing fails or contains unknown bits
+  - Logs all set bits in `plm_support` to help identify new/undocumented bit mappings
+- **Monitor CLI enhanced with input source debugging**
+  - Now displays both `input_list` and `plm_support` raw values for troubleshooting
+  - Shows `plm_support` bit breakdown with human-readable input names
+  - Displays unknown bits separately to identify new input types on newer devices
+  - Always shows available inputs (even when no current source active)
+  - Marks current input in available sources list for clarity
+
+### Documentation
+- Added comprehensive comments in `device_capabilities.py` explaining why database is needed
+- Documented that `plm_support` is "Reserved" per WiiM's official HTTP API documentation
+- Noted that Arylic documents `plm_support` but firmware implementation is incomplete/unreliable
+- Updated property docstrings to clarify device capability database as source of truth
+
+## [1.0.67] - 2025-11-18
+
+### Added
+- **Real device testing tools for playback controls**
+  - Added `scripts/test-playback-controls.py` - Automated test script for play/pause/shuffle/repeat verification
+  - Added `scripts/interactive-playback-test.py` - Interactive menu-driven testing tool
+  - Both scripts verify Player object playback control methods against real hardware
+- Added `docs/testing/REAL-DEVICE-TESTING.md` - Comprehensive guide for testing against real devices
+- Updated `scripts/README.md` with documentation for new playback control test scripts
+
+## [1.0.66] - 2025-11-18
+
+### Added
+- **Active position timer for smooth media position updates**
+  - Background async task updates position every 1 second while playing
+  - Automatically triggers `on_state_changed` callback when position changes
+  - Provides smooth UI updates for clients displaying media position (e.g., Home Assistant media player)
+  - Timer automatically starts when playback begins and stops when paused/stopped
+  - Handles track changes and seeks by resetting timer appropriately
+  - Follows Python asyncio best practices with proper task management and cleanup
+  - Gracefully degrades to lazy calculation if no event loop is available (sync context)
+
+### Changed
+- **Position tracking now uses active timer instead of lazy calculation**
+  - Position updates automatically every 1 second while playing (not just on property access)
+  - Integrations receive automatic callbacks for position changes without needing to poll
+  - Improves user experience with smooth, real-time position updates in UI
+
+### Documentation
+- **Updated STATE_MANAGEMENT.md with active timer implementation details**
+  - Documented hybrid position tracking with active timer
+  - Added implementation details and lifecycle management
+  - Explained automatic callback mechanism for UI updates
+
+## [1.0.65] - 2025-11-18
+
+### Added
+- **Player now caches ALL state internally - integrations no longer need separate caching**
+  - Added `player.eq_presets` property: List of available EQ preset names (cached during refresh)
+  - Added `player.metadata` property: Audio quality metadata (bitrate, sample rate, codec info) (cached during refresh)
+  - Added `player.audio_output_status` property: Full audio output status dict (exposes existing cache)
+  - StateManager.refresh() now automatically fetches and caches eq_presets and metadata if supported
+  - All data fetched conditionally based on device capabilities (no unnecessary calls)
+  - Integrations now access ALL state via player properties - no manual fetching needed
+
+### Changed
+- **Simplified integration pattern: "Call refresh(), read properties, that's it!"**
+  - Integrations should NOT manually call get_eq_presets(), get_meta_info(), get_audio_output_status()
+  - All state is automatically fetched and cached during player.refresh()
+  - Data dict should be built entirely from player properties, not separate fetch calls
+  - This eliminates integration-side caching and reduces code complexity
+
+### Documentation
+- **Reinforced "pywiim manages all state internally" design philosophy**
+  - Integrations should never cache state separately - Player is the single source of truth
+  - Clear separation: pywiim owns state management, integrations own scheduling
+
+### Benefits
+- **Simpler integration code**: No manual fetching or caching needed
+- **Single source of truth**: All state lives in Player object
+- **Atomic state updates**: All state fetched together during refresh()
+- **No integration-side cache**: Eliminates cache management code in integrations
+- **Framework-agnostic**: Works identically for HA, CLI, scripts, etc.
+
+## [1.0.64] - 2025-11-18
+
+### Changed
+- **Group operations now automatically notify ALL group members**
+  - join_group(), leave_group(), and disband() now call on_state_changed callback on all affected players
+  - Previously only notified the directly involved players (joiner + master)
+  - Now notifies all members of the new group AND all members of the old group (if applicable)
+  - Ensures all coordinators/integrations receive immediate state updates for all group members
+  - Integration developers no longer need to call async_force_multiroom_refresh() after group operations
+  - All group member UIs update immediately without any manual refresh calls
+  - This aligns with the "pywiim manages all state internally" design philosophy
+
+### Documentation
+- **Updated group operation documentation across all docs**
+  - Clarified that async_force_multiroom_refresh() is no longer needed for group operations
+  - Updated HA_INTEGRATION.md with automatic group-wide notification details
+  - Updated OPERATION_PATTERNS.md to document the notification strategy
+  - Added clear explanation of which players receive callbacks during group operations
+
+### Benefits
+- **Simpler integration code**: No need to track and refresh all group members manually
+- **More reliable**: Can't forget to notify other group members
+- **Better UX**: All group member UIs update immediately
+- **Framework-agnostic**: Works automatically for any integration (HA, CLI, scripts)
+
+## [1.0.63] - 2025-11-18
+
+### Changed
+- **Removed internal refresh() calls from Player command methods for faster execution**
+  - Play, pause, resume, seek, play_url, play_playlist, and play_preset no longer call refresh() internally
+  - Commands now execute ~2x faster (single HTTP call instead of command + refresh)
+  - State updates happen via UPnP events (immediate) and coordinator polling (5-10 seconds)
+  - This eliminates redundant network calls and potential race conditions with UPnP events
+  - Integration developers should NOT call async_request_refresh() after Player commands
+  - For one-off scripts without polling, users can explicitly call await player.refresh() when needed
+
+### Added
+- **Comprehensive documentation for state management pattern**
+  - Updated OPERATION_PATTERNS.md with explicit refresh() usage guidelines
+  - Added "Player Command Methods - No Manual Refresh Required" section to HA_INTEGRATION.md
+  - Added "When to Use refresh()" section to API_REFERENCE.md
+  - Clear examples showing when to use explicit refresh (scripts, testing) vs when not to (integrations)
+  - Documents the three-layer state update system: UPnP events, coordinator polling, explicit refresh
+
+### Performance
+- **Significant performance improvement for multiroom operations**
+  - create_group(), join_group(), and other operations are faster without internal refresh calls
+  - Commands that previously took multiple seconds now complete in <1 second
+  - Reduced network traffic by eliminating double HTTP calls
+
+## [1.0.62] - 2025-11-18
+
+### Fixed
+- **Cover art fetching from HTTPS device URLs now works correctly**
+  - Fixed `fetch_cover_art()` to use client's SSL context for HTTPS artwork URLs
+  - WiiM devices serve artwork via HTTPS with self-signed certificates
+  - Previously failed silently (returned None) when fetching from device HTTPS URLs
+  - Now properly disables certificate verification for device artwork URLs
+  - External artwork URLs (Spotify, Tidal, etc.) continue to use standard SSL verification
+  - Tested successfully with AirPlay artwork on WiiM Pro devices
+
+### Changed
+- **Reduced repetitive debug logging to minimize noise**
+  - Removed automatic logging of full HTTP responses on every poll (api/base.py)
+  - Removed metadata parsing debug logs that occurred on every status fetch (api/parser.py)
+  - Removed AirPlay-specific debug logging that occurred on every poll for AirPlay sources
+  - These changes significantly reduce log spam when DEBUG logging is enabled
+  - Important events (track changes, errors, state transitions) are still logged appropriately
+  - Raw data remains available for debugging but is not automatically logged on every poll cycle
+
+### Added
+- **Logging best practices documentation**
+  - Added comprehensive logging guidelines in `docs/LOGGING_BEST_PRACTICES.md`
+  - Documents when and how to use each log level (ERROR, WARNING, INFO, DEBUG)
+  - Provides examples of good vs. bad logging patterns
+  - Explains anti-patterns to avoid (logging on every poll, logging unchanged values)
+  - Includes integration-specific guidelines for Home Assistant and other frequent pollers
+  - Philosophy: "Log when it matters, not on every poll"
+
+## [1.0.61] - 2025-11-18
+
+### Changed
+- Version bump (no functional changes)
+
+## [1.0.60] - 2025-11-18
+
+### Fixed
+- **Alarm clock (setAlarmClock) now handles non-JSON responses gracefully**
+  - Fixed `WiiMResponseError` when setting alarms on WiiM devices that return plain "OK" text instead of JSON
+  - Added `setAlarmClock` to the whitelist of commands that can return non-JSON or empty responses
+  - Device behavior: WiiM devices return plain text "OK" for successful alarm configuration instead of JSON
+  - The library now treats "OK" and empty responses from `setAlarmClock:*` commands as success (`{"raw": "OK"}`)
+  - Affects all alarm operations: daily alarms, one-time alarms, weekly alarms, monthly alarms
+  - See WiiM HTTP API documentation: https://www.wiimhome.com/pdf/HTTP%20API%20for%20WiiM%20Products.pdf
+
+## [1.0.59] - 2025-11-17
+
+### Fixed
+- **Slave devices now clear metadata and artwork when leaving a group**
+  - When a slave leaves a multiroom group, metadata (title, artist, album) and artwork (entity_picture, cover_url) are now cleared
+  - Prevents stale group playback information from persisting on slave after leaving
+  - Device will show WiiM default state (no metadata/artwork) instead of outdated track information
+  - Applies to both status model and state synchronizer to prevent refresh() from restoring stale data
+- **Source enumeration now combines all available information sources**
+  - Fixed missing physical inputs (Line In, Optical, etc.) when device firmware's `input_list` was incomplete
+  - Now combines device's `input_list` + hardware capability bitmask (`plm_support`) + model-based detection
+  - Previous behavior: Trusted `input_list` exclusively and returned immediately, missing inputs not reported by firmware
+  - New behavior: Augments `input_list` with `plm_support` bitmask to catch inputs firmware forgot to report
+  - Returns physical inputs (Line In, USB, Bluetooth, Optical, Coaxial, HDMI) + current streaming source (if active)
+  - Current streaming service (Spotify, AirPlay, DLNA, etc.) included only when active for proper Home Assistant state display
+
+## [1.0.55] - 2025-01-17
+
+### Added
+- **Unified output selection with Bluetooth device support** (Issues [mjcumming/wiim#79](https://github.com/mjcumming/wiim/issues/79), [#86](https://github.com/mjcumming/wiim/issues/86))
+  - New property `bluetooth_output_devices`: Lists paired Bluetooth output devices (Audio Sinks only)
+    - Returns list of dicts with `name`, `mac`, `connected` keys
+    - Automatically filters out Audio Source devices (input devices like phones)
+  - New property `available_outputs`: Combines hardware output modes with paired BT devices
+    - Hardware modes: "Line Out", "Optical Out", "Coax Out", "Bluetooth Out", "HDMI Out"
+    - Paired devices: "BT: Device Name" format
+    - Example: `["Line Out", "Optical Out", "BT: Sony Speaker", "BT: JBL Headphones"]`
+  - New method `player.audio.select_output(name)`: Smart output selection
+    - Hardware mode: `await player.audio.select_output("Optical Out")`
+    - Specific BT device: `await player.audio.select_output("BT: Sony Speaker")`
+    - Automatically sets hardware mode to Bluetooth and connects to device
+  - Bluetooth history fetched during `player.refresh()` with 60-second cache (pairing rarely changes)
+  - Enables automation scenarios like "When movie starts, switch to BT soundbar"
+  - Eliminates need for WiiM app to select outputs and connect BT devices
+
+### Fixed
+- **Source switching (switchmode) now handles empty/non-JSON responses gracefully**
+  - Fixed `WiiMResponseError` when switching to certain sources (e.g., Bluetooth) that return empty responses
+  - Added `switchmode` to the whitelist of commands that can return empty or non-JSON responses
+  - Device behavior: Some WiiM devices return empty responses for successful source switches instead of JSON
+  - The library now treats empty responses from `switchmode:*` commands as success (`{"raw": "OK"}`)
+
+### Changed
+- **Smart filtering of `available_sources` property**
+  - Now filters out unconfigured streaming services (Spotify, Tidal, Amazon, Qobuz, Deezer, Pandora, iHeartRadio, TuneIn)
+  - Only returns physical/hardware sources (USB, Bluetooth, AirPlay, DLNA, Optical, Coax, Aux, HDMI) by default
+  - Includes streaming services only if they're the currently active source
+  - AirPlay and DLNA always included as they don't require account configuration
+  - Integration code no longer needs workarounds to filter out unusable sources
+- **Major refactoring: Player class modularization**
+  - Refactored monolithic `player.py` (2,592 lines) into clean modular structure with 12 focused modules (2,485 lines total)
+  - Created `pywiim/player/` package with clear separation of concerns:
+    - `base.py` (5.4K) - Core initialization and basic properties
+    - `statemgr.py` (14K) - State management, refresh, and UPnP integration
+    - `volume.py` (1.4K) - Volume and mute control
+    - `media.py` (5.6K) - Media playback control
+    - `audio.py` (4.8K) - Audio configuration (EQ, LED, output modes)
+    - `playback.py` (2.8K) - Shuffle, repeat, and loop modes
+    - `coverart.py` (4.5K) - Cover art fetching and caching
+    - `properties.py` (19K) - All property getters (media metadata, status)
+    - `groupops.py` (9.0K) - Group operations (create, join, leave)
+    - `diagnostics.py` (6.6K) - Diagnostics collection
+    - `bluetooth.py` (1.6K) - Bluetooth operations
+  - **Zero breaking changes**: All existing code works unchanged, imports remain the same
+  - **All 708 unit tests pass**: Complete test coverage maintained
+  - **Improved maintainability**: Each module has clear, single responsibility (60-500 lines each)
+  - **Better code organization**: Find and navigate code faster with logical grouping
+  - **Enhanced type safety**: All type hints properly resolved, mypy compliant
+  - **Updated package configuration**: Added `pywiim.player` to setuptools packages
+
+## [1.0.52] - 2025-01-16
+
+### Added
+- **Cover art fetching and caching**: Added direct cover art image fetching to Player class
+  - New methods: `fetch_cover_art(url=None)` and `get_cover_art_bytes(url=None)`
+  - Automatic in-memory caching (max 10 images per player, 1 hour TTL)
+  - Uses client's HTTP session for fetching, creates temporary session if needed
+  - Handles expired URLs gracefully and provides more reliable cover art than using URLs directly
+  - Returns both image bytes and content type for integration use
+  - Cache cleanup automatically removes expired entries
+  - Updated Home Assistant integration documentation with `async_get_media_image()` example
+  - Updated API reference with cover art methods and features
+
+### Changed
+- Updated Home Assistant integration guide with cover art handling section
+  - Documents when to use direct image fetching vs URL-based approach
+  - Provides example implementation for `async_get_media_image()` method
+  - Explains benefits of caching and reliability improvements
+
+## [1.0.51] - 2025-01-16
+
+### Changed
+- **CI/CD workflow**: Removed redundant `release` trigger from PyPI publish workflow
+  - Workflow now only triggers on version tags (v*), which is sufficient for automated publishing
+  - Simplifies workflow configuration and avoids duplicate triggers
+
+## [1.0.50] - 2025-11-16
+
+### Changed
+- Version bump (no functional changes)
+
+## [1.0.49] - 2025-11-16
+
+### Added
+- **Player repeat control method**: Added `set_repeat(mode)` method to Player class
+  - Completes the shuffle/repeat API abstraction alongside `set_shuffle()`
+  - Accepts "off", "one", or "all" as repeat mode values
+  - Automatically preserves current shuffle state when changing repeat mode
+  - Covers all 6 valid loop modes (0=normal, 1=repeat_one, 2=repeat_all, 4=shuffle, 5=shuffle+repeat_one, 6=shuffle+repeat_all)
+  - Updated Home Assistant integration documentation with `set_repeat()` examples and service method implementations
+
+### Fixed
+- **setLoopMode response handling**: Fixed handling of empty/non-JSON responses for `setLoopMode` commands
+  - Some devices (especially Audio Pro or certain firmware versions) return empty or non-JSON responses for shuffle/repeat commands
+  - Added `setLoopMode` to the list of commands that gracefully handle empty/non-JSON responses (like `reboot` and `eqload`)
+  - Prevents `WiiMResponseError` when devices return empty responses for shuffle/repeat operations
+  - Resolves integration errors: "Invalid JSON response from setLoopMode: Expecting value: line 1 column 1 (char 0)"
+
+### Changed
+- Updated Home Assistant integration documentation:
+  - Added `set_repeat()` to control helpers section with usage examples
+  - Added `MediaPlayerEntityFeature.SHUFFLE_SET` and `REPEAT_SET` to supported features
+  - Added `async_set_shuffle()` and `async_set_repeat()` service method implementation examples
+  - Documented that both methods preserve the other setting and handle device response variations
+
+## [1.0.48] - 2025-11-16
+
+### Fixed
+- **Role detection fix**: Fixed `Player.role` property to correctly identify solo devices
+  - A master must have at least one slave - if a group exists but has no slaves, the device is now correctly identified as "solo"
+  - Prevents incorrect "master" role assignment when a device is in an empty group
+  - Role detection now properly handles edge case where group exists but has no members
+
+### Changed
+- **Monitor CLI refactoring**: Simplified role state management and group info handling
+  - Removed redundant role state tracking - now uses `Player.role` directly (single source of truth)
+  - Simplified group info caching to only track fetch timing, not duplicate data
+  - Improved role change detection to use Player's authoritative role property
+  - Added source name formatting helper for better display of input sources (handles acronyms like DLNA, USB, HDMI)
+  - Code cleanup: removed duplicate state storage that was redundant with Player's internal state
+
+### Removed
+- Moved `test_eqlists_inputs.py` from project root to `scripts/` directory for better organization
+
+## [1.0.47] - 2025-11-16
+
+### Added
+- **Discovery performance optimization**: Added quick filtering to skip validation of known non-LinkPlay devices
+  - Uses SSDP `SERVER` headers to identify non-LinkPlay devices (Chromecast, Denon Heos, Sony, Kodi, etc.) before validation
+  - Conservative approach: Only filters devices we're 100% certain are not LinkPlay-compatible
+  - Generic "Linux" headers (used by Audio Pro, Arylic, WiiM) pass through to validation for safety
+  - Reduces discovery time by 50-70% when non-LinkPlay devices are present on the network
+  - Added `ssdp_response` field to `DiscoveredDevice` for internal filtering (not serialized in `to_dict()`)
+  - Updated discovery documentation with performance optimization details
+- **Complete Player high-level API**: Added all missing methods to Player class so integrations never need to access `player.client.*`
+  - **Control helpers**: `clear_playlist()`, `set_shuffle(enabled)`, `set_led(enabled)`, `set_led_brightness(brightness)`, `set_channel_balance(balance)`, `sync_time(ts)`
+  - **Status/metadata fetchers**: `get_multiroom_status()`, `get_audio_output_status()`, `get_meta_info()`
+  - **Bluetooth workflow**: `get_bluetooth_history()`, `connect_bluetooth_device(mac)`, `disconnect_bluetooth_device()`, `get_bluetooth_pair_status()`, `scan_for_bluetooth_devices(duration)`
+  - **Connection info properties**: `port`, `timeout` (read-only properties)
+  - All methods properly documented with full signatures and examples
+  - Updated HA integration guide and API reference to reflect complete Player API
+  - Updated monitor CLI to use Player methods directly instead of `player.client.*`
+- **Home Assistant integration documentation**: Added comprehensive "Division of Responsibilities" section to `HA_INTEGRATION.md`
+  - Clarifies who controls polling schedule (HA), who recommends intervals (pywiim), and who orchestrates (integration)
+  - Documents responsibility matrix for polling, updates, and roles
+  - Explains design patterns used (Strategy, Template Method, Observer, State Synchronization)
+  - Provides best practices and flow diagrams for integration developers
+  - Ensures clear separation of concerns between framework, library, and integration layers
+
+### Removed
+- Removed `POLLING_STRATEGY_ANALYSIS.md` design document (feature has been implemented)
+
+### Changed
+- Updated documentation references to point to `HA_INTEGRATION.md` for polling strategy information
+
+## [1.0.39] - 2025-01-15
+
+### Changed
+- **Protocol detection improvements**: Enhanced endpoint discovery with lazy probing
+  - Endpoint is now probed and cached on first use rather than at initialization
+  - Supports optional `port` and `protocol` parameters for explicit configuration
+  - Improved handling of IPv6 addresses and port parsing
+  - More efficient connection establishment with better error handling
+- **API client refactoring**: Simplified BaseWiiMClient initialization and endpoint management
+  - Removed hardcoded protocol priority assumptions
+  - Endpoint caching now persists for the lifetime of the client instance
+  - Better separation of concerns between discovery and connection
+
+### Removed
+- Removed obsolete design documentation files (consolidation analysis, design summaries)
+- Cleaned up outdated design documents to reduce repository clutter
+
+### Fixed
+- Improved Home Assistant integration documentation with updated examples
+- Enhanced group test CLI with better error handling and state management
+
+## [1.0.36] - 2025-11-15
+
+### Changed
+- **Presets removed from inputs list**: Presets are no longer included in `Player.available_sources`
+  - Presets should be handled via media browser functionality, not as selectable input sources
+  - Use `client.get_presets()` to retrieve preset list and `player.play_preset(preset_number)` to play them
+  - This aligns with Home Assistant's media player architecture where presets are browsable content
+- **Preset count detection**: `get_max_preset_slots()` now uses `preset_key` from API only
+  - Removed fallback that inferred max slots from preset list (which only shows configured presets)
+  - Defaults to 6 slots only if `preset_key` is not available from the API
+  - Supports up to 20 presets as determined by device's `preset_key` field
+
+### Added
+- Monitor CLI: Added preset count display in device info (e.g., "Presets: 20")
+  - Preset count is fetched every 60 seconds when presets are supported
+  - Shows maximum number of preset slots supported by the device
+
+### Fixed
+- Fixed group operation tests to use separate client instances for master and slave players
+  - Tests now properly mock multiroom status and player status for each player independently
+
+## [1.0.35] - 2025-11-15
+
+### Added
+- StateSynchronizer: Local timer-based position estimation for smooth position updates between polls/events
+  - Position is estimated locally using elapsed time when playing
+  - Provides smooth position updates between HTTP polls and UPnP events
+  - Automatically corrects on track changes, seeks, and periodic polling
+- Added missing Player properties for Home Assistant integration:
+  - `Player.shuffle` - Shuffle state (bool | None, alias for shuffle_state)
+  - `Player.repeat` - Repeat mode (str | None, alias for repeat_mode)
+  - `Player.wifi_rssi` - Wi-Fi signal strength in dBm (int | None)
+  - `Player.eq_preset` - Already existed, now documented for integration use
+- **Slave source handling**: Enhanced source display for slave devices in multiroom groups
+  - Slave devices now show master device name instead of "multiroom" placeholder
+  - Automatically resolves master name from Group object or master_ip
+  - Source is automatically cleared when device leaves group and becomes solo
+  - Improved source tracking for better Home Assistant integration
+- **Group volume control improvements**: Enhanced volume synchronization for multiroom groups
+  - Virtual master volume calculation (MAX of all devices in group)
+  - Absolute volume change distribution across all devices in group
+  - Proper volume initialization when all devices are at 0
+  - Explicit mute state management (mute states do not propagate between devices)
+- Updated Home Assistant integration guide with new property examples
+- Monitor CLI TUI mode: Fixed-window display that updates in place (no scrolling)
+  - Comprehensive player information display (device info, playback status, track info, EQ, audio I/O, grouping, network)
+  - Progress bar visualization for track position
+  - Recent events log (last 5 events: state changes, group joins/unjoins)
+  - Use `--no-tui` flag to disable TUI mode and use scrolling log instead
+- Monitor CLI group join/unjoin detection: Automatically detects and logs when players join or leave groups
+- Monitor CLI adaptive polling: Automatically increases polling frequency when UPnP events are not working
+  - Polls every 1 second when playing without UPnP events (instead of relying on stale UPnP data)
+  - Fetches EQ data every 5 seconds when UPnP not working (instead of every 30 seconds)
+
+### Fixed
+- Monitor CLI EQ preset display: Now correctly shows current EQ preset from `get_eq()` API response
+  - Previously showed stale "flat" preset from cached status model
+  - Now reads preset from actual EQ data with fallback to status model
+  - Handles preset name variations (e.g., "hiphop" vs "hip-hop")
+- Monitor CLI input display: Added dedicated Input section showing current input and available inputs
+- StateSynchronizer: Improved metadata handling for Spotify source
+  - Spotify requires UPnP events for metadata as HTTP API does not provide metadata when Spotify is active
+  - Updated documentation and code comments to clarify Spotify metadata dependency on UPnP events
+  - Without UPnP events, Spotify metadata will be unavailable
+
+### Changed
+- **StateSynchronizer metadata handling**: Improved metadata field tracking
+  - Metadata fields (title, artist, album, image_url) are now always present in state (even if None)
+  - Prevents stale metadata from persisting when tracks change
+  - Better synchronization between HTTP and UPnP metadata sources
+- **Player refresh() method**: Enhanced state merging and source management
+  - Cached status_model now reflects merged state from both HTTP and UPnP sources
+  - Automatic source replacement for slaves (multiroom → master name)
+  - Automatic source clearing when device transitions from slave to solo
+  - Better handling of None values in metadata fields
+- Monitor CLI: EQ data is now fetched in all modes (not just TUI mode) for accurate state updates
+- StateSynchronizer: Enhanced metadata priority logic with Spotify-specific handling
+- UPnP integration: Updated position/duration handling documentation
+  - Clarified that UPnP events provide position/duration when track starts (not continuously)
+  - Position is estimated locally during playback with periodic HTTP polling to correct drift
+  - Updated all documentation to reflect correct UPnP event behavior
+
+### Removed
+- Removed deprecated `UpnpEventer.is_upnp_working()` method
+  - Method was fundamentally flawed (UPnP has no heartbeat, can't reliably detect health)
+  - Removed associated unit tests
+  - Updated diagnostics documentation to remove references
+  - Kept practical heuristics (playing-state detection) and resubscription failure detection
+
+## [1.0.22] - 2025-11-14
+
+### Changed
+- `Player.available_sources` now filters out WiFi from input sources list
+- WiFi is excluded as it's not a selectable source (it's the network connection that enables other services)
+- Only selectable input sources (bluetooth, line_in, optical, etc.) are now returned
+
+## [1.0.21] - 2025-11-14
+
+### Added
+- Queue management support via UPnP AVTransport actions:
+  - `Player.add_to_queue(url, metadata="")` - Add URL to end of queue
+  - `Player.insert_next(url, metadata="")` - Insert URL after current track
+  - `Player.play_url(url, enqueue="add|next|replace|play")` - Play URL with optional enqueue support
+- `upnp_client` parameter to `Player.__init__()` for queue management and UPnP operations
+- Comprehensive queue management tests (10 new test cases)
+- Updated Home Assistant integration guide with queue management documentation
+
+### Changed
+- Reduced SSL client certificate loading log level from INFO to DEBUG (expected behavior for Audio Pro devices)
+
+## [1.0.19] - 2025-11-14
+
+### Added
+- Comprehensive unit test coverage improvements:
+  - Added 50+ tests for `player.py` module (coverage increased from 48% to 79%)
+  - Added tests for media metadata properties (duration, position, title, artist, album, image URL)
+  - Added tests for shuffle and repeat mode detection
+  - Added tests for audio output mode properties and available modes
+  - Added tests for device info properties (model, firmware, MAC, UUID)
+  - Added tests for playback methods (play_playlist, play_notification, play_preset, set_source, set_audio_output_mode)
+  - Added tests for EQ methods (set_eq_preset, set_eq_custom, set_eq_enabled)
+  - Added tests for diagnostics collection (comprehensive, with UPnP, with groups, error handling)
+  - Added tests for refresh error handling and media position estimation
+  - Added tests for group operations edge cases
+- All 127 unit tests now passing
+
+### Changed
+- Improved test coverage for critical Player class functionality
+- Enhanced test suite reliability and maintainability
+
+## [1.0.18] - 2025-11-14
+
+### Fixed
+- Fixed scene restoration failure when restoring EQ preset settings
+- EQLoad commands now gracefully handle empty or non-JSON responses (similar to reboot commands)
+- Resolves issue where some devices (e.g., up2stream pro) return invalid JSON for EQLoad:Flat command
+- Scene restoration with media players that include EQ preset state now works correctly
+
+## [1.0.17] - 2025-11-14
+
+### Changed
+- Reorganized README to prioritize CLI tools section (moved after Installation)
+- Added comprehensive Windows-specific installation and usage instructions
+- Added "Getting Started with CLI Tools (Windows)" section with step-by-step guide
+- Enhanced Installation section with Windows prerequisites and PATH configuration notes
+- Improved documentation structure for better user onboarding
+- Discovery logic now separates UPnP description port from HTTP API port
+- Enhanced discovery logging to show both UPnP port and API port for clarity
+- Updated validation to use standard HTTP API port (80) regardless of SSDP discovery port
+
+### Fixed
+- Fixed SSDP discovery to use port 80 for HTTP API instead of UPnP description port (49152)
+- Port 49152 is now correctly recognized as UPnP description port only, not for API calls
+- Discovery now properly validates WiiM devices by connecting to the correct API port
+- Improved protocol priority handling based on discovered protocol (HTTP vs HTTPS)
+
+## [1.0.15] - 2025-11-14
+
+### Added
+- Automated release script (`scripts/release.sh`) for linting, version bumping, and pushing
+- PyPI publishing automation on version tags
+
+### Changed
+- Improved CI workflow with proper formatting, linting, and testing steps
+- Enhanced release process documentation
+
+## [1.0.14] - 2025-01-15
+
+### Fixed
+- Fixed custom EQ command format: Changed from `setEQ:custom:` to `EQSetBand:` (correct LinkPlay API format)
+- Fixed LMS integration test to mark as "not supported" instead of failed when device doesn't support it
+- Fixed f-string linting error in verify_cli.py
+
+### Changed
+- Improved verify CLI test suite:
+  - Removed LED test (no safe read-only test available)
+  - Converted all "skipped" tests to "not_supported" category for clearer results
+  - Removed empty input_list warning (expected behavior)
+  - Better source switching test with playback state handling
+  - All tests now have clear results: Passed, Failed, or Not supported (no skipped tests)
+
+## [1.0.13] - 2025-11-14
+
+### Fixed
+- Fixed SSL context handling in protocol fallback to lazily obtain SSL context when missing
+- Fixed test failures in retry logic tests by allowing protocol probing to continue when SSL context is None
+- Fixed all mypy type checking errors (64 errors resolved)
+- Added proper type annotations for `slave_hosts` lists in role detection and group APIs
+- Fixed `Optional` attribute access with proper `None` checks in base API client
+- Added type casts for JSON responses to satisfy mypy's `no-any-return` checks
+- Fixed type annotations for dictionary variables in UPnP eventer
+- Removed unused `type: ignore` comments throughout codebase
+- Fixed variable redefinition issues in CLI tools
+- Added proper type annotations for SSL context handling
+
+### Changed
+- Improved type safety across the entire codebase
+- Enhanced type checking in CI pipeline (now passes with 0 errors)
+
+## [1.0.10] - 2025-11-13
+
+### Fixed
+- Fixed linting errors: removed unused variables and imports
+- Fixed line length violations in verify_cli.py and test files
+- Fixed f-string formatting issues in integration tests
+- Removed trailing whitespace in documentation strings
+
+## [1.0.9] - 2025-11-13
+
+### Added
+- Comprehensive features documentation in README
+- Detailed CLI tools documentation with usage examples and options
+- Acknowledgments section crediting libraries and resources that provided API information
+- Documentation for all four CLI tools: `wiim-discover`, `wiim-diagnostics`, `wiim-monitor`, `wiim-verify`
+
+### Changed
+- Enhanced README with complete feature list organized by category
+- Expanded CLI tools section with detailed usage instructions, options, and example outputs
+- Improved documentation structure for better discoverability
+
+## [1.0.8] - 2025-11-13
+
+### Added
+- `wiim-monitor` CLI tool for real-time device monitoring
+- Adaptive polling strategy with UPnP event support in monitor tool
+- Real-time playback state, volume, and track information display
+- Device role detection (solo/master/slave) in monitor
+- Statistics tracking for HTTP polls and UPnP events
+
+### Changed
+- Enhanced diagnostics tool with improved data collection
+- Improved verify CLI tool with better error handling and reporting
+- Refined discovery module with better validation and error handling
+- Updated documentation for monitor tool and UPnP setup
+
+### Fixed
+- Improved error handling in CLI tools
+- Better network detection for UPnP callback URLs
+
+## [1.0.7] - 2025-11-13
+
+### Added
+- Hybrid position tracking system for smooth playback position updates
+- Local position estimation during playback (reduces network traffic by 80%)
+- Automatic seek detection and position correction
+- Comprehensive documentation for hybrid position tracking approach
+
+### Changed
+- Polling interval during playback: 1 second → 5 seconds (with hybrid estimation)
+- `media_position` property now uses hybrid estimation for smooth updates
+- Position updates are now continuous (estimated) rather than discrete (polled)
+- Improved position tracking accuracy with automatic drift correction
+
+### Fixed
+- Fixed double-counting bug in UPnP event statistics
+- Position updates now handle seeks and track changes correctly
+- Reduced network overhead during continuous playback
+
+## [1.0.6] - 2025-11-13
+
+### Added
+- `wiim-verify` CLI tool for testing all device features and endpoints
+- Comprehensive feature verification suite with safety constraints (volume max 10%)
+- State save/restore functionality to prevent disruption during testing
+- Feature testing for all device capabilities (playback, volume, source, EQ, presets, etc.)
+
+### Changed
+- Version bumped to 1.0.6
+
+## [1.0.5] - Previous
+
+### Added
+- Device discovery module with SSDP/UPnP and network scanning
+- `wiim-discover` CLI tool for discovering devices
+- Comprehensive discovery documentation
+- `DiscoveredDevice` model for discovered devices
+- Discovery API functions (`discover_devices`, `discover_via_ssdp`, `scan_network`, `validate_device`)
+- Audio Pro response handling module (`api/audio_pro.py`)
+- SSL/TLS context management module (`api/ssl.py`)
+- PEP 561 type marker (`py.typed`)
+
+### Changed
+- Updated public API exports to include discovery functions
+- Enhanced README with discovery tool information
+- Refactored `api/base.py` (reduced from 988 to 755 lines, 24% reduction)
+- Improved error handling with device context in error messages
+- Enhanced type hints across codebase (replaced `Any` with proper types)
+- Added pragma comments for justified large cohesive files
+
+### Fixed
+- Improved error logging with device context (host, model, firmware)
+- Better type safety with proper type hints in key modules
+
+## [1.0.0] - 
+
+### Added
+- Initial release of pywiim library
+- HTTP API client with all mixins (12 API modules)
+- UPnP client and event handling
+- Capability detection system
+- State synchronization
+- Diagnostic tool (`wiim-diagnostics`)
+- Comprehensive test suite
+- Full documentation
+
+[1.0.62]: https://github.com/mjcumming/pywiim/compare/v1.0.61...v1.0.62
+[1.0.61]: https://github.com/mjcumming/pywiim/compare/v1.0.60...v1.0.61
+[1.0.60]: https://github.com/mjcumming/pywiim/compare/v1.0.59...v1.0.60
+[1.0.59]: https://github.com/mjcumming/pywiim/compare/v1.0.55...v1.0.59
+[1.0.55]: https://github.com/mjcumming/pywiim/compare/v1.0.52...v1.0.55
+[1.0.52]: https://github.com/mjcumming/pywiim/compare/v1.0.51...v1.0.52
+[1.0.51]: https://github.com/mjcumming/pywiim/compare/v1.0.50...v1.0.51
+[1.0.50]: https://github.com/mjcumming/pywiim/compare/v1.0.49...v1.0.50
+[1.0.49]: https://github.com/mjcumming/pywiim/compare/v1.0.48...v1.0.49
+[1.0.48]: https://github.com/mjcumming/pywiim/compare/v1.0.47...v1.0.48
+[1.0.47]: https://github.com/mjcumming/pywiim/compare/v1.0.46...v1.0.47
+[1.0.39]: https://github.com/mjcumming/pywiim/compare/v1.0.38...v1.0.39
+[Unreleased]: https://github.com/mjcumming/pywiim/compare/v1.0.62...HEAD
+[1.0.38]: https://github.com/mjcumming/pywiim/compare/v1.0.36...v1.0.38
+[1.0.36]: https://github.com/mjcumming/pywiim/compare/v1.0.35...v1.0.36
+[1.0.35]: https://github.com/mjcumming/pywiim/compare/v1.0.34...v1.0.35
+[1.0.22]: https://github.com/mjcumming/pywiim/compare/v1.0.21...v1.0.22
+[1.0.21]: https://github.com/mjcumming/pywiim/compare/v1.0.19...v1.0.21
+[1.0.19]: https://github.com/mjcumming/pywiim/compare/v1.0.18...v1.0.19
+[1.0.18]: https://github.com/mjcumming/pywiim/compare/v1.0.17...v1.0.18
+[1.0.17]: https://github.com/mjcumming/pywiim/compare/v1.0.16...v1.0.17
+[1.0.16]: https://github.com/mjcumming/pywiim/compare/v1.0.15...v1.0.16
+[1.0.15]: https://github.com/mjcumming/pywiim/compare/v1.0.14...v1.0.15
+[1.0.14]: https://github.com/mjcumming/pywiim/compare/v1.0.13...v1.0.14
+[1.0.13]: https://github.com/mjcumming/pywiim/compare/v1.0.10...v1.0.13
+[1.0.10]: https://github.com/mjcumming/pywiim/compare/v1.0.9...v1.0.10
+[1.0.9]: https://github.com/mjcumming/pywiim/compare/v1.0.8...v1.0.9
+[1.0.8]: https://github.com/mjcumming/pywiim/compare/v1.0.7...v1.0.8
+[1.0.7]: https://github.com/mjcumming/pywiim/compare/v1.0.6...v1.0.7
+[1.0.6]: https://github.com/mjcumming/pywiim/compare/v1.0.5...v1.0.6
+[1.0.5]: https://github.com/mjcumming/pywiim/compare/v1.0.0...v1.0.5
+[1.0.0]: https://github.com/mjcumming/pywiim/releases/tag/v1.0.0
+

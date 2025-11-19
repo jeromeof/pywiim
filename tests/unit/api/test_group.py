@@ -1,0 +1,386 @@
+"""Unit tests for GroupAPI mixin.
+
+Tests multiroom group operations, role detection, and slave management.
+"""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock
+
+import pytest
+
+from pywiim.exceptions import WiiMError
+from pywiim.models import DeviceGroupInfo, DeviceInfo
+
+
+class TestGroupAPIStatus:
+    """Test GroupAPI status methods."""
+
+    @pytest.mark.asyncio
+    async def test_get_multiroom_status(self, mock_client):
+        """Test getting multiroom status."""
+        mock_status = {
+            "multiroom": {
+                "master": "192.168.1.100",
+                "slaves": ["192.168.1.101", "192.168.1.102"],
+            }
+        }
+        mock_client.get_status = AsyncMock(return_value=mock_status)
+        # host is a property from base client
+        type(mock_client).host = "192.168.1.100"
+
+        result = await mock_client.get_multiroom_status()
+
+        assert result == mock_status["multiroom"]
+        assert mock_client._group_master == "192.168.1.100"
+        assert mock_client._group_slaves == ["192.168.1.101", "192.168.1.102"]
+
+    @pytest.mark.asyncio
+    async def test_get_multiroom_status_solo(self, mock_client):
+        """Test getting multiroom status when solo."""
+        mock_status = {"multiroom": {}}
+        mock_client.get_status = AsyncMock(return_value=mock_status)
+        # Mock getSlaveList fallback for solo device
+        mock_client._request = AsyncMock(return_value={"slaves": 0, "slave_list": []})
+        type(mock_client).host = "192.168.1.100"
+
+        result = await mock_client.get_multiroom_status()
+
+        # Solo device returns empty slave list from getSlaveList fallback
+        assert result == {"slaves": 0, "slave_list": []}
+        assert mock_client._group_master is None
+        assert mock_client._group_slaves == []
+
+
+class TestGroupAPIRole:
+    """Test GroupAPI role properties."""
+
+    def test_is_master_true(self, mock_client):
+        """Test is_master property when device is master."""
+        mock_client._group_master = "192.168.1.100"
+        type(mock_client).host = "192.168.1.100"
+
+        assert mock_client.is_master is True
+
+    def test_is_master_false(self, mock_client):
+        """Test is_master property when device is not master."""
+        mock_client._group_master = "192.168.1.101"
+        type(mock_client).host = "192.168.1.100"
+
+        assert mock_client.is_master is False
+
+    def test_is_master_no_group(self, mock_client):
+        """Test is_master property when not in group."""
+        mock_client._group_master = None
+        type(mock_client).host = "192.168.1.100"
+
+        assert mock_client.is_master is False
+
+    def test_is_slave_true(self, mock_client):
+        """Test is_slave property when device is slave."""
+        mock_client._group_master = "192.168.1.101"
+        type(mock_client).host = "192.168.1.100"
+
+        assert mock_client.is_slave is True
+
+    def test_is_slave_false(self, mock_client):
+        """Test is_slave property when device is master."""
+        mock_client._group_master = "192.168.1.100"
+        type(mock_client).host = "192.168.1.100"
+
+        assert mock_client.is_slave is False
+
+    def test_is_slave_no_group(self, mock_client):
+        """Test is_slave property when not in group."""
+        mock_client._group_master = None
+        type(mock_client).host = "192.168.1.100"
+
+        assert mock_client.is_slave is False
+
+    def test_group_master_property(self, mock_client):
+        """Test group_master property."""
+        mock_client._group_master = "192.168.1.101"
+
+        assert mock_client.group_master == "192.168.1.101"
+
+    def test_group_master_property_none(self, mock_client):
+        """Test group_master property when None."""
+        mock_client._group_master = None
+
+        assert mock_client.group_master is None
+
+    def test_group_slaves_property_master(self, mock_client):
+        """Test group_slaves property when master."""
+        mock_client._group_master = "192.168.1.100"
+        mock_client._group_slaves = ["192.168.1.101", "192.168.1.102"]
+        type(mock_client).host = "192.168.1.100"
+
+        assert mock_client.group_slaves == ["192.168.1.101", "192.168.1.102"]
+
+    def test_group_slaves_property_slave(self, mock_client):
+        """Test group_slaves property when slave."""
+        mock_client._group_master = "192.168.1.101"
+        mock_client._group_slaves = ["192.168.1.102"]
+        type(mock_client).host = "192.168.1.100"
+
+        assert mock_client.group_slaves == []
+
+
+class TestGroupAPIOperations:
+    """Test GroupAPI group operations."""
+
+    @pytest.mark.asyncio
+    async def test_create_group(self, mock_client):
+        """Test creating a group."""
+        type(mock_client).host = "192.168.1.100"
+
+        await mock_client.create_group()
+
+        assert mock_client._group_master == "192.168.1.100"
+        assert mock_client._group_slaves == []
+
+    @pytest.mark.asyncio
+    async def test_delete_group(self, mock_client):
+        """Test deleting a group."""
+        mock_client._group_master = "192.168.1.100"
+        mock_client._group_slaves = ["192.168.1.101"]
+        mock_client._request = AsyncMock(return_value={"raw": "OK"})
+
+        await mock_client.delete_group()
+
+        assert mock_client._group_master is None
+        assert mock_client._group_slaves == []
+        mock_client._request.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_delete_group_not_in_group(self, mock_client):
+        """Test deleting group when not in group."""
+        mock_client._group_master = None
+
+        with pytest.raises(RuntimeError, match="Not part of a multiroom group"):
+            await mock_client.delete_group()
+
+    @pytest.mark.asyncio
+    async def test_join_slave(self, mock_client):
+        """Test joining as slave."""
+        master_ip = "192.168.1.101"
+        mock_client._request = AsyncMock(return_value={"raw": "OK"})
+        type(mock_client).host = "192.168.1.100"
+
+        await mock_client.join_slave(master_ip)
+
+        assert mock_client._group_master == master_ip
+        assert mock_client._group_slaves == []
+        mock_client._request.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_leave_group(self, mock_client):
+        """Test leaving a group."""
+        mock_client._group_master = "192.168.1.101"
+        mock_client._group_slaves = []
+        mock_client._request = AsyncMock(return_value={"raw": "OK"})
+
+        await mock_client.leave_group()
+
+        assert mock_client._group_master is None
+        assert mock_client._group_slaves == []
+        mock_client._request.assert_called_once()
+
+
+class TestGroupAPISlaveManagement:
+    """Test GroupAPI slave management methods."""
+
+    @pytest.mark.asyncio
+    async def test_get_slaves(self, mock_client):
+        """Test getting slave list."""
+        mock_response = {
+            "slaves": [
+                {"ip": "192.168.1.101"},
+                {"ip": "192.168.1.102"},
+            ]
+        }
+        mock_client._request = AsyncMock(return_value=mock_response)
+
+        result = await mock_client.get_slaves()
+
+        assert result == ["192.168.1.101", "192.168.1.102"]
+
+    @pytest.mark.asyncio
+    async def test_get_slaves_empty(self, mock_client):
+        """Test getting slave list when empty."""
+        mock_response = {"slaves": []}
+        mock_client._request = AsyncMock(return_value=mock_response)
+
+        result = await mock_client.get_slaves()
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_get_slaves_string_list(self, mock_client):
+        """Test getting slave list with string IPs."""
+        mock_response = {"slaves": ["192.168.1.101", "192.168.1.102"]}
+        mock_client._request = AsyncMock(return_value=mock_response)
+
+        result = await mock_client.get_slaves()
+
+        assert result == ["192.168.1.101", "192.168.1.102"]
+
+    @pytest.mark.asyncio
+    async def test_get_slaves_no_slaves_key(self, mock_client):
+        """Test getting slave list when key missing."""
+        mock_response = {}
+        mock_client._request = AsyncMock(return_value=mock_response)
+
+        result = await mock_client.get_slaves()
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_kick_slave(self, mock_client):
+        """Test kicking a slave."""
+        mock_client._group_master = "192.168.1.100"
+        type(mock_client).host = "192.168.1.100"
+        mock_client._request = AsyncMock(return_value={"raw": "OK"})
+
+        await mock_client.kick_slave("192.168.1.101")
+
+        mock_client._request.assert_called_once()
+        call_args = mock_client._request.call_args[0]
+        assert "multiroom:SlaveKickout:192.168.1.101" in call_args[0]
+
+    @pytest.mark.asyncio
+    async def test_kick_slave_not_master(self, mock_client):
+        """Test kicking slave when not master."""
+        mock_client._group_master = "192.168.1.101"
+        type(mock_client).host = "192.168.1.100"
+
+        with pytest.raises(RuntimeError, match="Not a group master"):
+            await mock_client.kick_slave("192.168.1.102")
+
+    @pytest.mark.asyncio
+    async def test_mute_slave(self, mock_client):
+        """Test muting a slave."""
+        mock_client._group_master = "192.168.1.100"
+        type(mock_client).host = "192.168.1.100"
+        mock_client._request = AsyncMock(return_value={"raw": "OK"})
+
+        await mock_client.mute_slave("192.168.1.101", True)
+
+        mock_client._request.assert_called_once()
+        call_args = mock_client._request.call_args[0]
+        assert "multiroom:SlaveMute:192.168.1.101:1" in call_args[0]
+
+    @pytest.mark.asyncio
+    async def test_unmute_slave(self, mock_client):
+        """Test unmuting a slave."""
+        mock_client._group_master = "192.168.1.100"
+        type(mock_client).host = "192.168.1.100"
+        mock_client._request = AsyncMock(return_value={"raw": "OK"})
+
+        await mock_client.mute_slave("192.168.1.101", False)
+
+        call_args = mock_client._request.call_args[0]
+        assert "multiroom:SlaveMute:192.168.1.101:0" in call_args[0]
+
+    @pytest.mark.asyncio
+    async def test_mute_slave_not_master(self, mock_client):
+        """Test muting slave when not master."""
+        mock_client._group_master = "192.168.1.101"
+        type(mock_client).host = "192.168.1.100"
+
+        with pytest.raises(RuntimeError, match="Not a group master"):
+            await mock_client.mute_slave("192.168.1.102", True)
+
+
+class TestGroupAPIDeviceGroupInfo:
+    """Test GroupAPI device group info methods."""
+
+    @pytest.mark.asyncio
+    async def test_get_device_group_info_master(self, mock_client):
+        """Test getting device group info as master."""
+        mock_status = {
+            "multiroom": {
+                "slaves": [
+                    {"ip": "192.168.1.101"},
+                    {"ip": "192.168.1.102"},
+                ],
+                "slave_count": 2,
+            }
+        }
+        mock_device_info = DeviceInfo(
+            model="WiiM Pro",
+            group="1",
+            master_uuid="master-uuid",
+            master_ip="192.168.1.100",
+        )
+        mock_client.get_status = AsyncMock(return_value=mock_status)
+        mock_client.get_device_info_model = AsyncMock(return_value=mock_device_info)
+        type(mock_client).host = "192.168.1.100"
+
+        result = await mock_client.get_device_group_info()
+
+        assert isinstance(result, DeviceGroupInfo)
+        assert result.role == "master"
+        assert result.master_host == "192.168.1.100"
+        assert len(result.slave_hosts) == 2
+        assert result.slave_count == 2
+
+    @pytest.mark.asyncio
+    async def test_get_device_group_info_slave(self, mock_client):
+        """Test getting device group info as slave."""
+        mock_status = {
+            "multiroom": {
+                "master": "192.168.1.101",
+            }
+        }
+        mock_device_info = DeviceInfo(
+            model="WiiM Pro",
+            group="1",
+            master_uuid="master-uuid",
+            master_ip="192.168.1.101",
+        )
+        mock_client.get_status = AsyncMock(return_value=mock_status)
+        mock_client.get_device_info_model = AsyncMock(return_value=mock_device_info)
+        type(mock_client).host = "192.168.1.100"
+
+        result = await mock_client.get_device_group_info()
+
+        assert isinstance(result, DeviceGroupInfo)
+        assert result.role == "slave"
+        assert result.master_host == "192.168.1.101"
+        assert result.master_uuid == "master-uuid"
+        assert len(result.slave_hosts) == 0
+
+    @pytest.mark.asyncio
+    async def test_get_device_group_info_solo(self, mock_client):
+        """Test getting device group info when solo."""
+        mock_status = {"multiroom": {}}
+        mock_device_info = DeviceInfo(model="WiiM Pro", group="0")
+        mock_client.get_status = AsyncMock(return_value=mock_status)
+        mock_client.get_device_info_model = AsyncMock(return_value=mock_device_info)
+        type(mock_client).host = "192.168.1.100"
+
+        result = await mock_client.get_device_group_info()
+
+        assert isinstance(result, DeviceGroupInfo)
+        assert result.role == "solo"
+        assert result.master_host is None
+        assert len(result.slave_hosts) == 0
+
+    @pytest.mark.asyncio
+    async def test_get_device_group_info_fallback(self, mock_client):
+        """Test getting device group info with fallback to status."""
+        mock_status = {
+            "multiroom": {},
+            "group": "0",
+            "master_uuid": None,
+            "master_ip": None,
+        }
+        mock_client.get_status = AsyncMock(return_value=mock_status)
+        mock_client.get_device_info_model = AsyncMock(side_effect=WiiMError("Failed"))
+        mock_client.host = "192.168.1.100"
+
+        result = await mock_client.get_device_group_info()
+
+        assert isinstance(result, DeviceGroupInfo)
+        assert result.role == "solo"

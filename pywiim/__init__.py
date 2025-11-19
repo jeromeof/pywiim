@@ -1,0 +1,109 @@
+"""Python library for WiiM/LinkPlay device communication.
+
+This library provides a clean, async interface for communicating with WiiM
+and LinkPlay-based audio devices via HTTP API and UPnP.
+
+Example:
+    ```python
+    import asyncio
+    from pywiim import WiiMClient
+
+    async def main():
+        client = WiiMClient("192.168.1.100")
+        device_info = await client.get_device_info_model()
+        print(f"Device: {device_info.name}")
+        await client.close()
+
+    asyncio.run(main())
+    ```
+"""
+
+from __future__ import annotations
+
+from .api.constants import (
+    ALARM_OP_PLAYBACK,
+    ALARM_OP_SHELL,
+    ALARM_OP_STOP,
+    ALARM_TRIGGER_CANCEL,
+    ALARM_TRIGGER_DAILY,
+    ALARM_TRIGGER_MONTHLY,
+    ALARM_TRIGGER_ONCE,
+    ALARM_TRIGGER_WEEKLY,
+    ALARM_TRIGGER_WEEKLY_BITMASK,
+)
+from .backoff import BackoffController
+from .client import WiiMClient
+from .discovery import (
+    DiscoveredDevice,
+    discover_devices,
+    discover_via_ssdp,
+    validate_device,
+)
+from .exceptions import (
+    WiiMConnectionError,
+    WiiMError,
+    WiiMInvalidDataError,
+    WiiMRequestError,
+    WiiMResponseError,
+    WiiMTimeoutError,
+)
+from .group import Group
+from .group_helpers import build_group_state_from_players
+from .models import DeviceInfo, PlayerStatus
+from .normalize import normalize_device_info
+from .player import Player
+from .polling import PollingStrategy, TrackChangeDetector, fetch_parallel
+from .role import RoleDetectionResult, detect_role
+from .state import GroupStateSynchronizer, StateSynchronizer
+
+__version__ = "1.0.89"
+__all__ = [
+    # Main client
+    "WiiMClient",
+    # Player and Group
+    "Player",
+    "Group",
+    # Exceptions
+    "WiiMError",
+    "WiiMRequestError",
+    "WiiMResponseError",
+    "WiiMTimeoutError",
+    "WiiMConnectionError",
+    "WiiMInvalidDataError",
+    # Models
+    "DeviceInfo",
+    "PlayerStatus",
+    # Discovery
+    "DiscoveredDevice",
+    "discover_devices",
+    "discover_via_ssdp",
+    "validate_device",
+    # Backoff
+    "BackoffController",
+    # Normalization
+    "normalize_device_info",
+    # Polling
+    "PollingStrategy",
+    "TrackChangeDetector",
+    "fetch_parallel",
+    # Role Detection
+    "detect_role",
+    "RoleDetectionResult",
+    # Group Helpers
+    "build_group_state_from_players",
+    # State Synchronization
+    "StateSynchronizer",
+    "GroupStateSynchronizer",
+    # Alarm Constants (WiiM only)
+    "ALARM_TRIGGER_CANCEL",
+    "ALARM_TRIGGER_ONCE",
+    "ALARM_TRIGGER_DAILY",
+    "ALARM_TRIGGER_WEEKLY",
+    "ALARM_TRIGGER_WEEKLY_BITMASK",
+    "ALARM_TRIGGER_MONTHLY",
+    "ALARM_OP_SHELL",
+    "ALARM_OP_PLAYBACK",
+    "ALARM_OP_STOP",
+    # Version
+    "__version__",
+]

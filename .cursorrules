@@ -1,0 +1,59 @@
+# Cursor Rules for pywiim
+
+## FIRST: Read This File
+
+**ALWAYS check this rules file FIRST before doing anything.** This file contains critical information about:
+- Project structure (where files go)
+- Environment setup (how to run code)
+- Testing procedures (how to test)
+- Design patterns (how to implement)
+
+## Core Principles
+
+1. **Check the rules file first** - Read this file before implementing, testing, or creating anything.
+
+2. **Follow the design guide** - Always check `docs/design/` for design patterns and API standards before implementing anything.
+
+3. **Follow the API standard** - Implement according to the documented API patterns, not made-up solutions.
+
+4. **Do as asked** - Implement exactly what the user requests, nothing more, nothing less.
+
+5. **Ask if uncertain** - If you don't know what to do or are uncertain about the approach, ASK THE USER before implementing anything.
+
+6. **No made-up solutions** - Do not invent complex logic or "solutions" that aren't explicitly requested. Stick to the design guide and API standards.
+
+## When Implementing
+
+- Check the design guide first (`docs/design/API_DESIGN_PATTERNS.md` and related files)
+- Follow existing patterns in the codebase
+- If the design guide says "do X", do X - don't add extra complexity
+- If you're not sure, ask the user
+
+## Role Detection
+
+- Follow the design guide: `docs/design/API_DESIGN_PATTERNS.md` section "Group Role Logic"
+- Use `get_device_group_info()` which follows: getStatus → check slave → getSlaveList
+- Do not add stability tracking, debouncing, or other complex logic unless explicitly requested
+
+## Environment Setup
+
+- **ALWAYS activate the Python virtual environment first**: `source .venv/bin/activate`
+- The project uses `.venv` for Python dependencies
+- When running Python scripts, use the venv: `source .venv/bin/activate && python3 script.py`
+
+## Network/API Testing
+
+- **HTTPS is the default** - devices use HTTPS, not HTTP
+- When using curl, either:
+  - Use `--insecure` or `-k` to disable certificate checking: `curl -k https://...`
+  - Or use proper certificate handling
+- When testing with Python/pywiim, the library handles HTTPS automatically
+- Remember: We've tested this many times - use HTTPS by default
+
+## File Organization
+
+- **Test files go in `tests/` directory** - Never put test files in the root directory
+- **Scripts go in `scripts/` directory** - Check existing structure before creating files
+- **Check project structure** - Look at existing files to understand where things belong
+- **Don't create files in root** - Unless explicitly requested, files belong in appropriate subdirectories
+

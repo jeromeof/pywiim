@@ -1,0 +1,1828 @@
+# Home Assistant Integration Guide
+
+## Overview
+
+This guide explains how to integrate the `pywiim` library with Home Assistant's `DataUpdateCoordinator` polling pattern. The library provides polling strategy recommendations and helpers that integrate seamlessly with HA's async architecture.
+
+**Recommended Approach**: Use `Player` class for HA integrations. It provides state caching, HTTP + UPnP event synchronization, convenient properties, and full API access via `player.client`.
+
+## Quick Reference
+
+### Key Imports
+
+```python
+from pywiim import (
+    Player,               # High-level API (RECOMMENDED for HA)
+    WiiMClient,           # Low-level API (used by Player)
+    UpnpClient,           # UPnP client (for events and queue)
+    UpnpEventer,          # UPnP event handler
+    PollingStrategy,      # Adaptive polling recommendations
+    TrackChangeDetector,  # Metadata change detection
+    fetch_parallel,      # Parallel execution helper
+)
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+```
+
+### Integration Architecture
+
+```
+HA Coordinator
+    ↓
+Player (State Management + HTTP + UPnP) ──→ Uses WiiMClient
+    ↓
+WiiMClient (HTTP API) ──→ Device
+    ↓
+UpnpEventer (optional, for events) ──→ Uses UpnpClient
+    ↓
+UpnpClient ──→ Device (UPnP)
+```
+
+### When to Use What
+
+| Feature               | Use                      | Notes                             |
+| --------------------- | ------------------------ | --------------------------------- |
+| **Basic polling**     | `Player`                 | State caching + HTTP + UPnP sync  |
+| **UPnP events**       | `UpnpEventer` + `Player` | Player implements apply_diff()    |
+| **Queue management**  | `Player` + `UpnpClient`  | Requires UPnP client              |
+| **Polling strategy**  | `PollingStrategy`        | Adaptive interval recommendations |
+| **Metadata fetching** | `TrackChangeDetector`    | Only fetch on track change        |
+| **Direct API access** | `player.client.*`        | Access all WiiMClient methods     |
+
+## Media Player Service Mapping
+
+### Recommended Service-to-Method Mapping
+
+Map Home Assistant media_player services to pywiim Player methods:
+
+| HA Service | pywiim Method | Notes |
+|------------|---------------|-------|
+| `media_play` | `player.play()` | Raw API call |
+| `media_pause` | `player.pause()` | Raw API call |
+| `media_play_pause` | `player.media_play_pause()` | ✅ **Use this** - handles resume correctly |
+| `media_stop` | `player.stop()` or `player.pause()` | See webradio note below |
+| `media_next_track` | `player.next_track()` | |
+| `media_previous_track` | `player.previous_track()` | |
+
+### Implementation Example
+
+```python
+class WiiMMediaPlayer(MediaPlayerEntity):
+    """WiiM Media Player Entity."""
+
+    async def async_media_play(self) -> None:
+        """Send play command."""
+        player = self.coordinator.data.get("player")
+        await player.play()
+
+    async def async_media_pause(self) -> None:
+        """Send pause command."""
+        player = self.coordinator.data.get("player")
+        await player.pause()
+
+    async def async_media_play_pause(self) -> None:
+        """Toggle play/pause (correctly handles resume)."""
+        player = self.coordinator.data.get("player")
+        await player.media_play_pause()  # ✅ Use convenience method
+
+    async def async_media_stop(self) -> None:
+        """Stop playback."""
+        player = self.coordinator.data.get("player")
+        
+        # Option 1: Simple (document the webradio quirk)
+        await player.stop()
+        
+        # Option 2: Handle webradio specially (better UX)
+        # STREAMING_SOURCES = ['wifi', 'webradio', 'iheartradio', 'pandora', 'tunein']
+        # if player.source and player.source.lower() in STREAMING_SOURCES:
+        #     await player.pause()  # Pause works better for web streams
+        # else:
+        #     await player.stop()
+
+    async def async_media_next_track(self) -> None:
+        """Skip to next track."""
+        player = self.coordinator.data.get("player")
+        await player.next_track()
+
+    async def async_media_previous_track(self) -> None:
+        """Skip to previous track."""
+        player = self.coordinator.data.get("player")
+        await player.previous_track()
+```
+
+### Edge Cases & Device Behavior Quirks
+
+#### Issue #102: Play/Pause Restarts Track
+
+**Problem:** Calling `play()` on a paused streaming track (Amazon Music, Spotify, etc.) restarts the track from the beginning instead of resuming.
+
+**Solution:** Use `player.media_play_pause()` method, which automatically calls `resume()` when paused.
+
+**Implementation:**
+```python
+async def async_media_play_pause(self) -> None:
+    """Toggle play/pause."""
+    player = self.coordinator.data.get("player")
+    await player.media_play_pause()  # ✅ Automatically uses resume() when paused
+```
+
+**Why This Works:** The `media_play_pause()` method checks the current play state and:
+- When paused → calls `resume()` (continues from current position)
+- When playing → calls `pause()`
+- When stopped/idle → calls `play()` (starts fresh)
+
+#### Issues #49, #45: WebRadio Stop Doesn't Work
+
+**Problem:** Calling `stop()` on webradio or WiFi streaming sources doesn't keep the device stopped. It immediately returns to "playing" state.
+
+**Solution Options:**
+
+**Option A (Simple):** Just call `stop()` and document the behavior
+```python
+async def async_media_stop(self) -> None:
+    """Stop playback.
+    
+    Note: Web radio streams may not stay stopped and may resume playing.
+    This is a device firmware limitation.
+    """
+    player = self.coordinator.data.get("player")
+    await player.stop()
+```
+
+**Option B (Better UX):** Detect streaming sources and use `pause()` instead
+```python
+# Define at class level
+STREAMING_SOURCES = ['wifi', 'webradio', 'iheartradio', 'pandora', 'tunein']
+
+async def async_media_stop(self) -> None:
+    """Stop playback."""
+    player = self.coordinator.data.get("player")
+    
+    # Use pause for web streams (stop doesn't work reliably)
+    if player.source and player.source.lower() in STREAMING_SOURCES:
+        await player.pause()
+    else:
+        await player.stop()
+```
+
+**Recommendation:** Start with Option B for better user experience, especially if you have users who listen to web radio frequently.
+
+#### Why These Behaviors Exist
+
+These quirks originate from the underlying LinkPlay firmware and are present across all LinkPlay-based devices (WiiM, Arylic, Audio Pro, etc.). The pywiim library provides:
+- Raw API methods (`play()`, `pause()`, `resume()`, `stop()`) that expose actual device behavior
+- Convenience methods (`media_play_pause()`) that handle the quirks intelligently
+- Clear documentation so you can choose the right approach for your use case
+
+## HA Polling Pattern
+
+Home Assistant uses `DataUpdateCoordinator` to manage polling:
+
+1. **Coordinator Manages Polling**: HA's coordinator framework schedules updates
+2. **Async Methods**: All I/O operations are async and non-blocking
+3. **Dynamic Intervals**: Polling intervals can be adjusted based on device state
+4. **Concurrent Polling**: Many devices can poll simultaneously
+
+## Why Player for HA?
+
+The `Player` class is **recommended** for HA integrations because:
+
+### ✅ StateSynchronizer (HTTP + UPnP Merging)
+
+- Automatically merges HTTP polling data with UPnP events
+- Handles conflicts intelligently (UPnP for real-time, HTTP for metadata)
+- Tracks freshness and source availability
+- No manual merging needed
+
+### ✅ Convenient Properties for Entities
+
+```python
+# With Player - synchronous property access
+volume = player.volume_level  # Already 0.0-1.0
+title = player.media_title
+play_state = player.play_state
+shuffle = player.shuffle  # True/False/None (None for external sources like AirPlay)
+repeat = player.repeat  # 'one'/'all'/'off'/None (None for external sources)
+shuffle_supported = player.shuffle_supported  # Check before using shuffle
+repeat_supported = player.repeat_supported  # Check before using repeat
+eq_preset = player.eq_preset  # EQ preset name
+available_sources = player.available_sources  # List of selectable input sources (smart detection)
+wifi_rssi = player.wifi_rssi  # Signal strength in dBm
+
+# With WiiMClient - manual conversion needed
+status = await client.get_player_status_model()
+volume = status.volume / 100.0  # Manual conversion
+title = status.title
+```
+
+### ✅ Complete High-Level API
+
+```python
+# All common operations are available directly on Player
+multiroom = await player.get_multiroom_status()
+audio_output = await player.get_audio_output_status()
+eq = await player.get_eq()
+eq_presets = await player.get_eq_presets()
+meta_info = await player.get_meta_info()
+
+# Control helpers
+await player.clear_playlist()
+
+# Shuffle and repeat (check support first for external sources)
+if player.shuffle_supported:
+    await player.set_shuffle(True)  # Preserves current repeat state
+if player.repeat_supported:
+    await player.set_repeat("all")  # Preserves current shuffle state ("off", "one", "all")
+# Note: Both methods abstract the low-level setLoopMode command and handle
+# empty/non-JSON responses from devices gracefully.
+# Raises WiiMError for external sources (AirPlay, Bluetooth, etc.)
+await player.set_led(True)
+await player.set_led_brightness(50)
+await player.set_channel_balance(0.0)
+await player.sync_time()
+
+# Bluetooth workflow
+history = await player.get_bluetooth_history()
+await player.connect_bluetooth_device("AA:BB:CC:DD:EE:FF")
+await player.disconnect_bluetooth_device()
+status = await player.get_bluetooth_pair_status()
+devices = await player.scan_for_bluetooth_devices(duration=5)
+
+# Timer and alarm (WiiM only)
+await player.set_sleep_timer(1800)  # Sleep in 30 minutes
+remaining = await player.get_sleep_timer()
+await player.cancel_sleep_timer()
+
+# Alarm clock (3 slots: 0-2)
+from pywiim import ALARM_TRIGGER_DAILY, ALARM_OP_PLAYBACK
+
+await player.set_alarm(
+    alarm_id=0,
+    trigger=ALARM_TRIGGER_DAILY,
+    operation=ALARM_OP_PLAYBACK,
+    time="070000",  # 7:00 AM UTC
+)
+alarm = await player.get_alarm(0)
+alarms = await player.get_alarms()
+await player.delete_alarm(0)
+
+# Connection info
+host = player.host
+port = player.port
+timeout = player.timeout
+```
+
+**Note**: For advanced use cases, you can still access `player.client.*` for methods not yet promoted to Player.
+
+#### Alarm Time Conversion (WiiM only)
+
+Alarm times must be in UTC. For Home Assistant integrations, convert local time to UTC:
+
+```python
+from datetime import datetime
+import pytz
+
+# Convert local time to UTC for alarm
+local_tz = pytz.timezone('America/New_York')
+local_time = local_tz.localize(datetime(2025, 1, 17, 7, 30))
+utc_time = local_time.astimezone(pytz.UTC)
+time_str = utc_time.strftime("%H%M%S")  # "113000" for 7:30 AM EST
+
+await player.set_alarm(
+    alarm_id=0,
+    trigger=ALARM_TRIGGER_DAILY,
+    operation=ALARM_OP_PLAYBACK,
+    time=time_str,
+)
+```
+
+### ✅ Built-in UPnP Event Integration
+
+- `Player` implements `apply_diff()` for `UpnpEventer`
+- StateSynchronizer automatically merges UPnP events with HTTP polling
+- No manual state merging required
+
+### ✅ Group Management
+
+- Built-in `Group` object support
+- Role computed from group membership
+- Group operations available
+
+## Basic Integration Pattern
+
+### 1. Initialize Coordinator with Player
+
+```python
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from pywiim import Player, WiiMClient, PollingStrategy
+from datetime import timedelta
+import asyncio
+import time
+
+class WiiMCoordinator(DataUpdateCoordinator):
+    def __init__(self, hass, host):
+        # Initialize coordinator with default interval
+        super().__init__(
+            hass,
+            logger,
+            name=f"WiiM {host}",
+            update_interval=timedelta(seconds=5),  # Default, will adapt
+        )
+
+        # Create library client with HA's shared session
+        session = async_get_clientsession(hass)
+        client = WiiMClient(host=host, session=session)
+
+        # Create Player (wraps client with state management)
+        self.player = Player(client)
+
+        # Detect capabilities and create polling strategy
+        # Note: This is async, so do it in async_setup_entry or first update
+        self._capabilities = {}
+        self._polling_strategy = None
+        self._strategy_initialized = False
+```
+
+### 2. Initialize Polling Strategy (Async)
+
+```python
+async def async_setup_coordinator(self):
+    """Initialize coordinator with capabilities and polling strategy."""
+    # Detect device capabilities via client
+    self._capabilities = await self.player.client._detect_capabilities()
+
+    # Create polling strategy
+    self._polling_strategy = PollingStrategy(self._capabilities)
+    self._strategy_initialized = True
+
+    # Track last fetch times for conditional polling
+    self._last_device_info_check = 0
+    self._last_multiroom_check = 0
+    self._last_eq_info_check = 0
+    self._last_audio_output_check = 0
+```
+
+### 3. Implement Adaptive Polling with Player
+
+```python
+async def _async_update_data(self):
+    """HA calls this method at the update_interval."""
+    # Initialize strategy on first update if needed
+    if not self._strategy_initialized:
+        await self.async_setup_coordinator()
+
+    # Refresh player state (updates cache and StateSynchronizer)
+    try:
+        await self.player.refresh()
+    except Exception as e:
+        logger.warning("Failed to refresh player state: %s", e)
+        # Return cached data if available
+        if self.data:
+            return self.data
+        # Or raise UpdateFailed to trigger HA's retry logic
+        raise UpdateFailed(f"Error communicating with device: {e}")
+
+    # Get current state for adaptive polling (from cached properties)
+    role = self.player.role if self.player.group else "solo"
+    is_playing = self.player.play_state in ("play", "playing")
+
+    # Get recommended polling interval from library
+    interval = self._polling_strategy.get_optimal_interval(role, is_playing)
+
+    # Update HA's polling interval dynamically
+    if self.update_interval.total_seconds() != interval:
+        self.update_interval = timedelta(seconds=interval)
+        logger.debug("Updated polling interval to %s seconds", interval)
+
+    # Build fetch tasks for additional data (conditional fetching)
+    now = time.time()
+    fetch_tasks = []
+
+    # Device info (every 60s) - use cached if recent
+    if self._polling_strategy.should_fetch_device_info(self._last_device_info_check, now):
+        fetch_tasks.append(self.player.get_device_info())
+        self._last_device_info_check = now
+
+    # Multiroom info (every 15s)
+    if self._polling_strategy.should_fetch_multiroom(self._last_multiroom_check, now):
+        fetch_tasks.append(self.player.get_multiroom_status())
+        self._last_multiroom_check = now
+
+    # EQ info (every 60s, if supported)
+    eq_supported = self._capabilities.get("supports_eq", None)
+    if self._polling_strategy.should_fetch_eq_info(
+        self._last_eq_info_check, eq_supported, now
+    ):
+        fetch_tasks.append(self.player.get_eq())
+        # Also fetch EQ presets list (returns list of preset names)
+        fetch_tasks.append(self.player.get_eq_presets())
+        self._last_eq_info_check = now
+
+    # Audio output (every 15s, if supported)
+    audio_output_supported = self._capabilities.get("supports_audio_output", None)
+    if self._polling_strategy.should_fetch_audio_output(
+        self._last_audio_output_check, audio_output_supported, now
+    ):
+        fetch_tasks.append(self.player.get_audio_output_status())
+        self._last_audio_output_check = now
+
+    # Execute additional fetches in parallel (if any)
+    additional_data = {}
+    if fetch_tasks:
+        results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+
+        # Process results in order they were added to fetch_tasks
+        result_idx = 0
+
+        # Device info (if fetched)
+        if self._polling_strategy.should_fetch_device_info(self._last_device_info_check - 60, now):
+            device_info = results[result_idx] if not isinstance(results[result_idx], Exception) else None
+            if device_info:
+                additional_data["device_info"] = device_info
+            result_idx += 1
+
+        # Multiroom (if fetched)
+        if self._polling_strategy.should_fetch_multiroom(self._last_multiroom_check - 15, now):
+            multiroom = results[result_idx] if not isinstance(results[result_idx], Exception) else None
+            if multiroom:
+                additional_data["multiroom"] = multiroom
+            result_idx += 1
+
+        # EQ info (if fetched) - two results: get_eq() and get_eq_presets()
+        if self._polling_strategy.should_fetch_eq_info(self._last_eq_info_check - 60, eq_supported, now):
+            eq_status = results[result_idx] if not isinstance(results[result_idx], Exception) else None
+            eq_presets = results[result_idx + 1] if result_idx + 1 < len(results) and not isinstance(results[result_idx + 1], Exception) else None
+            if eq_presets is not None:
+                additional_data["eq_presets"] = eq_presets  # List of preset names (list[str])
+            result_idx += 2
+
+        # Audio output (if fetched)
+        if self._polling_strategy.should_fetch_audio_output(self._last_audio_output_check - 15, audio_output_supported, now):
+            audio_output = results[result_idx] if not isinstance(results[result_idx], Exception) else None
+            if audio_output:
+                additional_data["audio_output"] = audio_output
+            result_idx += 1
+
+    # Return data dict for entities (use Player properties)
+    return {
+        # Player state (from cached properties - already refreshed)
+        "player": self.player,  # Pass Player object for entity access
+        "volume_level": self.player.volume_level,
+        "is_muted": self.player.is_muted,
+        "play_state": self.player.play_state,
+        "media_title": self.player.media_title,
+        "media_artist": self.player.media_artist,
+        "media_album": self.player.media_album,
+        "media_image_url": self.player.media_image_url,
+        "media_position": self.player.media_position,
+        "media_duration": self.player.media_duration,
+        "source": self.player.source,
+        "available_sources": self.player.available_sources,  # List of selectable input sources (smart detection)
+        "shuffle": self.player.shuffle,
+        "repeat": self.player.repeat,
+        "eq_preset": self.player.eq_preset,
+        "wifi_rssi": self.player.wifi_rssi,
+        "role": role,
+        # Additional data from conditional fetching
+        **additional_data,
+    }
+```
+
+**Note on `available_sources` and `eq_presets`:**
+
+- **`available_sources`**: Returns user-selectable physical inputs plus the current source (when active):
+
+  - **Always included**: Physical/hardware sources (Bluetooth, USB, Line In, Optical, Coax, AUX, HDMI) - user-selectable
+  - **Conditionally included**: Current source (when active) - includes streaming services and multi-room follower sources. NOT user-selectable but included for correct UI state display
+  - **NOT included**: Inactive streaming services - can't be manually selected and aren't currently playing
+  - **Always excluded**: WiFi (it's the network connection, not a selectable source)
+  
+  This filtering shows only physical inputs that users can manually select, plus the current source if it's not a physical input (e.g., AirPlay, Spotify, or a multi-room follower name like "Master Bedroom"). This ensures Home Assistant's dropdown shows selectable options while correctly displaying the current state. You can directly use `player.available_sources` without additional filtering.
+
+- **`eq_presets`**: List of available EQ preset names from `get_eq_presets()` (e.g., `["Flat", "Rock", "Jazz", ...]`). Fetched every 60 seconds when EQ is supported.
+
+## Advanced Patterns
+
+### Track Change Detection for Metadata
+
+```python
+from pywiim import TrackChangeDetector
+
+class WiiMCoordinator(DataUpdateCoordinator):
+    def __init__(self, hass, host):
+        # ... initialization ...
+        self._track_detector = TrackChangeDetector()
+
+    async def _async_update_data(self):
+        # Refresh player state
+        await self.player.refresh()
+
+        # Check if track changed (for metadata fetching)
+        # Note: track_changed() parameter is named 'artwork' but accepts cover_url field
+        # Note: Artwork URLs are automatically retrieved from getMetaInfo when missing
+        #       from getPlayerStatusEx - no manual fetching needed for artwork
+        track_changed = self._track_detector.track_changed(
+            self.player.media_title,
+            self.player.media_artist,
+            self.player.source,
+            self.player.media_image_url,  # Passed as 'artwork' parameter
+        )
+
+        # Fetch metadata only on track change (for additional metadata like audio quality)
+        # Artwork URL is already included in player.media_image_url automatically
+        metadata_supported = self._capabilities.get("supports_metadata", None)
+        if self._polling_strategy.should_fetch_metadata(track_changed, metadata_supported):
+            try:
+                metadata = await self.player.get_meta_info()
+            except Exception:
+                metadata = None
+        else:
+            metadata = self.data.get("metadata") if self.data else None
+
+        return {
+            # ... player state ...
+            "metadata": metadata,
+        }
+```
+
+### Parallel Execution Helper
+
+```python
+from pywiim import fetch_parallel
+
+async def _async_update_data(self):
+    # Refresh player state first
+    await self.player.refresh()
+
+    # Build additional fetch tasks
+    tasks = [
+        self.player.get_device_info(),
+        self.player.get_multiroom_status(),
+    ]
+
+    # Execute in parallel with error handling
+    results = await fetch_parallel(*tasks, return_exceptions=True)
+
+    # Process results
+    device_info = results[0] if not isinstance(results[0], Exception) else None
+    multiroom = results[1] if not isinstance(results[1], Exception) else {}
+```
+
+## Polling Interval Recommendations
+
+The library's `PollingStrategy` provides these recommendations:
+
+| Device State | WiiM Devices | Legacy Devices |
+| ------------ | ------------ | -------------- |
+| **Playing**  | 5 seconds    | 3 seconds      |
+| **Idle**     | 5 seconds    | 15 seconds     |
+| **Slave**    | 5 seconds    | 10 seconds     |
+
+**Note:** Modern WiiM devices use a hybrid position estimation approach where position is estimated locally and corrected via periodic polls. This allows for less frequent polling (5 seconds) while maintaining smooth position updates. The previous 1-second interval is no longer needed.
+
+These intervals are automatically recommended based on:
+
+- Device capabilities (WiiM vs Legacy)
+- Device role (master/slave/solo)
+- Playback state (playing vs idle)
+
+## Conditional Fetching Intervals
+
+| Data Type         | Interval        | Trigger                                   |
+| ----------------- | --------------- | ----------------------------------------- |
+| **Player Status** | Always          | Every poll cycle (via `player.refresh()`) |
+| **Device Info**   | 60 seconds      | Health check                              |
+| **Multiroom**     | 15 seconds      | + Activity triggers                       |
+| **EQ Info**       | 60 seconds      | If supported                              |
+| **Audio Output**  | 15 seconds      | If supported                              |
+| **Metadata**      | On track change | Only if supported                         |
+
+## Error Handling
+
+```python
+async def _async_update_data(self):
+    try:
+        # Refresh player state
+        await self.player.refresh()
+    except Exception as e:
+        logger.warning("Failed to update: %s", e)
+
+        # Return cached data if available (Player caches state)
+        if self.data:
+            return self.data
+
+        # Or raise UpdateFailed to trigger HA's retry logic
+        raise UpdateFailed(f"Error communicating with device: {e}")
+
+    # Return data using Player properties
+    return {
+        "player": self.player,
+        "volume_level": self.player.volume_level,
+        # ... other properties ...
+    }
+```
+
+## HTTP Client Session Management
+
+### HA Provides HTTP Session Helper
+
+Home Assistant provides `async_get_clientsession(hass)` from `homeassistant.helpers.aiohttp_client` which returns a shared aiohttp `ClientSession` for connection pooling and resource management.
+
+**Usage in Integration:**
+
+```python
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+session = async_get_clientsession(hass)
+client = WiiMClient(host="192.168.1.100", session=session)
+player = Player(client)  # Player uses the client with shared session
+```
+
+**Library Support:**
+
+- ✅ Library supports this via optional `session` parameter in `WiiMClient.__init__()`
+- ✅ If no session provided, library creates its own `aiohttp.ClientSession`
+- ✅ This allows HA integration to use HA's shared session for connection pooling
+- ✅ Library remains framework-agnostic (works without HA session)
+
+## UPnP Client Setup for Events and Queue Management
+
+The UPnP client is used for two purposes:
+
+1. **Event Subscriptions** (via `UpnpEventer`) - Real-time state updates
+2. **Queue Management** (via `Player`) - Adding/inserting items to playback queue
+
+**Setup Pattern:**
+
+```python
+from pywiim import Player, WiiMClient, UpnpClient, UpnpEventer
+
+class WiiMCoordinator(DataUpdateCoordinator):
+    async def async_setup(self):
+        # Create HTTP client
+        session = async_get_clientsession(self.hass)
+        client = WiiMClient(host=self.host, session=session)
+
+        # Get device info for UUID
+        device_info = await client.get_device_info_model()
+
+        # Create UPnP client (required for events and queue management)
+        description_url = f"http://{self.host}:49152/description.xml"
+        self.upnp_client = await UpnpClient.create(
+            self.host,
+            description_url,
+        )
+
+        # Create Player with UPnP client (for queue management + events)
+        self.player = Player(
+            client,
+            upnp_client=self.upnp_client,
+        )
+
+        # Create UpnpEventer with same UPnP client (for real-time events)
+        self.eventer = UpnpEventer(
+            self.upnp_client,  # Share same UPnP client
+            self.player,  # Player implements apply_diff() for state updates
+            device_info.uuid,
+            state_updated_callback=self._on_upnp_event,
+        )
+
+        # Start UPnP event subscriptions
+        await self.eventer.start()
+
+    def _on_upnp_event(self):
+        """Called when UPnP event received."""
+        # Player's StateSynchronizer automatically merges UPnP event
+        # Trigger coordinator update to refresh entity state
+        self.async_update_listeners()
+```
+
+**Key Points:**
+
+- ✅ **One UPnP client shared** between `UpnpEventer` (events) and `Player` (queue)
+- ✅ **Player implements apply_diff()** - StateSynchronizer merges UPnP events with HTTP polling
+- ✅ **Integration creates UPnP client** - Not HA core, not pywiim
+- ✅ **Lifecycle managed by integration** - Integration owns the UPnP client
+- ✅ **Matches existing HA patterns** - Same as Samsung TV, DLNA DMR integrations
+
+## StateSynchronizer Benefits
+
+The `Player` class uses `StateSynchronizer` to intelligently merge HTTP polling and UPnP events:
+
+### Automatic Conflict Resolution
+
+- **Real-time fields** (play_state, volume): UPnP preferred (more timely)
+- **Position/Duration**: UPnP provides initial values when track starts, then local timer estimates position during playback with periodic HTTP polling to correct drift
+- **Metadata fields** (title, artist, album): HTTP preferred (more complete), **except Spotify** - Spotify requires UPnP events for metadata as HTTP API does not provide it
+- **Artwork URL**: Automatically retrieved from `getMetaInfo` endpoint when missing from `getPlayerStatusEx` - no manual fetching needed
+- **Cover Art Images**: pywiim can fetch and cache cover art images directly - use `player.fetch_cover_art()` or `player.get_cover_art_bytes()` for reliable image serving
+- **Source field**: HTTP preferred (more accurate)
+
+### Freshness Tracking
+
+- Tracks when each field was last updated from each source
+- Considers data "fresh" based on field-specific windows
+- Falls back to available source if one becomes stale
+
+### Source Availability
+
+- Tracks HTTP and UPnP source health
+- Handles cases where one source is unavailable
+- Automatically recovers when source becomes available again
+
+**Result**: You get the best of both worlds - real-time UPnP updates for play_state/volume, UPnP initial position/duration on track start with local timer estimation during playback (periodic HTTP polling corrects drift), reliable HTTP data for metadata (except Spotify), all automatically merged.
+
+## Queue Management
+
+### Overview
+
+Queue management allows adding media to the playback queue instead of replacing the current track. This requires UPnP AVTransport actions, which are only available via the UPnP client.
+
+**Supported Operations:**
+
+- `add_to_queue(url, metadata="")` - Add URL to end of queue
+- `insert_next(url, metadata="")` - Insert URL after current track
+- `play_url(url, enqueue="add|next|replace|play")` - Play URL with optional enqueue support
+
+### Setup
+
+Queue management requires:
+
+1. **UPnP client** - Created by integration (see UPnP Client section above)
+2. **Player with UPnP client** - Pass `upnp_client` to `Player.__init__()`
+
+```python
+# In coordinator setup
+self.upnp_client = await UpnpClient.create(host, description_url)
+self.player = Player(client, upnp_client=self.upnp_client)
+```
+
+### Implementation in Media Player Entity
+
+```python
+from homeassistant.components.media_player import (
+    MediaPlayerEntity,
+    MediaPlayerEnqueue,
+    ATTR_MEDIA_ENQUEUE,
+)
+
+class WiiMMediaPlayer(MediaPlayerEntity):
+    def __init__(self, coordinator):
+        self.coordinator = coordinator
+        self._attr_supported_features = (
+            MediaPlayerEntityFeature.PLAY_MEDIA
+            | MediaPlayerEntityFeature.MEDIA_ENQUEUE  # Enable queue support
+            # Note: Shuffle/repeat features can be dynamic based on source
+            # See "Source-Aware Shuffle and Repeat Control" section
+            | MediaPlayerEntityFeature.SHUFFLE_SET  # May not work for AirPlay, Bluetooth, etc.
+            | MediaPlayerEntityFeature.REPEAT_SET  # May not work for AirPlay, Bluetooth, etc.
+            | ...  # other features
+        )
+
+    async def async_play_media(
+        self,
+        media_type: str,
+        media_id: str,
+        **kwargs: Any,
+    ) -> None:
+        """Play media with optional enqueue support."""
+        enqueue: MediaPlayerEnqueue | None = kwargs.get(ATTR_MEDIA_ENQUEUE)
+
+        if enqueue and enqueue != MediaPlayerEnqueue.REPLACE:
+            # Use queue management (requires UPnP client)
+            if not self.coordinator.player._upnp_client:
+                raise HomeAssistantError(
+                    "Queue management requires UPnP client. "
+                    "Ensure UPnP is properly configured."
+                )
+
+            if enqueue == MediaPlayerEnqueue.ADD:
+                await self.coordinator.player.add_to_queue(media_id)
+            elif enqueue == MediaPlayerEnqueue.NEXT:
+                await self.coordinator.player.insert_next(media_id)
+            elif enqueue == MediaPlayerEnqueue.PLAY:
+                # Play immediately (uses HTTP API)
+                await self.coordinator.player.play_url(media_id)
+        else:
+            # Default: replace current (HTTP API)
+            await self.coordinator.player.play_url(media_id)
+```
+
+### Error Handling
+
+Queue management methods will raise `WiiMError` if:
+
+- UPnP client is not available
+- UPnP AVTransport service is not available
+- Device doesn't support queue operations
+
+**Best Practice:** Check for UPnP client availability before enabling queue features:
+
+```python
+# In entity setup
+if coordinator.player._upnp_client:
+    self._attr_supported_features |= MediaPlayerEntityFeature.MEDIA_ENQUEUE
+```
+
+## Source-Aware Shuffle and Repeat Control
+
+### Overview
+
+Shuffle and repeat modes can only be controlled when the WiiM device itself controls playback. For external sources like AirPlay, Bluetooth, and streaming services, these modes are controlled by the source device/app, not the WiiM device.
+
+### New Properties (v1.0.71+)
+
+```python
+# Check if shuffle/repeat can be controlled
+if player.shuffle_supported:
+    # Device controls shuffle - show controls
+    shuffle_state = player.shuffle_state  # bool | None
+else:
+    # External source controls shuffle - hide or disable controls
+    shuffle_state = None  # Always None for unsupported sources
+
+if player.repeat_supported:
+    # Device controls repeat - show controls
+    repeat_mode = player.repeat_mode  # "one" | "all" | "off" | None
+else:
+    # External source controls repeat - hide or disable controls
+    repeat_mode = None  # Always None for unsupported sources
+```
+
+### Source Classification
+
+**Device-Controlled Sources** (shuffle/repeat work):
+- `usb` - Local USB storage
+- `line_in`, `optical`, `coaxial` - Physical inputs  
+- `playlist` - Device playlists
+- `preset` - Saved presets
+- `http` - HTTP streaming
+
+**External-Controlled Sources** (shuffle/repeat DON'T work):
+- `airplay` - iOS/macOS controls
+- `bluetooth` - Source device controls
+- `dlna` - Source app controls
+- `spotify`, `tidal`, `amazon`, `qobuz`, `deezer` - Streaming app controls
+- `iheartradio`, `pandora`, `tunein` - Radio app controls
+- `multiroom` - Slave device, can't control
+
+### Implementation in Media Player Entity
+
+```python
+class WiiMMediaPlayer(MediaPlayerEntity):
+    def __init__(self, coordinator):
+        self.coordinator = coordinator
+        # Only add shuffle/repeat features if device supports them
+        self._attr_supported_features = self._get_supported_features()
+
+    def _get_supported_features(self) -> int:
+        """Get supported features based on current state."""
+        features = (
+            MediaPlayerEntityFeature.PLAY_MEDIA
+            | MediaPlayerEntityFeature.PAUSE
+            | MediaPlayerEntityFeature.VOLUME_SET
+            # ... other always-supported features
+        )
+        
+        player = self.coordinator.data.get("player")
+        if not player:
+            return features
+        
+        # Dynamically add shuffle/repeat based on source
+        if player.shuffle_supported:
+            features |= MediaPlayerEntityFeature.SHUFFLE_SET
+        if player.repeat_supported:
+            features |= MediaPlayerEntityFeature.REPEAT_SET
+        
+        return features
+
+    @property
+    def supported_features(self) -> int:
+        """Return supported features (dynamic based on source)."""
+        return self._get_supported_features()
+
+    @property
+    def shuffle(self) -> bool | None:
+        """Shuffle state, or None if not controlled by device."""
+        player = self.coordinator.data.get("player")
+        if not player:
+            return None
+        return player.shuffle_state  # None for external sources
+
+    @property
+    def repeat(self) -> str | None:
+        """Repeat mode ('one', 'all', 'off'), or None if not controlled by device."""
+        player = self.coordinator.data.get("player")
+        if not player:
+            return None
+        return player.repeat_mode  # None for external sources
+
+    async def async_set_shuffle(self, shuffle: bool) -> None:
+        """Set shuffle mode.
+        
+        Raises WiiMError if shuffle cannot be controlled on current source.
+        """
+        player = self.coordinator.data.get("player")
+        if not player:
+            return
+        
+        try:
+            await player.set_shuffle(shuffle)
+            # State updates automatically via callback
+        except WiiMError as e:
+            # Handle error - source doesn't support shuffle
+            _LOGGER.warning("Cannot set shuffle: %s", e)
+            raise HomeAssistantError(str(e))
+
+    async def async_set_repeat(self, repeat: str) -> None:
+        """Set repeat mode.
+        
+        Raises WiiMError if repeat cannot be controlled on current source.
+        """
+        player = self.coordinator.data.get("player")
+        if not player:
+            return
+        
+        try:
+            await player.set_repeat(repeat)
+            # State updates automatically via callback
+        except WiiMError as e:
+            # Handle error - source doesn't support repeat
+            _LOGGER.warning("Cannot set repeat: %s", e)
+            raise HomeAssistantError(str(e))
+```
+
+### Alternative: Static Features with Error Handling
+
+If you prefer to always show shuffle/repeat controls:
+
+```python
+class WiiMMediaPlayer(MediaPlayerEntity):
+    def __init__(self, coordinator):
+        # Always include shuffle/repeat features
+        self._attr_supported_features = (
+            MediaPlayerEntityFeature.SHUFFLE_SET
+            | MediaPlayerEntityFeature.REPEAT_SET
+            | ...
+        )
+
+    @property
+    def shuffle(self) -> bool | None:
+        """Shuffle state, or None if not available."""
+        player = self.coordinator.data.get("player")
+        if not player:
+            return None
+        # Returns None for AirPlay, Bluetooth, etc.
+        return player.shuffle_state
+
+    async def async_set_shuffle(self, shuffle: bool) -> None:
+        """Set shuffle mode."""
+        player = self.coordinator.data.get("player")
+        if not player:
+            return
+        
+        try:
+            await player.set_shuffle(shuffle)
+        except WiiMError:
+            # Silently ignore - controls will appear disabled when None
+            pass
+```
+
+### Behavior Summary
+
+| Source Type | `shuffle_supported` | `shuffle_state` | `set_shuffle()` |
+|-------------|---------------------|-----------------|-----------------|
+| USB, Line In, etc. | `True` | `True` / `False` | ✅ Works |
+| AirPlay, Bluetooth | `False` | `None` | ❌ Raises `WiiMError` |
+| Spotify, Tidal | `False` | `None` | ❌ Raises `WiiMError` |
+
+**Why This Design:**
+- External sources (AirPlay, Bluetooth, streaming services) control shuffle/repeat from the source app
+- WiiM device can't control these modes - commands would fail silently or have no effect
+- Returning `None` and raising errors makes this limitation explicit
+- UI can adapt (hide controls, show "N/A", or disable buttons)
+
+**Migration from v1.0.70:**
+- Old: `shuffle_state` returned stale values for AirPlay, Bluetooth, etc.
+- New: `shuffle_state` returns `None` for external sources
+- Check `shuffle_supported` before showing controls or reading state
+- Catch `WiiMError` from `set_shuffle()` / `set_repeat()` for external sources
+
+## Accessing Player Properties in Entities
+
+The `Player` class provides convenient properties for entity state:
+
+```python
+class WiiMMediaPlayer(MediaPlayerEntity):
+    @property
+    def volume_level(self) -> float | None:
+        """Volume level of the media player (0..1)."""
+        return self.coordinator.data.get("volume_level")
+
+    @property
+    def is_volume_muted(self) -> bool:
+        """Boolean if volume is currently muted."""
+        return self.coordinator.data.get("is_muted", False)
+
+    @property
+    def state(self) -> str:
+        """Return the state of the device."""
+        play_state = self.coordinator.data.get("play_state")
+        # Map to HA media player states
+        if play_state in ("play", "playing"):
+            return MediaPlayerState.PLAYING
+        elif play_state == "pause":
+            return MediaPlayerState.PAUSED
+        elif play_state == "stop":
+            return MediaPlayerState.IDLE
+        else:
+            return MediaPlayerState.IDLE
+
+    @property
+    def media_title(self) -> str | None:
+        """Title of current playing media."""
+        return self.coordinator.data.get("media_title")
+
+    @property
+    def media_artist(self) -> str | None:
+        """Artist of current playing media."""
+        return self.coordinator.data.get("media_artist")
+
+    @property
+    def media_album_name(self) -> str | None:
+        """Album name of current playing media."""
+        return self.coordinator.data.get("media_album")
+
+    @property
+    def media_image_url(self) -> str | None:
+        """Image url of current playing media."""
+        return self.coordinator.data.get("media_image_url")
+
+    async def async_get_media_image(self) -> tuple[bytes | None, str | None]:
+        """Return image bytes and content type of current playing media.
+        
+        This method fetches cover art directly from pywiim's cache or fetches it
+        if not cached. This provides more reliable cover art than using URLs directly,
+        as pywiim handles caching and can serve images even if original URLs expire.
+        
+        Returns:
+            Tuple of (image_bytes, content_type) or (None, None) if no image available.
+        """
+        player = self.coordinator.data.get("player")
+        if not player:
+            return (None, None)
+        
+        result = await player.fetch_cover_art()
+        if result:
+            return result
+        return (None, None)
+
+    @property
+    def media_position(self) -> int | None:
+        """Position of current playing media in seconds."""
+        return self.coordinator.data.get("media_position")
+
+    @property
+    def media_duration(self) -> int | None:
+        """Duration of current playing media in seconds."""
+        return self.coordinator.data.get("media_duration")
+
+    @property
+    def shuffle(self) -> bool | None:
+        """Shuffle state, or None if not controlled by device.
+        
+        Returns None for external sources (AirPlay, Bluetooth, streaming services).
+        """
+        return self.coordinator.data.get("shuffle")
+
+    @property
+    def repeat(self) -> str | None:
+        """Repeat mode ('one', 'all', 'off'), or None if not controlled by device.
+        
+        Returns None for external sources (AirPlay, Bluetooth, streaming services).
+        """
+        return self.coordinator.data.get("repeat")
+
+    @property
+    def sound_mode(self) -> str | None:
+        """Current sound mode (EQ preset) of the media player."""
+        return self.coordinator.data.get("eq_preset")
+
+    @property
+    def sound_mode_list(self) -> list[str] | None:
+        """List of available sound modes (EQ presets)."""
+        return self.coordinator.data.get("eq_presets")
+
+    @property
+    def source_list(self) -> list[str] | None:
+        """List of available input sources."""
+        return self.coordinator.data.get("available_sources")
+
+    async def async_set_shuffle(self, shuffle: bool) -> None:
+        """Set shuffle mode on the media player.
+        
+        Args:
+            shuffle: True to enable shuffle, False to disable.
+                    Preserves current repeat state automatically.
+        
+        Note: Raises WiiMError for external sources (AirPlay, Bluetooth, etc.)
+              where shuffle is controlled by the source app.
+        """
+        player = self.coordinator.data.get("player")
+        if player:
+            try:
+                await player.set_shuffle(shuffle)
+                # State is automatically updated via on_state_changed callback
+            except WiiMError as e:
+                # Handle error for external sources
+                _LOGGER.warning("Cannot set shuffle: %s", e)
+                raise HomeAssistantError(str(e))
+
+    async def async_set_repeat(self, repeat: str) -> None:
+        """Set repeat mode on the media player.
+        
+        Args:
+            repeat: Repeat mode - "off", "one", or "all".
+                   Preserves current shuffle state automatically.
+        
+        Note: Raises WiiMError for external sources (AirPlay, Bluetooth, etc.)
+              where repeat is controlled by the source app.
+        """
+        player = self.coordinator.data.get("player")
+        if player:
+            try:
+                await player.set_repeat(repeat)
+                # State is automatically updated via on_state_changed callback
+            except WiiMError as e:
+                # Handle error for external sources
+                _LOGGER.warning("Cannot set repeat: %s", e)
+                raise HomeAssistantError(str(e))
+```
+
+## Group Join/Unjoin Operations
+
+### Library Handles Everything Automatically
+
+The `pywiim` library now handles all group operation complexity internally. You just need to:
+
+1. **Set up callback in coordinator** (for entity updates)
+2. **Call the operation** (`join_group()` or `leave_group()`)
+
+The library automatically:
+- ✅ Handles all preconditions (disband groups, create groups, etc.)
+- ✅ Updates state immediately after API success
+- ✅ Calls `on_state_changed` callback to notify coordinator
+
+### Setup: Add Callback to Player
+
+```python
+class WiiMCoordinator(DataUpdateCoordinator):
+    def __init__(self, hass, host):
+        # ... initialization ...
+        
+        # Create Player with callback for automatic coordinator updates
+        self.player = Player(
+            client,
+            on_state_changed=self.async_update_listeners,  # HA will update entities
+        )
+```
+
+### Join Group Implementation
+
+```python
+async def async_join_group(
+    hass: HomeAssistant,
+    slave_entity_id: str,
+    master_entity_id: str,
+) -> None:
+    """Join a player to a group (HA service)."""
+    # Get players
+    slave_player = get_player_for_entity(slave_entity_id)
+    master_player = get_player_for_entity(master_entity_id)
+    
+    # That's it! Library handles everything:
+    # - Disbands joiner's group if it's a master
+    # - Removes joiner from group if it's a slave
+    # - Removes target from group if it's a slave
+    # - Creates group on target if it's solo
+    # - Calls API
+    # - Updates Group objects immediately
+    # - Calls callbacks (which trigger coordinator.async_update_listeners())
+    await slave_player.join_group(master_player)
+```
+
+### Leave Group Implementation
+
+```python
+async def async_leave_group(
+    hass: HomeAssistant,
+    entity_id: str,
+) -> None:
+    """Leave a group (HA service)."""
+    player = get_player_for_entity(entity_id)
+    
+    # That's it! Library handles everything:
+    # - Calls API
+    # - Updates Group objects immediately
+    # - Auto-disbands if master has no slaves
+    # - Calls callbacks (which trigger coordinator.async_update_listeners())
+    await player.leave_group()
+```
+
+### Accessing Group Information in Entities
+
+```python
+@property
+def group_role(self) -> str | None:
+    """Return the current group role."""
+    player = self.coordinator.data.get("player")
+    if not player:
+        return None
+    # Role comes from device API state (SINGLE source of truth)
+    # This is accurate even if Player objects aren't linked
+    return player.role  # "solo", "master", or "slave"
+
+@property
+def group_members(self) -> list[str] | None:
+    """Return list of group member hostnames.
+    
+    Note: This returns Player objects that are linked together via Group.
+    For a master device, this will only include slaves that have been
+    linked by the coordinator (i.e., slave Player objects exist).
+    """
+    player = self.coordinator.data.get("player")
+    if not player or not player.group:
+        return None
+    return [p.host for p in player.group.all_players]
+```
+
+**Important: Role vs Group Objects**
+
+- **`player.role`**: Device's actual role from API state ("solo", "master", or "slave")
+  - Source: Device API via `detect_role()` function
+  - Always accurate, updated during `refresh()`
+  - **This is the SINGLE source of truth for role**
+
+- **`player.group`**: Group object for linking Player objects together
+  - Source: Coordinator links Player objects based on their roles
+  - Used for multi-player operations (volume sync, etc.)
+  - Empty `group.slaves` list doesn't mean device isn't a master
+  
+**Example:**
+```python
+# Device IS a master according to API
+player.is_master  # True
+
+# But Group object may have no linked Player objects yet
+player.group.slaves  # [] (empty if coordinator hasn't linked slaves)
+
+# The coordinator should link slave Player objects when both entities exist
+if player.is_master:
+    # Find slave Player objects and link them
+    for slave_entity_id in find_slave_entities():
+        slave_player = get_player(slave_entity_id)
+        if slave_player.is_slave:
+            player.group.add_slave(slave_player)
+```
+
+### Key Benefits
+
+✅ **No manual precondition handling**: Library handles master/slave/solo transitions automatically
+✅ **No manual refresh needed**: State updates immediately after successful API calls
+✅ **No manual coordinator updates**: Callback handles it automatically  
+✅ **Works regardless of current state**: Join any player to any player - library handles transitions
+
+### How It Works Internally
+
+The library automatically handles all preconditions:
+
+1. **If joiner is MASTER**: Disbands the group first, then joins
+2. **If joiner is SLAVE**: Device leaves current group automatically during join
+3. **If target is SLAVE**: Has target leave its group first
+4. **If target is SOLO**: Creates group on target (device promotes to master automatically)
+
+After successful API call, library immediately:
+- Updates Group objects (add/remove slaves)
+- Calls `on_state_changed` callback on **ALL group members** (not just the two involved players)
+- Ensures all coordinators receive immediate notifications
+- Ensures library state matches device state across all affected players
+
+**No waiting, no polling, no manual refresh needed for ANY player in the group.**
+
+**See also**: 
+- `docs/design/OPERATION_PATTERNS.md` for the general operation pattern
+
+## Player Command Methods - No Manual Refresh Required
+
+All Player command methods (playback control, volume, multiroom, etc.) are designed to work seamlessly with Home Assistant's coordinator pattern. **You should NOT call `async_request_refresh()` after Player commands.**
+
+### How State Updates Work
+
+After calling any Player command method, state updates happen automatically via:
+
+1. **Optimistic State Updates + Callbacks** (immediate, < 1ms)
+   - Player updates cached state optimistically after API call succeeds
+   - Player fires `on_state_changed` callback immediately
+   - Callback triggers `coordinator.async_update_listeners()`
+   - UI updates instantly from cached state (no network delay)
+   - Works for ALL player commands: play/pause, volume, shuffle, repeat, source, EQ, etc.
+
+2. **UPnP Events** (immediate, when available)
+   - Volume changes, play state changes, track changes
+   - Real-time updates with < 1 second latency
+   - Automatically merged with HTTP polling data
+   - Provides confirmation of device state
+
+3. **Coordinator Polling** (5-10 seconds)
+   - Adaptive intervals based on play state
+   - Catches all changes including those without UPnP events
+   - Already debounced by DataUpdateCoordinator
+   - Final fallback for state synchronization
+
+### ✅ Correct: Trust the Coordinator
+
+```python
+async def async_media_play(self) -> None:
+    """Send play command."""
+    player = self.coordinator.data.get("player")
+    await player.play()
+    # That's it! State updates via:
+    # 1. Callback fires immediately (<1ms) - UI updates instantly
+    # 2. UPnP event confirms (immediate)
+    # 3. Next coordinator poll (5-10s)
+
+async def async_set_volume_level(self, volume: float) -> None:
+    """Set volume level."""
+    player = self.coordinator.data.get("player")
+    await player.set_volume(volume)
+    # That's it! State updates via:
+    # 1. Callback fires immediately (<1ms) - UI updates instantly
+    # 2. UPnP event confirms (immediate)
+    # 3. Next coordinator poll (5-10s)
+```
+
+### ❌ Wrong: Manual Refresh After Commands
+
+```python
+async def async_media_play(self) -> None:
+    """Send play command."""
+    player = self.coordinator.data.get("player")
+    await player.play()
+    await self.coordinator.async_request_refresh()  # ❌ Unnecessary!
+    # This causes:
+    # - Extra network call (slow)
+    # - Potential race with UPnP events
+    # - Coordinator already polling
+```
+
+### Multiroom Operations - No Manual Refresh Needed
+
+**Important**: Group operations automatically notify ALL group members via their `on_state_changed` callbacks. You do NOT need to call `async_force_multiroom_refresh()` or `async_request_refresh()` after group operations.
+
+```python
+async def async_join_group(slave_entity_id: str, master_entity_id: str):
+    """Join a player to a group (HA service)."""
+    slave_player = get_player_for_entity(slave_entity_id)
+    master_player = get_player_for_entity(master_entity_id)
+    
+    # That's it! pywiim automatically notifies ALL group members
+    await slave_player.join_group(master_player)
+    # ❌ No async_force_multiroom_refresh() needed!
+    # All coordinators for all group members are notified immediately
+```
+
+**What pywiim does automatically:**
+- Notifies all players in the new group (joiner, master, and all slaves)
+- Notifies all players in the old group if joiner left a different group
+- Ensures all coordinators receive immediate state updates
+- Updates all UIs immediately across all group members
+
+### Performance Benefits
+
+By NOT calling `async_request_refresh()` after commands:
+- ⚡ Commands execute faster (single HTTP call instead of two)
+- 📉 Reduced network traffic
+- 🎯 No race conditions between manual refresh and UPnP events
+- ✅ Coordinator's debouncing works properly
+
+## Alternative: Using WiiMClient Directly
+
+If you prefer direct API access without state caching, you can use `WiiMClient` directly:
+
+```python
+from pywiim import WiiMClient, PollingStrategy
+
+class WiiMCoordinator(DataUpdateCoordinator):
+    def __init__(self, hass, host):
+        # ... initialization ...
+        session = async_get_clientsession(self.hass)
+        self.client = WiiMClient(host=host, session=session)
+
+    async def _async_update_data(self):
+        # Fetch data directly
+        status = await self.client.get_player_status_model()
+        device_info = await self.client.get_device_info_model()
+        multiroom = await self.client.get_multiroom_status()
+
+        # Manual state management
+        return {
+            "status_model": status,
+            "device_info": device_info,
+            "multiroom": multiroom,
+            # Manual property access
+            "volume_level": status.volume / 100.0 if status.volume else None,
+            "is_muted": status.mute,
+            "play_state": status.play_state,
+            # ... etc
+        }
+```
+
+**Note**: This approach requires manual state management, manual HTTP + UPnP merging, and manual property conversion. Using `Player` is recommended for HA integrations.
+
+## Division of Responsibilities: Polling, Updates, and Roles
+
+This section clarifies **who decides what** and **who does what** in the polling architecture, following best practices and design patterns.
+
+### Design Pattern: Strategy Pattern with Framework Control
+
+The architecture follows a **Strategy Pattern** where:
+- **Home Assistant** (framework) controls **when** to poll (scheduling)
+- **pywiim** (library) recommends **what** to poll and **how often** (strategy)
+- **Integration** (coordinator) orchestrates between framework and library
+
+### Responsibility Matrix
+
+| Responsibility | Owner | What They Do |
+|----------------|-------|--------------|
+| **Polling Schedule** | Home Assistant | `DataUpdateCoordinator` schedules when `_async_update_data()` is called |
+| **Polling Interval** | pywiim (recommends) + HA (applies) | `PollingStrategy.get_optimal_interval()` recommends, coordinator applies via `update_interval` |
+| **What to Poll** | pywiim (recommends) + Integration (decides) | `PollingStrategy.should_fetch_*()` methods recommend, coordinator decides to fetch |
+| **State Management** | pywiim | `Player.refresh()` fetches and caches state, `StateSynchronizer` merges HTTP + UPnP |
+| **State Access** | pywiim | `Player` properties provide convenient, normalized state access |
+| **UPnP Events** | pywiim | `UpnpEventer` subscribes to events, `Player.apply_diff()` merges with HTTP state |
+| **Error Handling** | Integration | Coordinator handles exceptions, returns cached data or raises `UpdateFailed` |
+
+### Detailed Breakdown
+
+#### 1. **Polling Schedule (WHEN to Poll)**
+
+**Owner: Home Assistant**
+
+Home Assistant's `DataUpdateCoordinator` is responsible for:
+- Scheduling when `_async_update_data()` is called
+- Managing the polling loop lifecycle
+- Handling retries on failures
+- Coordinating multiple devices (concurrent polling)
+
+```python
+# HA controls the schedule
+class WiiMCoordinator(DataUpdateCoordinator):
+    def __init__(self, hass, host):
+        super().__init__(
+            hass,
+            logger,
+            name=f"WiiM {host}",
+            update_interval=timedelta(seconds=5),  # HA schedules based on this
+        )
+```
+
+**Why HA Controls This:**
+- HA needs to coordinate polling across many integrations
+- HA manages system resources (CPU, network, battery)
+- HA provides retry logic and error recovery
+- HA can pause/resume polling based on system state
+
+#### 2. **Polling Interval (HOW OFTEN to Poll)**
+
+**Owner: pywiim (recommends) + HA (applies)**
+
+The library recommends optimal intervals, but HA applies them:
+
+```python
+# pywiim recommends
+interval = self._polling_strategy.get_optimal_interval(role, is_playing)
+# Returns: 5.0 (WiiM playing), 5.0 (WiiM idle), 3.0 (Legacy playing), etc.
+
+# HA applies the recommendation
+if self.update_interval.total_seconds() != interval:
+    self.update_interval = timedelta(seconds=interval)
+    # HA will now schedule polls at this interval
+```
+
+**Why This Separation:**
+- **pywiim** knows device capabilities and optimal intervals
+- **HA** controls the actual scheduling mechanism
+- **Integration** bridges the two (gets recommendation, applies to HA)
+
+**Best Practice:** Always query the strategy and apply the recommendation. Don't hardcode intervals in the integration.
+
+#### 3. **What to Poll (WHICH Endpoints to Fetch)**
+
+**Owner: pywiim (recommends) + Integration (decides)**
+
+The library provides conditional fetching helpers, but the integration decides what to fetch:
+
+```python
+# pywiim recommends
+if self._polling_strategy.should_fetch_device_info(self._last_device_info_check, now):
+    # Integration decides to fetch
+    fetch_tasks.append(self.player.get_device_info())
+```
+
+**Why This Separation:**
+- **pywiim** knows:
+  - Which endpoints are supported (capability detection)
+  - Optimal fetch intervals (60s for device info, 15s for multiroom, etc.)
+  - When metadata should be fetched (track change detection)
+- **Integration** knows:
+  - What data entities need
+  - How to structure the data dict
+  - When to parallelize fetches
+
+**Best Practice:** Always use `PollingStrategy.should_fetch_*()` methods. Don't hardcode intervals or skip capability checks.
+
+#### 4. **State Management (HOW to Fetch and Cache)**
+
+**Owner: pywiim**
+
+The library handles all state management:
+
+```python
+# Player manages state fetching and caching
+await self.player.refresh()  # Fetches HTTP state, updates cache
+
+# StateSynchronizer merges HTTP + UPnP
+# (happens automatically inside Player)
+```
+
+**What pywiim Does:**
+- Fetches HTTP state via `WiiMClient`
+- Caches state in `Player` object
+- Merges HTTP + UPnP via `StateSynchronizer`
+- Provides convenient properties (`player.volume_level`, `player.media_title`, etc.)
+- Handles position estimation (hybrid approach)
+
+**What Integration Does:**
+- Calls `player.refresh()` when HA schedules a poll
+- Accesses state via `Player` properties
+- Returns data dict for entities
+
+**Best Practice:** Always use `Player.refresh()` for state updates. Don't call `client.get_player_status()` directly.
+
+#### 5. **UPnP Events (Real-time Updates)**
+
+**Owner: pywiim**
+
+The library handles UPnP event subscriptions and merging:
+
+```python
+# Integration creates eventer
+self.eventer = UpnpEventer(
+    self.upnp_client,
+    self.player,  # Player implements apply_diff()
+    device_info.uuid,
+    state_updated_callback=self._on_upnp_event,
+)
+
+# pywiim handles everything else:
+# - Subscribes to UPnP events
+# - Parses LastChange XML
+# - Calls player.apply_diff() to merge with HTTP state
+# - StateSynchronizer resolves conflicts automatically
+```
+
+**What pywiim Does:**
+- Manages UPnP subscriptions
+- Parses UPnP events
+- Merges UPnP events with HTTP state (via `StateSynchronizer`)
+- Handles subscription failures and reconnection
+
+**What Integration Does:**
+- Creates `UpnpClient` and `UpnpEventer`
+- Provides callback to trigger coordinator updates
+- Calls `eventer.start()` to begin subscriptions
+
+**Best Practice:** Let pywiim handle all UPnP event processing. Integration just needs to trigger coordinator updates on events.
+
+### Design Patterns Used
+
+#### 1. **Strategy Pattern**
+- `PollingStrategy` encapsulates polling recommendations
+- Integration uses strategy without knowing implementation details
+- Strategy adapts based on device capabilities and state
+
+#### 2. **Template Method Pattern**
+- HA defines the polling template (`_async_update_data()`)
+- Integration fills in the details (what to fetch, how to structure data)
+- Library provides helpers (`PollingStrategy`, `Player.refresh()`)
+
+#### 3. **Observer Pattern**
+- `UpnpEventer` observes UPnP events
+- `Player` observes state changes (via `on_state_changed` callback)
+- Coordinator observes both and updates entities
+
+#### 4. **State Synchronization Pattern**
+- `StateSynchronizer` merges multiple state sources
+- Conflict resolution based on freshness and priority
+- Graceful degradation when sources unavailable
+
+### Best Practices Summary
+
+#### ✅ DO:
+
+1. **Let HA Control Scheduling**
+   - Use `DataUpdateCoordinator` for polling schedule
+   - Don't create custom polling loops
+
+2. **Use Library Recommendations**
+   - Always query `PollingStrategy.get_optimal_interval()`
+   - Always use `PollingStrategy.should_fetch_*()` methods
+   - Apply recommendations to HA's `update_interval`
+
+3. **Use Player for State**
+   - Always call `player.refresh()` in `_async_update_data()`
+   - Access state via `Player` properties
+   - Don't call `client.get_player_status()` directly
+
+4. **Let Library Handle Merging**
+   - Don't manually merge HTTP + UPnP state
+   - `StateSynchronizer` handles it automatically
+   - Just trigger coordinator updates on UPnP events
+
+5. **Respect Capabilities**
+   - Always check `capabilities` before fetching optional endpoints
+   - Use `PollingStrategy.should_fetch_*()` which respects capabilities
+
+#### ❌ DON'T:
+
+1. **Don't Hardcode Intervals**
+   - Don't hardcode `update_interval = timedelta(seconds=5)`
+   - Always query strategy and apply recommendation
+
+2. **Don't Bypass Player**
+   - Don't call `client.get_player_status()` directly
+   - Don't manually manage state caching
+   - Use `Player.refresh()` and properties
+
+3. **Don't Manually Merge State**
+   - Don't try to merge HTTP + UPnP manually
+   - `StateSynchronizer` handles it automatically
+
+4. **Don't Ignore Capabilities**
+   - Don't fetch endpoints without checking support
+   - Use `PollingStrategy.should_fetch_*()` which checks capabilities
+
+5. **Don't Create Custom Polling Loops**
+   - Don't use `asyncio.create_task()` for polling
+   - Use HA's `DataUpdateCoordinator` framework
+
+### Flow Diagram
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Home Assistant (Framework)                                   │
+│  - Schedules polling via DataUpdateCoordinator              │
+│  - Manages update_interval                                   │
+│  - Handles retries and error recovery                        │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       │ Calls _async_update_data() at interval
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Integration (Coordinator)                                    │
+│  - Orchestrates between HA and pywiim                        │
+│  - Queries PollingStrategy for recommendations              │
+│  - Applies recommendations to HA's update_interval            │
+│  - Decides what to fetch based on strategy recommendations   │
+│  - Structures data dict for entities                         │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       │ Uses Player.refresh() and strategy helpers
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│ pywiim (Library)                                             │
+│  - PollingStrategy: Recommends intervals and what to fetch  │
+│  - Player: Fetches and caches state                         │
+│  - StateSynchronizer: Merges HTTP + UPnP                     │
+│  - UpnpEventer: Subscribes to UPnP events                   │
+│  - WiiMClient: HTTP API calls                                │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       │ HTTP requests and UPnP subscriptions
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│ WiiM Device                                                  │
+│  - HTTP API endpoints                                        │
+│  - UPnP event notifications                                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Key Takeaways
+
+1. **HA Controls WHEN**: Home Assistant schedules polling via `DataUpdateCoordinator`
+2. **pywiim Recommends HOW OFTEN**: `PollingStrategy` recommends optimal intervals
+3. **pywiim Recommends WHAT**: `PollingStrategy.should_fetch_*()` recommends what to fetch
+4. **Integration Orchestrates**: Coordinator bridges HA and pywiim, applies recommendations
+5. **pywiim Manages State**: `Player` handles fetching, caching, and merging
+6. **Separation of Concerns**: Each layer has clear responsibilities
+7. **Framework Agnostic**: pywiim provides recommendations, doesn't control scheduling
+
+This architecture ensures:
+- ✅ Framework independence (pywiim works with any async framework)
+- ✅ Optimal performance (adaptive intervals, conditional fetching)
+- ✅ Maintainability (clear responsibilities, no duplication)
+- ✅ Testability (each layer can be tested independently)
+
+## Summary
+
+1. **Use Player Class**: Recommended for HA integrations - state caching, HTTP + UPnP sync, convenient properties
+2. **StateSynchronizer**: Automatically merges HTTP polling + UPnP events with conflict resolution
+3. **Library Provides Strategy**: `PollingStrategy` recommends optimal intervals
+4. **HA Manages Polling**: `DataUpdateCoordinator` schedules updates
+5. **Dynamic Adaptation**: Intervals adjust based on device state
+6. **Conditional Fetching**: Library helpers optimize API calls
+7. **Seamless Integration**: Works naturally with HA's async architecture
+8. **Session Management**: Use HA's shared session for HTTP, library handles UPnP
+9. **UPnP Client**: Integration creates UPnP client for events and queue management
+10. **Full API Access**: Access all methods via `player.client.*` when needed
+
+## Complete Integration Checklist
+
+### Required Setup
+
+- [ ] Create `WiiMClient` with HA's shared session
+- [ ] Create `Player` with client
+- [ ] Initialize `PollingStrategy` with device capabilities
+- [ ] Implement `_async_update_data()` with `player.refresh()`
+- [ ] Return data using Player properties
+- [ ] Handle errors gracefully (return cached data on transient failures)
+
+### Optional: UPnP Events
+
+- [ ] Create `UpnpClient` using `UpnpClient.create()`
+- [ ] Create `Player` with `upnp_client` parameter
+- [ ] Create `UpnpEventer` with UPnP client and Player
+- [ ] Call `eventer.start()` to begin subscriptions
+- [ ] Handle UPnP event callbacks to trigger coordinator updates
+- [ ] StateSynchronizer automatically merges UPnP events with HTTP polling
+
+### Optional: Queue Management
+
+- [ ] Create `UpnpClient` (can share with `UpnpEventer`)
+- [ ] Create `Player` with `upnp_client` parameter
+- [ ] Implement `async_play_media()` with `ATTR_MEDIA_ENQUEUE` support
+- [ ] Add `MediaPlayerEntityFeature.MEDIA_ENQUEUE` to supported features
+- [ ] Handle `WiiMError` when UPnP client not available
+
+### Optional: Group Join/Unjoin Operations
+
+- [ ] Set `on_state_changed` callback when creating `Player` (for automatic coordinator updates)
+- [ ] Implement `async_join_group()` service (just call `player.join_group()`)
+- [ ] Implement `async_leave_group()` service (just call `player.leave_group()`)
+- [ ] Access group role via `player.role` property (computed from group membership)
+- [ ] Access group members via `player.group.all_players` when in group
+
+**Note**: Library now handles all preconditions, state updates, and callbacks automatically.
+
+## Cover Art Handling
+
+### Direct Image Fetching
+
+pywiim can fetch cover art images directly and cache them, providing more reliable cover art than using URLs directly:
+
+```python
+# In media player entity
+async def async_get_media_image(self) -> tuple[bytes | None, str | None]:
+    """Return image bytes and content type of current playing media."""
+    player = self.coordinator.data.get("player")
+    if not player:
+        return (None, None)
+    
+    result = await player.fetch_cover_art()
+    if result:
+        return result  # (image_bytes, content_type)
+    return (None, None)
+```
+
+**Benefits:**
+- ✅ Handles expired URLs gracefully
+- ✅ Automatic caching (1 hour TTL, max 10 images per player)
+- ✅ Uses client's HTTP session for fetching
+- ✅ More reliable than passing URLs directly to HA
+- ✅ Automatically falls back to WiiM logo when no valid cover art is available
+
+**When to Use:**
+- When cover art URLs from devices expire or become inaccessible
+- When you want to cache images to reduce network requests
+- When you need to serve images via your own HTTP endpoint
+
+**Alternative:** You can still use `player.media_image_url` to get the URL and let HA fetch it directly (simpler, but less reliable if URLs expire).
+
+**Note:** When no valid cover art is available (e.g., web radio stations without artwork), pywiim automatically provides the WiiM logo as a fallback, ensuring a consistent user experience.
+
+## Future Optimizations
+
+1. **UPnP Session Reuse**: Could optimize UPnP client to reuse HTTP session when SSL not needed
+2. **Session Lifecycle**: Could add context manager support for automatic cleanup
+3. **Connection Pooling**: Document best practices for session sharing across devices

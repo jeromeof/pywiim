@@ -1,0 +1,319 @@
+"""Typed Pydantic models for WiiM API payloads.
+
+- Only fields currently used by the library are included.
+- Additional keys can be added incrementally as needed.
+- Field aliases match the WiiM API payload keys for seamless parsing.
+- Models are designed for forward compatibility and robust validation.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
+
+from .state import normalize_play_state
+
+__all__ = [
+    "DeviceInfo",
+    "PlayerStatus",
+    "SlaveInfo",
+    "MultiroomInfo",
+    "TrackMetadata",
+    "EQInfo",
+    "PollingMetrics",
+    "GroupDeviceState",
+    "GroupState",
+    "DeviceGroupInfo",
+]
+
+
+class _WiimBase(BaseModel):
+    """Base class with permissive extra handling for future-proofing.
+
+    Allows unknown fields (extra="allow") and supports population by field name or alias.
+    """
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+
+class DeviceInfo(_WiimBase):
+    """Subset of *getStatusEx* payload required by the library.
+
+    Field aliases correspond to WiiM API keys (e.g., 'DeviceName', 'MAC').
+    Only a subset of fields is included; extend as needed.
+    """
+
+    uuid: str | None = None
+    name: str | None = Field(None, alias="DeviceName")
+    model: str | None = Field(None, alias="project")
+    firmware: str | None = None
+    mac: str | None = Field(None, alias="MAC")
+    ip: str | None = None
+
+    # Extended attributes referenced elsewhere
+    release_date: str | None = Field(None, alias="Release")  # Firmware release date
+    hardware: str | None = None  # Hardware revision/model
+    wmrm_version: str | None = None  # Wiim multiroom version
+    mcu_ver: str | None = None  # MCU firmware version
+    dsp_ver: str | None = None  # DSP firmware version
+    preset_key: int | None = None  # Preset key index
+    group: str | None = None  # Group name or ID
+    master_uuid: str | None = None  # UUID of group master
+    master_ip: str | None = None  # IP of group master
+    version_update: str | None = Field(None, alias="VersionUpdate")  # Available update version
+    latest_version: str | None = Field(None, alias="NewVer")  # Latest firmware version
+    input_list: list[str] | None = Field(
+        None, alias="InputList"
+    )  # Available input sources from device (matches HA integration)
+    plm_support: str | int | None = Field(
+        None, alias="plm_support"
+    )  # Bitmask for physical input sources (plm_support from getStatusEx)
+
+    # ---------------- Validators ----------------
+
+    @field_validator("input_list", mode="before")
+    @classmethod
+    def _normalize_input_list(cls, v: list[str] | str | None) -> list[str] | None:  # noqa: D401
+        """Normalize input_list to always be a list of strings.
+
+        Handles cases where API returns:
+        - List of strings: ["wifi", "bluetooth"]
+        - Comma-separated string: "wifi,bluetooth,line_in"
+        - None or empty: None
+
+        Note: This matches how the Home Assistant integration handles input_list.
+        The HA integration successfully parses InputList from getStatusEx responses.
+        """
+        if v is None:
+            return None
+        if isinstance(v, str):
+            # Handle comma-separated string
+            if not v.strip():
+                return None
+            return [item.strip() for item in v.split(",") if item.strip()]
+        if isinstance(v, list):
+            # Ensure all items are strings
+            return [str(item).strip() for item in v if item]
+        return None
+
+    @classmethod
+    def model_validate(cls, obj: dict[str, Any], **kwargs) -> DeviceInfo:
+        """Override to handle multiple field name variations for input_list.
+
+        The API may return InputList, inputList, input_list, or inputlist.
+        This matches how the Home Assistant integration handles the field.
+        """
+        # Check for various input_list field name variations (matches HA integration)
+        if isinstance(obj, dict):
+            input_list_value = None
+            for key in ["InputList", "inputList", "input_list", "inputlist"]:
+                if key in obj:
+                    input_list_value = obj[key]
+                    break
+
+            # If we found it with a different key, normalize it
+            if input_list_value is not None:
+                # Remove all variations and add back as InputList (our alias)
+                for key in ["InputList", "inputList", "input_list", "inputlist"]:
+                    obj.pop(key, None)
+                obj["InputList"] = input_list_value
+
+        return super().model_validate(obj, **kwargs)
+
+
+class PlayerStatus(_WiimBase):
+    """Subset of *getPlayerStatusEx* payload required by the library.
+
+    Includes playback state, volume, source, position, metadata, and device details.
+    Field aliases correspond to WiiM API keys.
+    """
+
+    play_state: Literal["play", "pause", "stop", "load", "idle"] | None = Field(None, alias="play_status")
+    volume: int | None = Field(None, ge=0, le=100, alias="vol")
+    mute: bool | None = Field(None, alias="mute")
+
+    # Source / mode
+    source: str | None = None  # e.g. "spotify"
+    mode: str | None = Field(None, alias="mode")
+
+    # Position / duration
+    position: int | None = Field(None, alias="position")  # seconds
+    seek: int | None = None  # Some firmwares use "seek"
+    duration: int | None = Field(None, alias="duration")  # seconds
+
+    # Metadata & artwork
+    title: str | None = Field(None, alias="Title")
+    artist: str | None = Field(None, alias="Artist")
+    album: str | None = Field(None, alias="Album")
+
+    # Album / track artwork (populated by coordinator)
+    entity_picture: str | None = None  # Standard HA key used by media-player
+    cover_url: str | None = None  # Alternative field used elsewhere
+
+    # Misc device / stream details
+    eq_preset: str | None = Field(None, alias="eq")
+    wifi_rssi: int | None = Field(None, alias="RSSI")
+    wifi_channel: int | None = Field(None, alias="WifiChannel")
+    loop_mode: int | None = Field(None, alias="loop_mode")
+    play_mode: str | None = Field(None, alias="play_mode")
+
+    # Shuffle and repeat can come from different API fields depending on firmware
+    repeat: str | None = Field(None, alias="repeat")
+    shuffle: str | None = Field(None, alias="shuffle")
+
+    # Group/multiroom fields (sometimes in status payload)
+    group: str | None = None
+    master_uuid: str | None = None
+    master_ip: str | None = None
+    uuid: str | None = None
+
+    # Internal flags – allow underscore alias via extra="allow"
+    _multiroom_mode: bool | None = PrivateAttr(default=None)
+
+    # ---------------- Validators ----------------
+
+    # Keep source casing as-is for proper UI display
+    # (Comparisons should use case-insensitive logic where needed)
+    @field_validator("source", mode="before")
+    @classmethod
+    def _normalize_source(cls, v: str | None) -> str | None:  # noqa: D401
+        return v if isinstance(v, str) else v
+
+    # Normalize play_state using standard normalization (handles "playing"→"play", "paused"→"pause", etc.)
+    @field_validator("play_state", mode="before")
+    @classmethod
+    def _normalize_play_state(cls, v: str | None) -> str | None:  # noqa: D401
+        return normalize_play_state(v)
+
+    # Handle duration field - convert 0 to None for streaming services
+    @field_validator("duration", mode="before")
+    @classmethod
+    def _normalize_duration(cls, v: int | None) -> int | None:  # noqa: D401
+        if v == 0:
+            return None  # Streaming services report 0 duration - treat as unknown
+        return v
+
+    # Handle eq field - convert dictionary to string or None
+    @field_validator("eq_preset", mode="before")
+    @classmethod
+    def _normalize_eq_preset(cls, v: str | dict | None) -> str | None:  # noqa: D401
+        if isinstance(v, dict):
+            # If it's a dictionary like {'eq_enabled': False}, return None
+            return None
+        return v
+
+
+class SlaveInfo(BaseModel):
+    """Represents a slave device in a multiroom group."""
+
+    uuid: str | None = None
+    ip: str  # IP address of the slave device
+    name: str  # Display name of the slave device
+
+
+class MultiroomInfo(BaseModel):
+    """Represents multiroom group information and role."""
+
+    role: Literal["master", "slave", "solo"]
+    slave_list: list[SlaveInfo] = []
+
+
+class TrackMetadata(_WiimBase):
+    """Normalized track metadata returned by metadata helper.
+
+    Includes title, artist, album, artwork, and audio quality information.
+    """
+
+    title: str | None = None
+    artist: str | None = None
+    album: str | None = None
+    entity_picture: str | None = None
+    cover_url: str | None = None
+
+    # Audio quality fields from getMetaInfo response
+    sample_rate: int | None = None
+    bit_depth: int | None = None
+    bit_rate: int | None = None
+
+
+class EQInfo(_WiimBase):
+    """Represents equalizer state & current preset."""
+
+    eq_enabled: bool | None = None
+    eq_preset: str | None = None
+
+
+class PollingMetrics(BaseModel):
+    """Diagnostics about the most recent polling cycle."""
+
+    interval: float  # seconds
+    is_playing: bool
+    api_capabilities: dict[str, bool | None]
+
+
+class GroupDeviceState(BaseModel):
+    """Individual device state within a group.
+
+    Represents the state of a single device (master or slave) in a group,
+    including volume, mute, playback state, and timestamps for freshness tracking.
+    """
+
+    host: str  # Device hostname or IP
+    role: Literal["master", "slave"]
+    volume: float | None = None  # 0.0-1.0
+    mute: bool | None = None
+    play_state: str | None = None
+    position: int | None = None  # seconds
+    duration: int | None = None  # seconds
+    source: str | None = None
+    title: str | None = None
+    artist: str | None = None
+    album: str | None = None
+    last_updated: float | None = None  # Unix timestamp
+
+
+class GroupState(BaseModel):
+    """Complete group state (master + all slaves).
+
+    Represents the synchronized state of a multiroom group, including
+    individual device states and aggregated group-level state.
+    """
+
+    master_host: str
+    slave_hosts: list[str] = []
+
+    # Individual device states
+    master_state: GroupDeviceState
+    slave_states: list[GroupDeviceState] = []
+
+    # Aggregated group state (from master)
+    play_state: str | None = None  # Master's play state (synced to all)
+    position: int | None = None  # Master's position (synced to all)
+    duration: int | None = None  # Master's duration
+    source: str | None = None  # Master's source
+    title: str | None = None  # Master's metadata
+    artist: str | None = None
+    album: str | None = None
+
+    # Group volume/mute (aggregated)
+    volume_level: float | None = None  # MAX volume of any device
+    is_muted: bool | None = None  # ALL devices muted
+
+    # Metadata
+    created_at: float | None = None  # Unix timestamp
+    last_updated: float | None = None  # Unix timestamp
+
+
+class DeviceGroupInfo(BaseModel):
+    """Device's view of its group.
+
+    Represents what a device knows about its group membership, including
+    role, master info, and slave list (if master).
+    """
+
+    role: Literal["solo", "master", "slave"]
+    master_host: str | None = None  # Master IP (if slave or master)
+    master_uuid: str | None = None  # Master UUID (if slave or master)
+    slave_hosts: list[str] = []  # Slave IPs (if master)
+    slave_count: int = 0  # Number of slaves (if master)
