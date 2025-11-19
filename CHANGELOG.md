@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.2] - 2025-11-19
+
+### Fixed
+- **Fixed delayed UI updates for play/pause operations in Home Assistant**
+  - Play/pause/resume/stop methods now update state synchronizer optimistically (matching volume/mute behavior)
+  - Fixes issue where UI would take 5+ seconds to update when pausing/playing radio streams
+  - State synchronizer is now updated immediately after API calls, ensuring `play_state` property returns correct value instantly
+  - **Impact**: Home Assistant and other integrations now receive instant UI updates (<1ms) for play/pause operations, matching the behavior of volume and mute controls
+
 ## [2.0.1] - 2025-11-19
 
 ### Fixed

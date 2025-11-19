@@ -41,6 +41,9 @@ class MediaControl:
         if self.player._status_model:
             self.player._status_model.play_state = "play"
 
+        # Update state synchronizer (for immediate property reads)
+        self.player._state_synchronizer.update_from_http({"play_state": "play"})
+
         # Call callback to notify state change
         if self.player._on_state_changed:
             self.player._on_state_changed()
@@ -57,6 +60,9 @@ class MediaControl:
         # Update cached state immediately (optimistic)
         if self.player._status_model:
             self.player._status_model.play_state = "pause"
+
+        # Update state synchronizer (for immediate property reads)
+        self.player._state_synchronizer.update_from_http({"play_state": "pause"})
 
         # Call callback to notify state change
         if self.player._on_state_changed:
@@ -79,6 +85,9 @@ class MediaControl:
         if self.player._status_model:
             self.player._status_model.play_state = "play"
 
+        # Update state synchronizer (for immediate property reads)
+        self.player._state_synchronizer.update_from_http({"play_state": "play"})
+
         # Call callback to notify state change
         if self.player._on_state_changed:
             self.player._on_state_changed()
@@ -98,6 +107,9 @@ class MediaControl:
         # Update cached state immediately (optimistic)
         if self.player._status_model:
             self.player._status_model.play_state = "stop"
+
+        # Update state synchronizer (for immediate property reads)
+        self.player._state_synchronizer.update_from_http({"play_state": "stop"})
 
         # Call callback to notify state change
         if self.player._on_state_changed:
@@ -169,6 +181,9 @@ class MediaControl:
         # Update cached state immediately (optimistic)
         if self.player._status_model:
             self.player._status_model.position = position
+
+        # Update state synchronizer (for immediate property reads)
+        self.player._state_synchronizer.update_from_http({"position": position})
 
         # Call callback to notify state change
         if self.player._on_state_changed:
