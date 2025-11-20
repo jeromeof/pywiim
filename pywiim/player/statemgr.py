@@ -115,6 +115,25 @@ class StateManager:
         """
         self.player._state_synchronizer.update_from_upnp(data)
 
+        # Update UPnP health tracker with UPnP event data
+        if self.player._upnp_health_tracker:
+            # Convert volume to int (0-100) if it's a float (0.0-1.0)
+            volume = data.get("volume")
+            if isinstance(volume, float) and 0.0 <= volume <= 1.0:
+                volume = int(volume * 100)
+            elif volume is not None:
+                volume = int(volume)
+
+            upnp_state = {
+                "play_state": data.get("play_state"),
+                "volume": volume,
+                "muted": data.get("muted"),
+                "title": data.get("title"),
+                "artist": data.get("artist"),
+                "album": data.get("album"),
+            }
+            self.player._upnp_health_tracker.on_upnp_event(upnp_state)
+
         # Get merged state and update cached models
         # CRITICAL: Always get fresh merged state after UPnP update to ensure
         # properties are updated before callbacks fire
@@ -412,6 +431,25 @@ class StateManager:
 
             self.player._state_synchronizer.update_from_http(status_dict)
 
+            # Update UPnP health tracker with HTTP poll data
+            if self.player._upnp_health_tracker:
+                # Convert volume to int (0-100) if it's a float (0.0-1.0)
+                volume = status_dict.get("volume")
+                if isinstance(volume, float) and 0.0 <= volume <= 1.0:
+                    volume = int(volume * 100)
+                elif volume is not None:
+                    volume = int(volume)
+
+                poll_state = {
+                    "play_state": status_dict.get("play_state"),
+                    "volume": volume,
+                    "muted": status_dict.get("muted"),
+                    "title": status_dict.get("title"),
+                    "artist": status_dict.get("artist"),
+                    "album": status_dict.get("album"),
+                }
+                self.player._upnp_health_tracker.on_poll_update(poll_state)
+
             # Update cached models
             self.player._status_model = status
             if self.player._status_model and self.player._status_model.source == "multiroom":
@@ -612,7 +650,7 @@ class StateManager:
                     self.player._eq_presets = None
 
             # Fetch metadata (audio quality info) if device supports it
-            if self.player.client.capabilities.get("supports_meta_info", False):
+            if self.player.client.capabilities.get("supports_metadata", False):
                 try:
                     metadata = await self.player.client.get_meta_info()
                     self.player._metadata = metadata if metadata else None

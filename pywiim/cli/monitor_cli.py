@@ -338,7 +338,13 @@ class PlayerMonitor:
                 # Refresh player state (HTTP polling)
                 # This automatically updates group state via _synchronize_group_state()
                 _LOGGER.info("HTTP poll #%d (interval: %.1fs)", self.http_poll_count + 1, interval)
-                old_role = self.player.role  # Get role before refresh
+                # Use previous role from last group info if available, otherwise player.role
+                if self.previous_role is not None:
+                    old_role = self.previous_role
+                elif self.last_group_info:
+                    old_role = self.last_group_info.role
+                else:
+                    old_role = self.player.role
                 await self.player.refresh()
                 self.http_poll_count += 1
 
@@ -354,8 +360,13 @@ class PlayerMonitor:
                     }
                     self.upnp_health_tracker.on_poll_update(poll_state)
 
-                # Get role after refresh (player.role is now authoritative)
-                current_role = self.player.role
+                # Get role - use device API state (last_group_info) as authoritative source
+                # This correctly shows master/slave even when Player objects aren't linked
+                if self.last_group_info:
+                    current_role = self.last_group_info.role
+                else:
+                    # Fallback to player.role if group info not available yet
+                    current_role = self.player.role
 
                 # Log position/progress if playing
                 if self.player.play_state in ("play", "playing") and self.player.media_position is not None:
@@ -740,9 +751,44 @@ class PlayerMonitor:
                 bar = "█" * filled + "░" * (bar_width - filled)
 
                 print(f"⏱️  {pos_min:02d}:{pos_sec:02d} / {dur_min:02d}:{dur_sec:02d}  [{bar}] {progress_pct:.1f}%")
+
+            # Audio Quality Info
+            quality_parts = []
+            # Check codec from status model directly as fallback
+            codec = self.player.media_codec
+            if not codec and self.player._status_model:
+                codec = getattr(self.player._status_model, "codec", None)
+            if codec:
+                quality_parts.append(f"Codec: {codec.upper()}")
+            if self.player.media_sample_rate:
+                quality_parts.append(f"{self.player.media_sample_rate} Hz")
+            if self.player.media_bit_depth:
+                quality_parts.append(f"{self.player.media_bit_depth}-bit")
+            if self.player.media_bit_rate:
+                quality_parts.append(f"{self.player.media_bit_rate} kbps")
+
+            if quality_parts:
+                print(f"🎧 {' | '.join(quality_parts)}")
             print()
         else:
             print("🎵 No track information")
+            # Still show audio quality if available, even without track title
+            quality_parts = []
+            # Check codec from status model directly as fallback
+            codec = self.player.media_codec
+            if not codec and self.player._status_model:
+                codec = getattr(self.player._status_model, "codec", None)
+            if codec:
+                quality_parts.append(f"Codec: {codec.upper()}")
+            if self.player.media_sample_rate:
+                quality_parts.append(f"{self.player.media_sample_rate} Hz")
+            if self.player.media_bit_depth:
+                quality_parts.append(f"{self.player.media_bit_depth}-bit")
+            if self.player.media_bit_rate:
+                quality_parts.append(f"{self.player.media_bit_rate} kbps")
+
+            if quality_parts:
+                print(f"🎧 {' | '.join(quality_parts)}")
             print()
 
         # ===== ARTWORK URL =====

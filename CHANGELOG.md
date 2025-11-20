@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.5] - 2025-11-19
+
+### Fixed
+- **Fixed role detection in monitor_cli for devices without player_finder**
+  - monitor_cli now uses `get_device_group_info()` role directly instead of relying on Group object's linked Player instances
+  - Fixes issue where master devices with slaves showed "SOLO" instead of "MASTER" when Player objects aren't linked
+  - **Impact**: monitor_cli now correctly displays device role based on actual device API state
+
+### Changed
+- **Improved monitor_cli role display accuracy**
+  - Role is now determined from device API state (`last_group_info.role`) rather than Group object membership
+  - This ensures accurate role display even when `player_finder` is not provided (standalone monitoring scenarios)
+
 ## [2.0.4] - 2025-11-19
 
 ### Added

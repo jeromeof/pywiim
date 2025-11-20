@@ -651,6 +651,42 @@ class Player(PlayerBase):
         """
         return self._audio_output_status
 
+    @property
+    def upnp_health_status(self) -> dict[str, Any] | None:
+        """UPnP event health statistics.
+
+        Returns health tracking information if UPnP is enabled, None otherwise.
+
+        Returns:
+            Dictionary with health statistics:
+            - is_healthy: bool - Whether UPnP events are working properly
+            - miss_rate: float - Fraction of changes missed (0.0-1.0)
+            - detected_changes: int - Total changes detected by polling
+            - missed_changes: int - Changes polling saw but UPnP didn't
+            - has_enough_samples: bool - Whether enough data for reliable health assessment
+
+            None if UPnP is not enabled or health tracker not available.
+        """
+        return self._properties.upnp_health_status
+
+    @property
+    def upnp_is_healthy(self) -> bool | None:
+        """Whether UPnP events are working properly.
+
+        Returns:
+            True if UPnP is healthy, False if degraded/failed, None if UPnP not enabled.
+        """
+        return self._properties.upnp_is_healthy
+
+    @property
+    def upnp_miss_rate(self) -> float | None:
+        """UPnP event miss rate (0.0 = perfect, 1.0 = all missed).
+
+        Returns:
+            Fraction of changes missed by UPnP (0.0 to 1.0), or None if UPnP not enabled.
+        """
+        return self._properties.upnp_miss_rate
+
 
 # Export Player class
 __all__ = ["Player"]

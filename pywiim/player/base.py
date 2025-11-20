@@ -14,8 +14,10 @@ from ..state import StateSynchronizer
 if TYPE_CHECKING:
     from ..group import Group
     from ..upnp.client import UpnpClient
+    from ..upnp.health import UpnpHealthTracker
 else:
     Group = None
+    UpnpHealthTracker = None
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -69,6 +71,13 @@ class PlayerBase:
         # Cached Bluetooth history (updated via refresh() every 60 seconds)
         self._bluetooth_history: list[dict[str, Any]] = []
         self._last_bt_history_check: float = 0
+
+        # UPnP health tracking (only if UPnP client is provided)
+        self._upnp_health_tracker: UpnpHealthTracker | None = None
+        if upnp_client is not None:
+            from ..upnp.health import UpnpHealthTracker
+
+            self._upnp_health_tracker = UpnpHealthTracker()
 
         # Availability tracking
         self._available: bool = True  # Assume available until proven otherwise

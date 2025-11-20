@@ -484,6 +484,9 @@ async def _async_update_data(self):
         "media_bit_depth": self.player.media_bit_depth,
         "media_bit_rate": self.player.media_bit_rate,
         "media_codec": self.player.media_codec,
+        "upnp_health_status": self.player.upnp_health_status,
+        "upnp_is_healthy": self.player.upnp_is_healthy,
+        "upnp_miss_rate": self.player.upnp_miss_rate,
         "source": self.player.source,
         "available_sources": self.player.available_sources,  # List of selectable input sources (smart detection)
         "shuffle": self.player.shuffle,
@@ -1287,6 +1290,141 @@ async def async_leave_group(
     # - Calls callbacks (which trigger coordinator.async_update_listeners())
     await player.leave_group()
 ```
+
+## Diagnostic Sensors
+
+The library exposes diagnostic information that can be used to create Home Assistant sensors for monitoring device health and UPnP event reliability.
+
+### Available Diagnostic Properties
+
+These properties are available on the `Player` object and can be accessed via the coordinator's data:
+
+- **`upnp_health_status`** (dict | None): Complete health statistics dictionary
+- **`upnp_is_healthy`** (bool | None): Simple health check (True/False/None)
+- **`upnp_miss_rate`** (float | None): Miss rate as fraction (0.0-1.0, where 0.0 = perfect, 1.0 = all missed)
+
+**Note**: These properties are only available when UPnP client is provided to the Player. They return `None` if UPnP is not enabled.
+
+### UPnP Health Sensor
+
+You can create a sensor to monitor UPnP event health:
+
+```python
+from homeassistant.components.sensor import SensorEntity, SensorStateClass
+from homeassistant.const import PERCENTAGE
+
+class WiiMUpnpHealthSensor(SensorEntity):
+    """Sensor for UPnP event health monitoring."""
+
+    def __init__(self, coordinator):
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.entry_id}_upnp_health"
+        self._attr_name = f"{coordinator.player.name or coordinator.player.host} UPnP Health"
+        self._attr_icon = "mdi:network"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the health status as a string."""
+        health_status = self.coordinator.data.get("upnp_health_status")
+        if health_status is None:
+            return "unavailable"  # UPnP not enabled
+        return "healthy" if health_status.get("is_healthy") else "degraded"
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        """Return the unit of measurement."""
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional state attributes."""
+        health_status = self.coordinator.data.get("upnp_health_status")
+        if health_status is None:
+            return {
+                "status": "UPnP not enabled",
+            }
+
+        miss_rate = health_status.get("miss_rate", 0.0)
+        return {
+            "is_healthy": health_status.get("is_healthy", False),
+            "miss_rate_percent": round(miss_rate * 100, 1),
+            "detected_changes": health_status.get("detected_changes", 0),
+            "missed_changes": health_status.get("missed_changes", 0),
+            "has_enough_samples": health_status.get("has_enough_samples", False),
+        }
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
+
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to hass."""
+        await super().async_added_to_hass()
+        self.async_on_remove(self.coordinator.async_add_listener(self._handle_coordinator_update))
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self.async_write_ha_state()
+```
+
+Or create separate sensors for specific metrics:
+
+```python
+class WiiMUpnpMissRateSensor(SensorEntity):
+    """Sensor for UPnP miss rate percentage."""
+
+    def __init__(self, coordinator):
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.entry_id}_upnp_miss_rate"
+        self._attr_name = f"{coordinator.player.name or coordinator.player.host} UPnP Miss Rate"
+        self._attr_icon = "mdi:network-off"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = PERCENTAGE
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the miss rate as a percentage."""
+        miss_rate = self.coordinator.data.get("upnp_miss_rate")
+        if miss_rate is None:
+            return None
+        return round(miss_rate * 100, 1)
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success and self.native_value is not None
+```
+
+### Quick Reference: Accessing Diagnostic Sensors
+
+All diagnostic properties are available in your coordinator's data dictionary after calling `async_update()`:
+
+```python
+# In your sensor entity or coordinator
+data = self.coordinator.data
+
+# UPnP health status (full dictionary)
+health_status = data.get("upnp_health_status")
+# Returns: {
+#     "is_healthy": True,
+#     "miss_rate": 0.05,  # 5% miss rate
+#     "detected_changes": 20,
+#     "missed_changes": 1,
+#     "has_enough_samples": True
+# }
+
+# Simple health check
+is_healthy = data.get("upnp_is_healthy")  # True/False/None
+
+# Miss rate as percentage
+miss_rate = data.get("upnp_miss_rate")  # 0.05 = 5% miss rate
+if miss_rate is not None:
+    miss_rate_percent = round(miss_rate * 100, 1)  # Convert to percentage
+```
+
+**Important**: These properties are included in the coordinator data automatically when you include them in your `_async_update_data()` method (see example in "Coordinator Implementation" section above).
 
 ### Accessing Group Information in Entities
 

@@ -194,9 +194,39 @@ player.media_sample_rate  # int | None (Hz)
 player.media_bit_depth  # int | None (bits)
 player.media_bit_rate  # int | None (kbps)
 player.media_codec  # str | None (e.g., "flac", "mp3", "aac")
+player.upnp_health_status  # dict[str, Any] | None (health statistics)
+player.upnp_is_healthy  # bool | None (True/False/None)
+player.upnp_miss_rate  # float | None (0.0-1.0, miss rate)
 player.shuffle  # bool | None
 player.repeat  # str | None ("one", "all", "off")
 ```
+
+#### UPnP Health Properties
+
+UPnP health tracking monitors whether UPnP events are reliably catching state changes. Only available when UPnP client is provided to Player.
+
+```python
+# Health status dictionary (None if UPnP not enabled)
+health = player.upnp_health_status
+# Returns: {
+#     "is_healthy": True,
+#     "miss_rate": 0.05,  # 5% miss rate
+#     "detected_changes": 20,
+#     "missed_changes": 1,
+#     "has_enough_samples": True
+# }
+
+# Simple health check
+is_healthy = player.upnp_is_healthy  # True/False/None
+
+# Miss rate (0.0 = perfect, 1.0 = all missed)
+miss_rate = player.upnp_miss_rate  # 0.05 = 5% miss rate
+```
+
+**Note**: UPnP health tracking requires:
+- UPnP client passed to `Player(..., upnp_client=upnp_client)`
+- UPnP events being subscribed (via `UpnpEventer`)
+- Player refresh being called regularly
 
 #### Cover Art Methods
 
