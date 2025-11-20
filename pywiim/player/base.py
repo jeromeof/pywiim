@@ -56,8 +56,10 @@ class PlayerBase:
         self._device_info: DeviceInfo | None = None
         self._last_refresh: float | None = None
 
-        # Device role is computed from _group membership (see role property)
-        # The Group structure is synced from device API state via refresh()
+        # Device role from device API state (single source of truth)
+        # Updated during refresh() from get_device_group_info()
+        # Independent of Group objects (which are for linking Player objects)
+        self._detected_role: str = "solo"  # Default to solo until detected
 
         # Cached audio output status (updated via refresh())
         self._audio_output_status: dict[str, Any] | None = None
@@ -100,21 +102,15 @@ class PlayerBase:
     def role(self) -> str:
         """Current role: 'solo', 'master', or 'slave'.
 
-        Role is computed from Group object membership, which is the SINGLE
-        source of truth. The Group structure is kept in sync with device state
-        via refresh() and updated optimistically during group operations.
+        Role comes from device API state via get_device_group_info(), cached in
+        _detected_role. This is the SINGLE source of truth, independent of Group
+        objects (which are for linking Player objects in coordinators like HA).
 
         Returns:
             'solo' if not in a group, 'master' if group master with slaves,
             'slave' if in group as slave.
         """
-        if self._group is None:
-            return "solo"
-        elif self._group.master == self:
-            # Master with slaves = "master", master with no slaves = "solo"
-            return "master" if len(self._group.slaves) > 0 else "solo"
-        else:
-            return "slave"
+        return self._detected_role
 
     @property
     def is_solo(self) -> bool:

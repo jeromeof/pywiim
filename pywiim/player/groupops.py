@@ -52,6 +52,8 @@ class GroupOperations:
         try:
             group_info = await self.player.client.get_device_group_info()
             detected_role = group_info.role
+            # Update _detected_role - this is the single source of truth for player.role
+            self.player._detected_role = detected_role
             role_result = RoleDetectionResult(
                 role=detected_role,
                 master_host=group_info.master_host,
@@ -68,9 +70,10 @@ class GroupOperations:
                 err,
                 self.player.role,
             )
-            # Use current role from Group structure - don't fall back to detect_role() which uses stale multiroom data
+            # Use current _detected_role - don't fall back to detect_role() which uses stale multiroom data
             # Cast to Literal type to match DeviceGroupInfo.role type
-            detected_role = cast(Literal["solo", "master", "slave"], self.player.role)
+            detected_role = cast(Literal["solo", "master", "slave"], self.player._detected_role)
+            # Keep _detected_role unchanged (already set from previous successful detection)
             role_result = RoleDetectionResult(
                 role=detected_role,
                 master_host=None,

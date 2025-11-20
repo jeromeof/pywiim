@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.6] - 2025-11-19
+
+### Fixed
+- **Fixed master detection - role property now uses device API state**
+  - Fixed `player.role` property to return `_detected_role` from device API instead of checking `_group` object
+  - Added `_detected_role` initialization and update during `refresh()` via `get_device_group_info()`
+  - Fixes issue where master devices showed as "solo" when `_group` was None, even if device had slaves
+  - **Root cause**: CHANGELOG documented fix in v1.0.76 but code was never actually updated
+  - **Impact**: Master detection now works correctly based on actual device API state, independent of Group object linking
+
 ## [2.0.5] - 2025-11-19
 
 ### Fixed
