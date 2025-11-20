@@ -538,6 +538,167 @@ client.group_master  # str | None
 client.group_slaves  # list[str]
 ```
 
+## Group Object
+
+The `Group` object is a utility for managing multiroom groups. It's accessed via the master player and provides group-level operations.
+
+### Accessing the Group
+
+```python
+from pywiim import Player
+
+# Master player automatically has a group object when it's a master
+if player.is_master and player.group:
+    group = player.group
+
+# Slave players reference the same group object
+if slave_player.is_slave and slave_player.group:
+    # This is the same Group object as the master's
+    group = slave_player.group
+    master = group.master  # Access the master player
+```
+
+### Group Properties
+
+All Group properties compute dynamically (no caching) by reading from linked Player objects:
+
+```python
+# Volume and mute (computed properties)
+group.volume_level  # float | None - MAX of all devices
+group.is_muted      # bool | None - True only if ALL devices muted
+
+# Playback state (from master)
+group.play_state    # str | None - Master's play state
+
+# Group members
+group.master        # Player - The master player
+group.slaves        # list[Player] - Linked slave players
+group.all_players   # list[Player] - Master + all slaves
+group.size          # int - Number of players (master + slaves)
+```
+
+**Important:**
+- Properties read from Player objects on access (always current)
+- No polling or refresh needed - reads cached Player state
+- Virtual entities can use these for aggregated group state
+
+### Group Operations
+
+#### Playback Control
+
+All playback commands delegate to the master player:
+
+```python
+# These all call master.play(), master.pause(), etc.
+await group.play()
+await group.pause()
+await group.stop()
+await group.next_track()
+await group.previous_track()
+```
+
+**Automatic Routing:**
+When a slave player's playback methods are called, they automatically route through the group:
+
+```python
+# Works the same whether called on master or slave
+await slave_player.pause()
+# → pywiim detects is_slave
+# → routes to slave.group.pause()
+# → calls master.pause()
+# → master's callback fires
+
+# Slave without group object raises WiiMError
+```
+
+#### Volume and Mute
+
+Group-wide volume and mute operations adjust all devices:
+
+```python
+# Set volume on all devices (proportional adjustment)
+await group.set_volume_all(0.5)
+# If group volume is 50%, each device changes by same amount
+# Master at 50% → 50%, Slave at 30% → 30%, etc.
+
+# Mute/unmute all devices
+await group.mute_all(True)   # Mute all
+await group.mute_all(False)  # Unmute all
+```
+
+**Individual Volume Control:**
+Players maintain independent volume control:
+
+```python
+# Adjust only the slave device
+await slave_player.set_volume(0.5)
+# → Command goes to slave device only
+# → Slave's callback fires (slave entity updates)
+# → Master's callback fires (virtual entity updates)
+# → group.volume_level recomputes (MAX of all)
+```
+
+**Cross-Notification:**
+When a slave's volume/mute changes, both slave and master callbacks fire:
+- Slave callback → slave entity updates
+- Master callback → virtual entity updates (reads group.volume_level)
+
+#### Group Management
+
+```python
+# Create group (makes player a master)
+group = await player.create_group()
+
+# Join group (makes player a slave)
+await slave_player.join_group(master_player)
+
+# Leave group
+await player.leave_group()
+
+# Disband group
+await group.disband()
+```
+
+### Example: Virtual Group Entity
+
+```python
+class VirtualGroupEntity:
+    """Virtual entity representing a multiroom group."""
+    
+    def __init__(self, master_player: Player):
+        self.master = master_player
+    
+    @property
+    def group(self):
+        return self.master.group
+    
+    @property
+    def volume_level(self) -> float | None:
+        """Group volume = MAX of all devices."""
+        return self.group.volume_level if self.group else None
+    
+    @property
+    def is_muted(self) -> bool | None:
+        """Group mute = ALL devices muted."""
+        return self.group.is_muted if self.group else None
+    
+    async def async_set_volume_level(self, volume: float):
+        """Set volume on all group members."""
+        if self.group:
+            await self.group.set_volume_all(volume)
+    
+    async def async_media_pause(self):
+        """Pause playback (routes to master)."""
+        if self.group:
+            await self.group.pause()
+```
+
+**Event Handling:**
+- Virtual entity listens to master player's coordinator
+- When any group member's volume changes, master's callback fires
+- Virtual entity reads `group.volume_level` (computed property)
+- No polling lag, immediate updates
+
 ### EQAPI
 
 Equalizer control.

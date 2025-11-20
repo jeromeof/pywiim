@@ -56,6 +56,9 @@ Comprehensive Python library for WiiM and LinkPlay device communication, providi
 - Role detection (solo/master/slave)
 - Synchronized group volume control
 - Master-slave coordination
+- **Smart routing**: Slave playback commands automatically route to master
+- **Cross-notification**: Volume changes fire callbacks for immediate virtual entity updates
+- **Automatic Player linking**: Detects and links Player objects via `player_finder` callback
 
 ### Equalizer (EQ)
 - EQ preset selection

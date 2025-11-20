@@ -2450,6 +2450,119 @@ class TestPlayerGroupOperations:
     """Test Player group operations."""
 
     @pytest.mark.asyncio
+    async def test_slave_playback_routes_to_master(self, mock_client):
+        """Test that slave playback commands route through group to master."""
+        from pywiim.group import Group
+        from pywiim.player import Player
+
+        # Create master and slave
+        master_client = AsyncMock()
+        master_client.play = AsyncMock()
+        master_client.pause = AsyncMock()
+        master_client.next_track = AsyncMock()
+        master = Player(master_client)
+        master._detected_role = "master"
+
+        slave = Player(mock_client)
+        slave._detected_role = "slave"
+
+        # Create group and link them
+        group = Group(master)
+        group.add_slave(slave)
+
+        # Slave playback commands should route to master
+        await slave.play()
+        master_client.play.assert_called_once()
+
+        await slave.pause()
+        master_client.pause.assert_called_once()
+
+        await slave.next_track()
+        master_client.next_track.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_slave_without_group_raises_error(self, mock_client):
+        """Test that slave without group object raises error."""
+        from pywiim.exceptions import WiiMError
+        from pywiim.player import Player
+
+        # Create a slave player without a group
+        player = Player(mock_client)
+        player._detected_role = "slave"
+
+        # Should raise WiiMError when trying to play
+        with pytest.raises(WiiMError, match="not linked to group"):
+            await player.play()
+
+    @pytest.mark.asyncio
+    async def test_slave_volume_fires_master_callback(self, mock_client):
+        """Test that slave volume changes fire master's callback."""
+        from pywiim.group import Group
+        from pywiim.player import Player
+
+        # Create master and slave with callbacks
+        master_callback_count = {"count": 0}
+        slave_callback_count = {"count": 0}
+
+        def master_callback():
+            master_callback_count["count"] += 1
+
+        def slave_callback():
+            slave_callback_count["count"] += 1
+
+        master_client = AsyncMock()
+        master_client.set_volume = AsyncMock()
+        master = Player(master_client, on_state_changed=master_callback)
+
+        mock_client.set_volume = AsyncMock()
+        slave = Player(mock_client, on_state_changed=slave_callback)
+
+        # Create group and link them
+        group = Group(master)
+        group.add_slave(slave)
+
+        # Change slave volume
+        await slave.set_volume(0.5)
+
+        # Both callbacks should fire
+        assert slave_callback_count["count"] == 1
+        assert master_callback_count["count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_master_volume_only_fires_own_callback(self, mock_client):
+        """Test that master volume changes only fire master's callback."""
+        from pywiim.group import Group
+        from pywiim.player import Player
+
+        # Create master and slave with callbacks
+        master_callback_count = {"count": 0}
+        slave_callback_count = {"count": 0}
+
+        def master_callback():
+            master_callback_count["count"] += 1
+
+        def slave_callback():
+            slave_callback_count["count"] += 1
+
+        mock_client.set_volume = AsyncMock()
+        master = Player(mock_client, on_state_changed=master_callback)
+
+        slave_client = AsyncMock()
+        slave_client.set_volume = AsyncMock()
+        slave = Player(slave_client, on_state_changed=slave_callback)
+
+        # Create group and link them
+        group = Group(master)
+        group.add_slave(slave)
+
+        # Change master volume
+        await master.set_volume(0.8)
+
+        # Only master callback should fire
+        assert master_callback_count["count"] == 1
+        assert slave_callback_count["count"] == 0
+
+    @pytest.mark.asyncio
     async def test_create_group(self, mock_client, mock_player_status):
         """Test creating a group."""
         from pywiim.player import Player

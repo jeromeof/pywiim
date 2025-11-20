@@ -16,8 +16,16 @@
 			"**/.pytest_cache": true,
 			"**/.mypy_cache": true,
 			"**/.ruff_cache": true
-		}
+		},
+		"terminal.integrated.profiles.linux": {
+			"bash (venv)": {
+				"path": "/bin/bash",
+				"args": [
+					"-c",
+					"source ${workspaceFolder}/.venv/bin/activate && exec bash"
+				]
+			}
+		},
+		"terminal.integrated.defaultProfile.linux": "bash (venv)"
 	}
 }
-
-

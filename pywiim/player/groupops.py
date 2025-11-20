@@ -110,9 +110,26 @@ class GroupOperations:
             group = GroupClass(self.player)
             self.player._group = group
 
-            if role_result.slave_hosts:
+            # Automatically link slave Player objects if player_finder is available
+            if role_result.slave_hosts and self.player._player_finder:
                 for slave_host in role_result.slave_hosts:
-                    _LOGGER.debug("Master %s has slave %s but no Player object available", self.player.host, slave_host)
+                    try:
+                        slave_player = self.player._player_finder(slave_host)
+                        if slave_player and slave_player.is_slave:
+                            if slave_player not in group.slaves:
+                                _LOGGER.debug("Auto-linking slave %s to master %s", slave_host, self.player.host)
+                                group.add_slave(slave_player)
+                        elif slave_player:
+                            _LOGGER.debug(
+                                "Slave %s found but role is %s (not slave) - skipping link",
+                                slave_host,
+                                slave_player.role,
+                            )
+                    except Exception as err:
+                        _LOGGER.debug("Failed to find/link slave Player %s: %s", slave_host, err)
+            elif role_result.slave_hosts:
+                for slave_host in role_result.slave_hosts:
+                    _LOGGER.debug("Master %s has slave %s but no player_finder available", self.player.host, slave_host)
 
             # Notify the master that it's now in a group
             if self.player._on_state_changed:
@@ -136,11 +153,35 @@ class GroupOperations:
 
             if role_result.slave_hosts:
                 device_slave_hosts = set(role_result.slave_hosts)
+                linked_slave_hosts = {slave.host for slave in self.player._group.slaves}
+
+                # Remove slaves that are no longer in device state
                 for slave in list(self.player._group.slaves):
                     if slave.host not in device_slave_hosts:
                         _LOGGER.debug("Removing slave %s from group (no longer in device state)", slave.host)
                         self.player._group.remove_slave(slave)
                         slaves_changed = True
+
+                # Automatically link new slave Player objects if player_finder is available
+                if self.player._player_finder:
+                    for slave_host in device_slave_hosts:
+                        if slave_host not in linked_slave_hosts:
+                            try:
+                                slave_player = self.player._player_finder(slave_host)
+                                if slave_player and slave_player.is_slave:
+                                    _LOGGER.debug(
+                                        "Auto-linking new slave %s to master %s", slave_host, self.player.host
+                                    )
+                                    self.player._group.add_slave(slave_player)
+                                    slaves_changed = True
+                                elif slave_player:
+                                    _LOGGER.debug(
+                                        "Slave %s found but role is %s (not slave) - skipping link",
+                                        slave_host,
+                                        slave_player.role,
+                                    )
+                            except Exception as err:
+                                _LOGGER.debug("Failed to find/link slave Player %s: %s", slave_host, err)
 
             # Notify all group members if slaves changed
             if slaves_changed:
@@ -148,7 +189,29 @@ class GroupOperations:
 
         # Case 4: Device is slave but we don't have a group object
         elif detected_role == "slave" and self.player._group is None:
-            _LOGGER.debug("Device %s is slave but has no group object - need master Player object", self.player.host)
+            _LOGGER.debug("Device %s is slave but has no group object - attempting to find master", self.player.host)
+
+            # Automatically find and link to master Player object if player_finder is available
+            if role_result.master_host and self.player._player_finder:
+                try:
+                    master_player = self.player._player_finder(role_result.master_host)
+                    if master_player and master_player.is_master and master_player._group:
+                        _LOGGER.debug("Auto-linking slave %s to master %s", self.player.host, role_result.master_host)
+                        master_player._group.add_slave(self.player)
+                    elif master_player:
+                        _LOGGER.debug(
+                            "Master %s found but role is %s (not master) or no group - skipping link",
+                            role_result.master_host,
+                            master_player.role,
+                        )
+                except Exception as err:
+                    _LOGGER.debug("Failed to find/link master Player %s: %s", role_result.master_host, err)
+            elif role_result.master_host:
+                _LOGGER.debug(
+                    "Device %s is slave but no player_finder available to find master %s",
+                    self.player.host,
+                    role_result.master_host,
+                )
 
         # Case 5: Device is slave and we have a group - verify master matches
         elif detected_role == "slave" and self.player._group is not None:

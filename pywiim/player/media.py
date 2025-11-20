@@ -34,6 +34,15 @@ class MediaControl:
         Raises:
             WiiMError: If the request fails.
         """
+        # Route slave commands through group to master
+        if self.player.is_slave and self.player.group:
+            await self.player.group.play()
+            return
+
+        if self.player.is_slave:
+            _LOGGER.debug("Slave %s has no group object, cannot route playback command", self.player.host)
+            raise WiiMError("Slave player not linked to group")
+
         # Call API (raises on failure)
         await self.player.client.play()
 
@@ -54,6 +63,15 @@ class MediaControl:
         Raises:
             WiiMError: If the request fails.
         """
+        # Route slave commands through group to master
+        if self.player.is_slave and self.player.group:
+            await self.player.group.pause()
+            return
+
+        if self.player.is_slave:
+            _LOGGER.debug("Slave %s has no group object, cannot route playback command", self.player.host)
+            raise WiiMError("Slave player not linked to group")
+
         # Call API (raises on failure)
         await self.player.client.pause()
 
@@ -78,6 +96,15 @@ class MediaControl:
         Raises:
             WiiMError: If the request fails.
         """
+        # Route slave commands through group to master
+        if self.player.is_slave and self.player.group:
+            await self.player.group.master.resume()
+            return
+
+        if self.player.is_slave:
+            _LOGGER.debug("Slave %s has no group object, cannot route playback command", self.player.host)
+            raise WiiMError("Slave player not linked to group")
+
         # Call API (raises on failure)
         await self.player.client.resume()
 
@@ -101,6 +128,15 @@ class MediaControl:
         Raises:
             WiiMError: If the request fails.
         """
+        # Route slave commands through group to master
+        if self.player.is_slave and self.player.group:
+            await self.player.group.stop()
+            return
+
+        if self.player.is_slave:
+            _LOGGER.debug("Slave %s has no group object, cannot route playback command", self.player.host)
+            raise WiiMError("Slave player not linked to group")
+
         # Call API (raises on failure)
         await self.player.client.stop()
 
@@ -153,6 +189,15 @@ class MediaControl:
 
     async def next_track(self) -> None:
         """Skip to next track."""
+        # Route slave commands through group to master
+        if self.player.is_slave and self.player.group:
+            await self.player.group.next_track()
+            return
+
+        if self.player.is_slave:
+            _LOGGER.debug("Slave %s has no group object, cannot route playback command", self.player.host)
+            raise WiiMError("Slave player not linked to group")
+
         # Call API (raises on failure)
         await self.player.client.next_track()
 
@@ -162,6 +207,15 @@ class MediaControl:
 
     async def previous_track(self) -> None:
         """Skip to previous track."""
+        # Route slave commands through group to master
+        if self.player.is_slave and self.player.group:
+            await self.player.group.previous_track()
+            return
+
+        if self.player.is_slave:
+            _LOGGER.debug("Slave %s has no group object, cannot route playback command", self.player.host)
+            raise WiiMError("Slave player not linked to group")
+
         # Call API (raises on failure)
         await self.player.client.previous_track()
 

@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.8] - 2025-11-20
+
+### Added
+- **Automatic playback command routing for slave players**
+  - Slave playback commands (play, pause, stop, next, previous) now automatically route through Group object to master
+  - No integration changes needed - just call `slave_player.pause()` and pywiim handles routing
+  - Raises clear `WiiMError` if slave not linked to group (edge case)
+  - **Impact**: HA slave entities can use playback controls directly, commands route to master automatically
+
+### Changed
+- **Cross-notification for volume and mute changes**
+  - When slave volume/mute changes, both slave's and master's callbacks now fire
+  - Enables immediate virtual group entity updates without polling lag
+  - Master's callback doesn't fire duplicate when master changes its own volume
+  - **Impact**: Virtual group entities update immediately when any member's volume changes
+- **Enhanced automatic Player linking in `_synchronize_group_state()`**
+  - Now uses `player_finder` callback to automatically link slave Player objects when groups detected
+  - Automatically links new slaves that appear in group
+  - Automatically links slaves to master when slave refreshes
+  - **Impact**: Player objects link automatically during `refresh()`, no manual coordinator linking needed
+
+### Documentation
+- Added "Virtual Group Entity Implementation" section to HA_INTEGRATION.md
+- Added "Event Propagation Model" section explaining routing and cross-notification
+- Added comprehensive "Group Object" documentation to API_REFERENCE.md
+- Updated README.md with smart routing and cross-notification features
+- Added `docs/testing/GROUP_ROUTING_TESTS.md` for testing guidance
+
 ## [2.0.7] - 2025-11-19
 
 ### Fixed

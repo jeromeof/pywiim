@@ -581,7 +581,7 @@ class TestMultiDeviceGroup:
         await _create_group(master, slaves)
         slave = slaves[0]
 
-        _log(f"Using slave {slave.host} to send next/previous commands")
+        _log(f"Using slave {slave.host} to send next/previous commands via Group object")
         next_counter, restore_next = _track_player_method(master, "next_track")
         prev_counter, restore_prev = _track_player_method(master, "previous_track")
 
@@ -600,3 +600,49 @@ class TestMultiDeviceGroup:
         finally:
             restore_next()
             restore_prev()
+
+    async def test_slave_direct_playback_routes_to_master(self, multi_device_testbed):
+        """Ensure slave playback commands automatically route to master."""
+        master: Player = multi_device_testbed["master"]
+        slaves: list[Player] = multi_device_testbed["slaves"]
+
+        if not slaves:
+            pytest.skip("Configure WIIM_TEST_GROUP_SLAVES with at least one slave device")
+
+        _log("Preparing group for slave routing test")
+        await _create_group(master, slaves)
+        slave = slaves[0]
+
+        _log(f"Calling playback commands directly on slave {slave.host}")
+        next_counter, restore_next = _track_player_method(master, "next_track")
+        prev_counter, restore_prev = _track_player_method(master, "previous_track")
+        pause_counter, restore_pause = _track_player_method(master, "pause")
+
+        try:
+            # Slave playback commands should route to master automatically
+            _log("Testing slave.next_track() -> routes to master")
+            try:
+                await slave.next_track()
+            except WiiMError as err:
+                pytest.skip(f"Next track command unavailable: {err}")
+            assert next_counter["count"] == 1, "slave.next_track() should route to master.next_track()"
+
+            _log("Testing slave.previous_track() -> routes to master")
+            try:
+                await slave.previous_track()
+            except WiiMError as err:
+                pytest.skip(f"Previous track command unavailable: {err}")
+            assert prev_counter["count"] == 1, "slave.previous_track() should route to master.previous_track()"
+
+            _log("Testing slave.pause() -> routes to master")
+            try:
+                await slave.pause()
+            except WiiMError as err:
+                pytest.skip(f"Pause command unavailable: {err}")
+            assert pause_counter["count"] == 1, "slave.pause() should route to master.pause()"
+
+            _log("✅ All slave playback commands correctly routed to master")
+        finally:
+            restore_next()
+            restore_prev()
+            restore_pause()

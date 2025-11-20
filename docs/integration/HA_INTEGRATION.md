@@ -335,13 +335,37 @@ class WiiMCoordinator(DataUpdateCoordinator):
         client = WiiMClient(host=host, session=session)
 
         # Create Player (wraps client with state management)
-        self.player = Player(client)
+        # Provide player_finder callback for automatic group linking
+        # pywiim will automatically link Player objects when groups are detected
+        self.player = Player(
+            client,
+            player_finder=self._find_player_by_host,  # Enables automatic linking
+        )
 
         # Detect capabilities and create polling strategy
         # Note: This is async, so do it in async_setup_entry or first update
         self._capabilities = {}
         self._polling_strategy = None
         self._strategy_initialized = False
+    
+    def _find_player_by_host(self, host: str):
+        """Find Player object by host (for automatic group linking).
+        
+        This callback is used by pywiim to automatically link Player objects
+        when groups are detected during refresh(). Returns None if player
+        not found (e.g., device not configured in HA).
+        
+        Args:
+            host: Hostname or IP address of the player to find.
+            
+        Returns:
+            Player object if found, None otherwise.
+        """
+        # Example: Get player from coordinator registry
+        # In HA, you'd typically get this from a central registry
+        # that maps host -> coordinator -> player
+        # return player_registry.get(host)
+        return None  # Implement based on your coordinator registry
 ```
 
 ### 2. Initialize Polling Strategy (Async)
@@ -1445,7 +1469,8 @@ def group_members(self) -> list[str] | None:
     
     Note: This returns Player objects that are linked together via Group.
     For a master device, this will only include slaves that have been
-    linked by the coordinator (i.e., slave Player objects exist).
+    automatically linked by pywiim (i.e., slave Player objects exist and
+    player_finder was provided when creating Player objects).
     """
     player = self.coordinator.data.get("player")
     if not player or not player.group:
@@ -1461,26 +1486,232 @@ def group_members(self) -> list[str] | None:
   - **This is the SINGLE source of truth for role**
 
 - **`player.group`**: Group object for linking Player objects together
-  - Source: Coordinator links Player objects based on their roles
+  - Source: pywiim automatically links Player objects during `refresh()` when `player_finder` is provided
   - Used for multi-player operations (volume sync, etc.)
-  - Empty `group.slaves` list doesn't mean device isn't a master
+  - If `player_finder` is not provided, `group.slaves` may be empty even if device is a master
   
 **Example:**
 ```python
 # Device IS a master according to API
 player.is_master  # True
 
-# But Group object may have no linked Player objects yet
-player.group.slaves  # [] (empty if coordinator hasn't linked slaves)
+# Group object automatically links Player objects when player_finder is provided
+# During refresh(), pywiim automatically:
+# - Finds slave Player objects via player_finder callback
+# - Links them to the master's group
+# - Links slave players to their master's group
+player.group.slaves  # [slave1, slave2, ...] (automatically linked by pywiim)
 
-# The coordinator should link slave Player objects when both entities exist
-if player.is_master:
-    # Find slave Player objects and link them
-    for slave_entity_id in find_slave_entities():
-        slave_player = get_player(slave_entity_id)
-        if slave_player.is_slave:
-            player.group.add_slave(slave_player)
+# To enable automatic linking, provide player_finder when creating Player:
+player = Player(
+    client,
+    player_finder=lambda host: player_registry.get(host)  # Returns Player | None
+)
 ```
+
+## Virtual Group Entity Implementation
+
+When a multiroom group exists, Home Assistant can create a virtual group media player entity that represents the entire group. This section explains how to implement this entity using pywiim's Group object.
+
+### Accessing the Group Object
+
+The Group object is accessed via the master player:
+
+```python
+# Get the master player's coordinator
+master_coordinator = get_coordinator_for_entity(master_entity_id)
+master_player = master_coordinator.data.get("player")
+
+# Access the group object (only exists when player is master or slave)
+if master_player.is_master and master_player.group:
+    group = master_player.group
+    # Use group for virtual entity operations
+```
+
+### Virtual Entity Setup
+
+The virtual group entity listens to the **master player's coordinator** and uses the Group object for operations:
+
+```python
+class VirtualGroupMediaPlayer(CoordinatorEntity):
+    """Virtual media player representing a multiroom group."""
+    
+    def __init__(self, master_coordinator):
+        """Initialize virtual group entity."""
+        super().__init__(master_coordinator)
+        self._master_coordinator = master_coordinator
+    
+    @property
+    def master_player(self):
+        """Get master player from coordinator."""
+        return self._master_coordinator.data.get("player")
+    
+    @property
+    def group(self):
+        """Get group object."""
+        return self.master_player.group if self.master_player else None
+```
+
+### Group Operations
+
+Use Group object methods for group-wide operations:
+
+```python
+async def async_set_volume_level(self, volume: float) -> None:
+    """Set volume for all group members."""
+    if self.group:
+        await self.group.set_volume_all(volume)
+
+async def async_mute_volume(self, mute: bool) -> None:
+    """Mute/unmute all group members."""
+    if self.group:
+        await self.group.mute_all(mute)
+
+async def async_media_play(self) -> None:
+    """Play on group (routes to master)."""
+    if self.group:
+        await self.group.play()
+
+async def async_media_pause(self) -> None:
+    """Pause on group (routes to master)."""
+    if self.group:
+        await self.group.pause()
+```
+
+### Reading Group State
+
+Group properties compute aggregated state dynamically:
+
+```python
+@property
+def volume_level(self) -> float | None:
+    """Virtual group volume = MAX of all members."""
+    return self.group.volume_level if self.group else None
+
+@property
+def is_volume_muted(self) -> bool | None:
+    """Virtual group mute = ALL members muted."""
+    return self.group.is_muted if self.group else None
+
+@property
+def state(self) -> str | None:
+    """Playback state from master."""
+    return self.group.play_state if self.group else None
+
+@property
+def media_title(self) -> str | None:
+    """Media metadata from master."""
+    return self.master_player.media_title if self.master_player else None
+```
+
+**Key Points:**
+- Volume/mute are unique group properties (MAX volume, ALL muted)
+- Playback state and metadata come from the master player
+- Properties are computed on access (no caching)
+
+## Event Propagation Model
+
+pywiim uses a smart event propagation model to ensure immediate UI updates across all entities without polling lag.
+
+### Playback Commands - Automatic Routing
+
+When a playback command is sent to a slave player, pywiim automatically routes it to the master:
+
+```python
+# User presses pause on slave entity in HA
+await slave_player.pause()
+# → pywiim detects slave role
+# → routes to slave.group.pause()
+# → calls master.pause()
+# → master's callback fires
+# → virtual group entity updates (listens to master)
+# → slaves get updated state via _propagate_metadata_to_slaves()
+```
+
+**What happens:**
+1. Command routes through Group object to master
+2. Master executes command and updates its state
+3. Master's `on_state_changed` fires → master coordinator updates
+4. Virtual entity (listening to master coordinator) updates immediately
+5. Master's next refresh propagates playback state to all slaves
+6. Slave entities update on their next refresh
+
+**HA implementation:**
+```python
+async def async_media_pause(self) -> None:
+    """Pause playback (works for master, slave, or group entity)."""
+    player = self.coordinator.data.get("player")
+    await player.pause()  # pywiim handles routing automatically
+```
+
+### Volume/Mute Commands - Cross-Notification
+
+When a slave's volume or mute changes, pywiim fires callbacks on **both** the slave and master:
+
+```python
+# User adjusts volume on slave entity
+await slave_player.set_volume(0.5)
+# → Command goes to slave device
+# → Slave's state updated optimistically
+# → Slave's callback fires → slave entity updates
+# → Master's callback fires → master coordinator updates
+# → Virtual entity (listening to master) updates immediately
+# → Reads group.volume_level (MAX of all) - includes new slave volume
+```
+
+**What happens:**
+1. Command goes to the individual slave device
+2. Slave's own callback fires (slave entity updates)
+3. Master's callback also fires (virtual entity updates immediately)
+4. Virtual entity reads `group.volume_level` which computes MAX on access
+
+**HA implementation:**
+```python
+async def async_set_volume_level(self, volume: float) -> None:
+    """Set individual player volume."""
+    player = self.coordinator.data.get("player")
+    await player.set_volume(volume)
+    # Both callbacks fire automatically - no manual refresh needed
+```
+
+### Master Volume/Mute - Propagation
+
+When the master's volume or mute changes:
+
+```python
+# User adjusts volume on master entity
+await master_player.set_volume(0.8)
+# → Volume propagates to all slaves (if called via Group.set_volume_all)
+# → OR only master changes (if called via Player.set_volume)
+# → Master's callback fires
+# → Master entity updates
+# → Virtual entity updates (listens to master)
+```
+
+**For group-wide changes, use Group object:**
+```python
+# Virtual entity adjusting group volume
+await master.group.set_volume_all(0.8)
+# → Adjusts all devices proportionally
+# → Master's callback fires
+# → Virtual entity updates
+```
+
+### Event Flow Summary
+
+| Action | Callback Fires On | Virtual Entity Update | Slave Entity Update |
+|--------|-------------------|----------------------|---------------------|
+| Slave playback command | Master only | Immediate (via master) | Next refresh (propagation) |
+| Slave volume/mute | Slave + Master | Immediate (via master) | Immediate (own callback) |
+| Master playback command | Master only | Immediate | Next refresh (propagation) |
+| Master volume/mute | Master only | Immediate | Next refresh (if group-wide) |
+| Group volume/mute | Master only | Immediate | Next refresh |
+
+**Key benefits:**
+- ✅ No polling lag for virtual entity
+- ✅ Immediate updates from any member
+- ✅ No manual refresh needed
+- ✅ Works seamlessly with HA coordinator pattern
 
 ### Key Benefits
 
@@ -1488,6 +1719,8 @@ if player.is_master:
 ✅ **No manual refresh needed**: State updates immediately after successful API calls
 ✅ **No manual coordinator updates**: Callback handles it automatically  
 ✅ **Works regardless of current state**: Join any player to any player - library handles transitions
+✅ **Automatic command routing**: Slave playback commands route to master automatically
+✅ **Cross-notification**: Volume/mute changes fire callbacks on relevant players for immediate updates
 
 ### How It Works Internally
 

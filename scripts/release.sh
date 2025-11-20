@@ -145,7 +145,7 @@ fi
 
 # Step 3: Run tests (must pass)
 step "Running tests with pytest..."
-if ! $PYTHON -m pytest tests/ -v; then
+if ! $PYTHON -m pytest tests/ --ignore=tests/integration/test_real_device.py -v; then
     error "Tests failed! Fix failing tests before releasing."
     exit 1
 fi

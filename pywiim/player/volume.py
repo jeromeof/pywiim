@@ -44,6 +44,12 @@ class VolumeControl:
         if self.player._on_state_changed:
             self.player._on_state_changed()
 
+        # If in group, fire master's callback for virtual entity updates
+        if self.player.group and self.player.group.master._on_state_changed:
+            # Don't fire master's callback if this IS the master (already fired above)
+            if self.player.group.master != self.player:
+                self.player.group.master._on_state_changed()
+
     async def set_mute(self, mute: bool) -> None:
         """Set mute state.
 
@@ -67,6 +73,12 @@ class VolumeControl:
         # Call callback to notify state change
         if self.player._on_state_changed:
             self.player._on_state_changed()
+
+        # If in group, fire master's callback for virtual entity updates
+        if self.player.group and self.player.group.master._on_state_changed:
+            # Don't fire master's callback if this IS the master (already fired above)
+            if self.player.group.master != self.player:
+                self.player.group.master._on_state_changed()
 
     async def get_volume(self) -> float | None:
         """Get current volume level by querying device."""
