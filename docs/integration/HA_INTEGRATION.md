@@ -384,10 +384,13 @@ async def _async_update_data(self):
         raise UpdateFailed(f"Error communicating with device: {e}")
 
     # Get current state for adaptive polling (from cached properties)
+    # IMPORTANT: Use THIS player's state, not the group's state
+    # Each player should be polled independently based on its own state
     role = self.player.role if self.player.group else "solo"
-    is_playing = self.player.play_state in ("play", "playing")
+    is_playing = self.player.play_state in ("play", "playing")  # THIS player's state
 
     # Get recommended polling interval from library
+    # This returns the optimal interval for THIS player based on its own state
     interval = self._polling_strategy.get_optimal_interval(role, is_playing)
 
     # Update HA's polling interval dynamically
@@ -477,6 +480,10 @@ async def _async_update_data(self):
         "media_image_url": self.player.media_image_url,
         "media_position": self.player.media_position,
         "media_duration": self.player.media_duration,
+        "media_sample_rate": self.player.media_sample_rate,
+        "media_bit_depth": self.player.media_bit_depth,
+        "media_bit_rate": self.player.media_bit_rate,
+        "media_codec": self.player.media_codec,
         "source": self.player.source,
         "available_sources": self.player.available_sources,  # List of selectable input sources (smart detection)
         "shuffle": self.player.shuffle,
@@ -586,6 +593,37 @@ These intervals are automatically recommended based on:
 - Device capabilities (WiiM vs Legacy)
 - Device role (master/slave/solo)
 - Playback state (playing vs idle)
+
+### Multi-Player Polling (IMPORTANT)
+
+**Each player must be polled independently based on its own state.**
+
+When managing multiple players (in groups or standalone):
+
+✅ **Correct:** Each player has its own coordinator and uses its own state:
+```python
+# Each coordinator polls its own player independently
+for coordinator in coordinators:
+    player = coordinator.data["player"]
+    is_playing = player.play_state in ("play", "playing")  # THIS player's state
+    interval = strategy.get_optimal_interval(player.role, is_playing)
+    # Poll this player at its own interval
+```
+
+❌ **Wrong:** Using master's state for all players:
+```python
+# DON'T do this - causes all players to poll fast when master is playing
+master_playing = master.play_state in ("play", "playing")
+for coordinator in coordinators:
+    player = coordinator.data["player"]
+    interval = strategy.get_optimal_interval(player.role, master_playing)  # ❌ Wrong!
+```
+
+**Why This Matters:**
+- Idle players don't need fast polling (wastes resources)
+- Each player's state changes independently
+- Group members can have different states (master playing, slaves idle)
+- Prevents unnecessary network traffic and device load
 
 ## Conditional Fetching Intervals
 
@@ -1087,6 +1125,26 @@ class WiiMMediaPlayer(MediaPlayerEntity):
     def media_duration(self) -> int | None:
         """Duration of current playing media in seconds."""
         return self.coordinator.data.get("media_duration")
+
+    @property
+    def media_sample_rate(self) -> int | None:
+        """Sample rate of current playing media in Hz."""
+        return self.coordinator.data.get("media_sample_rate")
+
+    @property
+    def media_bit_depth(self) -> int | None:
+        """Bit depth of current playing media in bits."""
+        return self.coordinator.data.get("media_bit_depth")
+
+    @property
+    def media_bit_rate(self) -> int | None:
+        """Bit rate of current playing media in kbps."""
+        return self.coordinator.data.get("media_bit_rate")
+
+    @property
+    def media_codec(self) -> str | None:
+        """Codec of current playing media (e.g., 'flac', 'mp3', 'aac')."""
+        return self.coordinator.data.get("media_codec")
 
     @property
     def shuffle(self) -> bool | None:

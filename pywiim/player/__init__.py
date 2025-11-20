@@ -494,6 +494,26 @@ class Player(PlayerBase):
         return self._properties.media_image_url
 
     @property
+    def media_sample_rate(self) -> int | None:
+        """Audio sample rate in Hz from metadata."""
+        return self._properties.media_sample_rate
+
+    @property
+    def media_bit_depth(self) -> int | None:
+        """Audio bit depth in bits from metadata."""
+        return self._properties.media_bit_depth
+
+    @property
+    def media_bit_rate(self) -> int | None:
+        """Audio bit rate in kbps from metadata."""
+        return self._properties.media_bit_rate
+
+    @property
+    def media_codec(self) -> str | None:
+        """Audio codec from status (e.g., 'flac', 'mp3', 'aac')."""
+        return self._properties.media_codec
+
+    @property
     def source(self) -> str | None:
         """Current source from cached status."""
         return self._properties.source

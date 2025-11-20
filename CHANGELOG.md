@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.4] - 2025-11-19
+
+### Added
+- **Audio quality properties for Player**
+  - Added `media_sample_rate` property: Audio sample rate in Hz from metadata (getMetaInfo)
+  - Added `media_bit_depth` property: Audio bit depth in bits from metadata (getMetaInfo)
+  - Added `media_bit_rate` property: Audio bit rate in kbps from metadata (getMetaInfo)
+  - Added `media_codec` property: Audio codec from status (getStatusEx), e.g., "flac", "mp3", "aac"
+  - All properties support both camelCase and snake_case field names from API responses
+  - Properties return `None` if metadata/status is unavailable or field is missing
+  - **Impact**: Easy access to audio quality information without navigating nested dict structures
+
 ## [2.0.3] - 2025-11-19
 
 ### Fixed

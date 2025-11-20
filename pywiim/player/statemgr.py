@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import TYPE_CHECKING, Any
@@ -41,6 +42,10 @@ class StateManager:
             player: Parent Player instance.
         """
         self.player = player
+        # Track last track signature to detect track changes for immediate artwork fetching
+        self._last_track_signature: str | None = None
+        # Track if we're already fetching artwork to avoid duplicate requests
+        self._artwork_fetch_task: asyncio.Task | None = None
 
     def apply_diff(self, changes: dict[str, Any]) -> bool:
         """Apply state changes from UPnP events.
@@ -152,9 +157,141 @@ class StateManager:
                 self.player._status_model.entity_picture = image_url
                 self.player._status_model.cover_url = image_url
 
+        # Detect track changes and fetch artwork immediately if missing
+        self._check_and_fetch_artwork_on_track_change(merged)
+
         # If this is a master, propagate metadata to all linked slaves
         if self.player.is_master and self.player._group and self.player._group.slaves:
             self._propagate_metadata_to_slaves()
+
+    def _check_and_fetch_artwork_on_track_change(self, merged: dict[str, Any]) -> None:
+        """Check if track changed and fetch artwork immediately if missing.
+
+        Args:
+            merged: Merged state dictionary from StateSynchronizer.
+        """
+        # Build current track signature
+        title = merged.get("title") or ""
+        artist = merged.get("artist") or ""
+        album = merged.get("album") or ""
+        current_signature = f"{title}|{artist}|{album}"
+
+        # Check if track changed
+        track_changed = (
+            current_signature and self._last_track_signature and current_signature != self._last_track_signature
+        )
+
+        if track_changed:
+            self._last_track_signature = current_signature
+
+            # Check if artwork is missing or is default logo
+            image_url = merged.get("image_url")
+            from ..api.constants import DEFAULT_WIIM_LOGO_URL
+
+            has_valid_artwork = (
+                image_url
+                and str(image_url).strip()
+                and str(image_url).strip().lower() not in ("unknow", "unknown", "un_known", "none", "")
+                and str(image_url).strip() != DEFAULT_WIIM_LOGO_URL
+            )
+
+            # If artwork is missing and device supports getMetaInfo, fetch it immediately
+            if not has_valid_artwork:
+                capabilities = self.player.client._capabilities
+                if capabilities.get("supports_metadata", True) and hasattr(self.player.client, "get_meta_info"):
+                    # Cancel any existing artwork fetch task
+                    if self._artwork_fetch_task and not self._artwork_fetch_task.done():
+                        self._artwork_fetch_task.cancel()
+
+                    # Start background task to fetch artwork
+                    try:
+                        loop = asyncio.get_event_loop()
+                        self._artwork_fetch_task = loop.create_task(self._fetch_artwork_from_metainfo())
+                        _LOGGER.debug("Track changed, fetching artwork from getMetaInfo immediately")
+                    except RuntimeError:
+                        # No event loop available (sync context) - will fetch on next poll
+                        _LOGGER.debug("No event loop available, artwork will be fetched on next poll")
+        elif not self._last_track_signature and current_signature:
+            # First track detected
+            self._last_track_signature = current_signature
+
+    async def _fetch_artwork_from_metainfo(self) -> None:
+        """Fetch artwork from getMetaInfo and update state.
+
+        This runs as a background task when track changes and artwork is missing.
+        """
+        try:
+            if not hasattr(self.player.client, "get_meta_info"):
+                return
+
+            meta_info = await self.player.client.get_meta_info()
+            if not meta_info or "metaData" not in meta_info:
+                return
+
+            meta_data = meta_info["metaData"]
+
+            # Extract artwork URL
+            artwork_url = (
+                meta_data.get("cover")
+                or meta_data.get("cover_url")
+                or meta_data.get("albumart")
+                or meta_data.get("albumArtURI")
+                or meta_data.get("albumArtUri")
+                or meta_data.get("albumarturi")
+                or meta_data.get("art_url")
+                or meta_data.get("artwork_url")
+                or meta_data.get("pic_url")
+            )
+
+            # Validate artwork URL
+            if artwork_url and str(artwork_url).strip() not in (
+                "unknow",
+                "unknown",
+                "un_known",
+                "",
+                "none",
+            ):
+                # Basic URL validation
+                if "http" in str(artwork_url).lower() or str(artwork_url).startswith("/"):
+                    # Get current metadata for cache-busting
+                    merged = self.player._state_synchronizer.get_merged_state()
+                    title = merged.get("title") or ""
+                    artist = merged.get("artist") or ""
+                    album = merged.get("album") or ""
+                    cache_key = f"{title}-{artist}-{album}"
+
+                    if cache_key:
+                        from urllib.parse import quote
+
+                        encoded = quote(cache_key)
+                        sep = "&" if "?" in artwork_url else "?"
+                        artwork_url = f"{artwork_url}{sep}cache={encoded}"
+
+                    # Update state synchronizer with new artwork
+                    self.player._state_synchronizer.update_from_http(
+                        {"entity_picture": artwork_url}, timestamp=time.time()
+                    )
+
+                    # Update cached status model
+                    merged = self.player._state_synchronizer.get_merged_state()
+                    if self.player._status_model and "image_url" in merged:
+                        image_url = merged.get("image_url")
+                        self.player._status_model.entity_picture = image_url
+                        self.player._status_model.cover_url = image_url
+
+                    # Trigger callback to notify of artwork update
+                    if self.player._on_state_changed:
+                        try:
+                            self.player._on_state_changed()
+                        except Exception as err:
+                            _LOGGER.debug("Error in callback after artwork update: %s", err)
+
+                    _LOGGER.debug("Fetched artwork from getMetaInfo on track change: %s", artwork_url)
+        except asyncio.CancelledError:
+            # Task was cancelled (new track change detected)
+            pass
+        except Exception as e:
+            _LOGGER.debug("Error fetching artwork from getMetaInfo on track change: %s", e)
 
     async def _get_master_name(self, device_info: DeviceInfo | None, status: PlayerStatus | None) -> str | None:
         """Get master device name."""

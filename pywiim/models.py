@@ -157,6 +157,7 @@ class PlayerStatus(_WiimBase):
     wifi_channel: int | None = Field(None, alias="WifiChannel")
     loop_mode: int | None = Field(None, alias="loop_mode")
     play_mode: str | None = Field(None, alias="play_mode")
+    codec: str | None = None  # Audio codec (e.g., "flac", "mp3", "aac")
 
     # Shuffle and repeat can come from different API fields depending on firmware
     repeat: str | None = Field(None, alias="repeat")

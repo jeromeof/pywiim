@@ -190,6 +190,58 @@ class PlayerProperties:
         return self._status_field("entity_picture", "cover_url")
 
     @property
+    def media_sample_rate(self) -> int | None:
+        """Audio sample rate in Hz from metadata."""
+        if self.player._metadata is None:
+            return None
+        meta_data = self.player._metadata.get("metaData", {})
+        # API uses camelCase (sampleRate), but support both formats
+        sample_rate = meta_data.get("sampleRate") or meta_data.get("sample_rate")
+        if sample_rate is None:
+            return None
+        try:
+            return int(sample_rate)
+        except (TypeError, ValueError):
+            return None
+
+    @property
+    def media_bit_depth(self) -> int | None:
+        """Audio bit depth in bits from metadata."""
+        if self.player._metadata is None:
+            return None
+        meta_data = self.player._metadata.get("metaData", {})
+        # API uses camelCase (bitDepth), but support both formats
+        bit_depth = meta_data.get("bitDepth") or meta_data.get("bit_depth")
+        if bit_depth is None:
+            return None
+        try:
+            return int(bit_depth)
+        except (TypeError, ValueError):
+            return None
+
+    @property
+    def media_bit_rate(self) -> int | None:
+        """Audio bit rate in kbps from metadata."""
+        if self.player._metadata is None:
+            return None
+        meta_data = self.player._metadata.get("metaData", {})
+        # API uses camelCase (bitRate), but support both formats
+        bit_rate = meta_data.get("bitRate") or meta_data.get("bit_rate")
+        if bit_rate is None:
+            return None
+        try:
+            return int(bit_rate)
+        except (TypeError, ValueError):
+            return None
+
+    @property
+    def media_codec(self) -> str | None:
+        """Audio codec from status (e.g., 'flac', 'mp3', 'aac')."""
+        if self.player._status_model is None:
+            return None
+        return getattr(self.player._status_model, "codec", None)
+
+    @property
     def source(self) -> str | None:
         """Current source from merged HTTP/UPnP state."""
         # Always read from state synchronizer (merges HTTP polling + UPnP events)

@@ -32,6 +32,14 @@ class PollingStrategy:
     - Conditional fetching based on data type
     - Capability-aware endpoint selection
 
+    **Per-Player Polling Principle:**
+    Each player should be polled independently based on its own state. When managing
+    multiple players:
+    - Each player should have its own polling loop/coordinator
+    - Each player should use its OWN `is_playing` state (not the group's or master's)
+    - Idle players should use slower polling even if other players are playing
+    - This prevents unnecessary fast polling of idle devices
+
     Example:
         ```python
         from pywiim import WiiMClient, PollingStrategy
@@ -40,9 +48,9 @@ class PollingStrategy:
         capabilities = await client._detect_capabilities()
         strategy = PollingStrategy(capabilities)
 
-        # Get recommended interval
+        # Get recommended interval for THIS player
         role = "solo"
-        is_playing = False
+        is_playing = False  # THIS player's state, not the group's
         interval = strategy.get_optimal_interval(role, is_playing)
         print(f"Poll every {interval} seconds")
 
@@ -51,6 +59,20 @@ class PollingStrategy:
         if strategy.should_fetch_device_info(last_device_info):
             device_info = await client.get_device_info_model()
             last_device_info = time.time()
+        ```
+
+    Example with multiple players:
+        ```python
+        # Correct: Each player polls independently
+        for player in players:
+            is_playing = player.play_state in ("play", "playing")  # THIS player's state
+            interval = strategy.get_optimal_interval(player.role, is_playing)
+            # Poll this player at its own interval
+
+        # Wrong: Using master's state for all players
+        master_playing = master.play_state in ("play", "playing")
+        for player in players:
+            interval = strategy.get_optimal_interval(player.role, master_playing)  # ❌
         ```
     """
 
@@ -84,17 +106,40 @@ class PollingStrategy:
     ) -> float:
         """Get optimal polling interval based on device capabilities and state.
 
+        **IMPORTANT: This method is per-player. Each player should be polled independently
+        based on its own state, not the group's state.**
+
         The interval adapts based on:
         - Device type (WiiM vs Legacy)
         - Device role (master/slave/solo)
-        - Playback state (playing vs idle)
+        - Playback state (playing vs idle) - **THIS player's state, not the group's**
+
+        **Multi-Player Polling:**
+        - Each player should have its own polling loop/coordinator
+        - Each player should call this method with its OWN `is_playing` state
+        - Do NOT use the master's playing state for all players in a group
+        - Idle players should use slower polling even if other players are playing
 
         Args:
             role: Device role ("master", "slave", or "solo")
-            is_playing: Whether device is currently playing
+            is_playing: Whether **THIS device** is currently playing (not the group)
 
         Returns:
             Recommended polling interval in seconds
+
+        Example:
+            ```python
+            # Correct: Each player polls based on its own state
+            for player in players:
+                is_playing = player.play_state in ("play", "playing")  # THIS player's state
+                interval = strategy.get_optimal_interval(player.role, is_playing)
+                # Poll this player at its own interval
+
+            # Wrong: Using master's state for all players
+            master_playing = master.play_state in ("play", "playing")
+            for player in players:
+                interval = strategy.get_optimal_interval(player.role, master_playing)  # ❌ Wrong!
+            ```
         """
         if self.capabilities.get("is_legacy_device", False):
             # Legacy devices need longer intervals

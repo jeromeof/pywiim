@@ -190,6 +190,10 @@ player.media_title  # str | None
 player.media_artist  # str | None
 player.media_album  # str | None
 player.media_image_url  # str | None (cover art URL)
+player.media_sample_rate  # int | None (Hz)
+player.media_bit_depth  # int | None (bits)
+player.media_bit_rate  # int | None (kbps)
+player.media_codec  # str | None (e.g., "flac", "mp3", "aac")
 player.shuffle  # bool | None
 player.repeat  # str | None ("one", "all", "off")
 ```
