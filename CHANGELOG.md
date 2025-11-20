@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.10] - 2025-11-20
+
+### Documentation
+- Added "Critical Concepts" section to HA_INTEGRATION.md clarifying Device API vs Group object usage
+- Clarified that `player.role` is the ONLY way to check if device is master/slave/solo
+- Explained that `group.slaves` is for operations only, not for checking if device has slaves
+- Removed confusing references to calling `get_device_group_info()` directly to check role
+
 ## [2.0.9] - 2025-11-20
 
 ### Documentation

@@ -79,6 +79,52 @@ pywiim uses a **3-tier state update system**:
 
 **Result:** Entity methods get instant UI updates (callbacks), and coordinator polling catches external changes on schedule. No manual refresh needed anywhere else.
 
+## Critical Concepts
+
+### Group Information: Device API vs Group Object
+
+**⚠️ IMPORTANT: Two different purposes, don't confuse them**
+
+#### Device API - Check Actual State
+
+To know if a device is a master:
+
+```python
+# Check role (ONLY way - single source of truth):
+player.role       # "master" (updated by refresh)
+player.is_master  # True
+player.is_slave   # False
+player.is_solo    # False
+```
+
+#### Group Object - Perform Operations
+
+To perform group operations (volume, mute, playback):
+
+```python
+# Group object = glue for operations
+if player.group:
+    await player.group.set_volume_all(0.5)  # Needs Player objects
+    await player.group.mute_all(True)        # Needs Player objects
+    
+    # group.slaves = list of linked Player OBJECTS (may be empty)
+    # This is for operations, NOT for checking if device has slaves
+```
+
+**Key difference:**
+- `player.role` / `player.is_master` = check if device is master (ONLY way to check)
+- `group` object = perform operations (volume, mute, playback)
+- `group.slaves` = Player objects for operations (may be empty - don't check this for state)
+
+**Don't:**
+- ❌ Check `len(group.slaves)` to see if device has slaves
+- ❌ Use `group.slaves` to determine group membership
+- ❌ Call `get_device_group_info()` to check role
+
+**Do:**
+- ✅ Check `player.role` to see role (ONLY way)
+- ✅ Use `group` object only for operations
+
 ## State Management - How It Works
 
 ### pywiim Manages All State Updates
