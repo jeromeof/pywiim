@@ -887,10 +887,14 @@ class BaseWiiMClient:
 
             # If artwork is missing or invalid and device supports getMetaInfo, try to fetch it
             entity_picture = parsed.get("entity_picture")
+            from .constants import DEFAULT_WIIM_LOGO_URL
+
+            # Check if we have valid artwork (not default logo, not invalid values)
             has_valid_artwork = (
                 entity_picture
                 and str(entity_picture).strip()
                 and str(entity_picture).strip().lower() not in ("unknow", "unknown", "un_known", "none", "")
+                and str(entity_picture).strip() != DEFAULT_WIIM_LOGO_URL
             )
 
             if not has_valid_artwork and self._capabilities.get("supports_metadata", True):

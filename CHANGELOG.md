@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.3] - 2025-11-19
+
+### Fixed
+- **Fixed cover art not retrieved from getMetaInfo when getPlayerStatusEx has no artwork**
+  - Base.py now correctly detects when entity_picture is set to default WiiM logo and treats it as "no valid artwork"
+  - This triggers the getMetaInfo fallback to retrieve artwork from albumArtURI field
+  - Fixes issue where players (e.g., AirPlay sources) that only provide artwork via getMetaInfo were showing default logo instead of actual cover art
+  - **Impact**: Players now correctly display cover art from getMetaInfo when getPlayerStatusEx doesn't include artwork fields
+
 ## [2.0.2] - 2025-11-19
 
 ### Fixed
