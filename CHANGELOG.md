@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.9] - 2025-11-20
+
+### Documentation
+- Enhanced HA_INTEGRATION.md with prominent warnings about NOT calling `async_request_refresh()` in entity methods
+- Added "State Management - How It Works" section at top of integration guide
+- Clarified that coordinator's `refresh()` is scheduled polling, not manual refresh
+- Added critical warnings to prevent integration from calling unnecessary manual refresh after commands
+
 ## [2.0.8] - 2025-11-20
 
 ### Added

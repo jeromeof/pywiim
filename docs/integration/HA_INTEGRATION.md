@@ -1,10 +1,135 @@
 # Home Assistant Integration Guide
 
+> **⚠️ CRITICAL: Do NOT call `async_request_refresh()` in entity methods!**  
+> Commands (play, pause, volume, etc.) fire callbacks automatically for instant UI updates.  
+> The coordinator's scheduled `refresh()` handles everything else.  
+> See [State Management](#state-management---how-it-works) below for details.
+
 ## Overview
 
 This guide explains how to integrate the `pywiim` library with Home Assistant's `DataUpdateCoordinator` polling pattern. The library provides polling strategy recommendations and helpers that integrate seamlessly with HA's async architecture.
 
 **Recommended Approach**: Use `Player` class for HA integrations. It provides state caching, HTTP + UPnP event synchronization, convenient properties, and full API access via `player.client`.
+
+## Critical: When to Call `refresh()` vs When NOT To
+
+### ✅ ONLY Call `refresh()` in the Coordinator
+
+**⚠️ CRITICAL: The ONLY place that should call `player.refresh()` is the coordinator's `_async_update_data()` method.**
+
+This is NOT a manual refresh - this is the scheduled polling that catches external changes.
+
+```python
+async def _async_update_data(self):
+    """Called by HA on schedule (every 5-10 seconds)."""
+    await self.player.refresh()  # ✅ Scheduled polling (NOT a manual refresh)
+    return {"player": self.player}
+```
+
+**This catches:**
+- External changes (WiiM app, buttons, voice assistants)
+- Track changes
+- Group membership changes
+- Anything UPnP events might miss
+
+### ❌ NEVER Call `refresh()` or `async_request_refresh()` in Entity Methods
+
+**⚠️ CRITICAL: Entity methods should NEVER manually refresh after commands.**
+
+The integration is calling `async_request_refresh()` after every command - **this is wrong and harmful.**
+
+```python
+async def async_media_play(self) -> None:
+    """Send play command."""
+    player = self.coordinator.data.get("player")
+    await player.play()
+    # ✅ That's it! State updates via callback (immediate)
+    
+    # ❌ DO NOT DO THIS:
+    # await player.refresh()
+    # await self.coordinator.async_request_refresh()
+    # These are unnecessary and cause performance issues
+```
+
+**Why it's wrong:**
+- pywiim fires `on_state_changed` callback immediately after command
+- Callback triggers `coordinator.async_update_listeners()`
+- UI updates instantly from cached state
+- Manual refresh just wastes time and network
+
+### Why This Design?
+
+pywiim uses a **3-tier state update system**:
+
+1. **Optimistic Updates + Callbacks** (immediate, <1ms):
+   - `await player.play()` updates cached state immediately
+   - Fires `on_state_changed` callback → triggers `coordinator.async_update_listeners()`
+   - UI updates instantly from cache
+
+2. **UPnP Events** (immediate when available):
+   - Real-time notifications of state changes
+   - Automatically merged with cached state
+   - Confirms optimistic updates
+
+3. **Coordinator Polling** (5-10 seconds):
+   - Scheduled `refresh()` catches everything else
+   - External changes (WiiM app, buttons, etc.)
+   - Role changes, track changes, etc.
+   - **This is the ONLY refresh needed**
+
+**Result:** Entity methods get instant UI updates (callbacks), and coordinator polling catches external changes on schedule. No manual refresh needed anywhere else.
+
+## State Management - How It Works
+
+### pywiim Manages All State Updates
+
+**You NEVER need to manually refresh after commands.** The library handles all state updates automatically:
+
+#### How Commands Work
+
+```python
+# In entity method:
+await player.play()
+# Internally:
+# 1. Sends API call to device
+# 2. Updates cached state optimistically (player._status_model)
+# 3. Updates state synchronizer (merges with UPnP data)
+# 4. Fires callback: player._on_state_changed()
+#    → triggers coordinator.async_update_listeners()
+#    → UI updates immediately from cache
+```
+
+#### What Coordinator Does
+
+```python
+# Coordinator's ONLY job for state updates:
+async def _async_update_data(self):
+    # Scheduled polling (every 5-10 seconds)
+    await self.player.refresh()
+    return {"player": self.player}
+```
+
+**That's it!** The coordinator polls on schedule to catch:
+- External changes (WiiM app, physical buttons, etc.)
+- Track changes
+- Group membership changes
+- State confirmation
+
+### Entity Methods: Zero Manual Refresh
+
+```python
+# ✅ CORRECT - just call the command
+async def async_media_play(self):
+    await self.coordinator.data["player"].play()
+    # State updates via callback (immediate)
+    # NO refresh() needed!
+    # NO async_request_refresh() needed!
+
+# ❌ WRONG - manual refresh is unnecessary and harmful
+async def async_media_play(self):
+    await self.coordinator.data["player"].play()
+    await self.coordinator.async_request_refresh()  # ❌ NO!
+```
 
 ## Quick Reference
 
