@@ -129,16 +129,28 @@ $PYTHON -m black pywiim tests
 step "Sorting imports with isort..."
 $PYTHON -m isort pywiim tests
 
-# Step 2: Lint
-step "Linting with ruff..."
-$PYTHON -m ruff check --fix --unsafe-fixes pywiim tests
+# Step 2: Lint (must pass - no auto-fix for critical errors)
+step "Linting with ruff (strict mode - no auto-fix)..."
+if ! $PYTHON -m ruff check pywiim tests; then
+    error "Ruff linting failed! Fix errors before releasing."
+    error "Run 'ruff check pywiim tests' to see errors, or 'ruff check --fix pywiim tests' to auto-fix."
+    exit 1
+fi
 
 step "Type checking with mypy..."
-$PYTHON -m mypy pywiim
+if ! $PYTHON -m mypy pywiim; then
+    error "Type checking failed! Fix errors before releasing."
+    exit 1
+fi
 
-# Step 3: Run tests
+# Step 3: Run tests (must pass)
 step "Running tests with pytest..."
-$PYTHON -m pytest tests/ -v
+if ! $PYTHON -m pytest tests/ -v; then
+    error "Tests failed! Fix failing tests before releasing."
+    exit 1
+fi
+
+info "All validation checks passed ✓"
 
 # Step 4: Update CHANGELOG.md
 step "Updating CHANGELOG.md..."
@@ -207,18 +219,34 @@ fi
 
 info "Version updated successfully in both files"
 
-# Step 8: Check git status
+# Step 8: Final validation before commit
+step "Running final validation checks before commit..."
+# Re-run critical checks one more time to ensure nothing broke
+if ! $PYTHON -m ruff check pywiim tests > /dev/null 2>&1; then
+    error "Final ruff check failed! Aborting release."
+    error "Run 'ruff check pywiim tests' to see errors."
+    exit 1
+fi
+
+if ! $PYTHON -m mypy pywiim > /dev/null 2>&1; then
+    error "Final mypy check failed! Aborting release."
+    exit 1
+fi
+
+info "Final validation checks passed ✓"
+
+# Step 9: Check git status
 step "Checking git status..."
 if [ -z "$(git status --porcelain)" ]; then
     warn "No changes to commit. All files are up to date."
     exit 0
 fi
 
-# Step 9: Stage changes
+# Step 10: Stage changes
 step "Staging changes..."
 git add -A
 
-# Step 10: Commit
+# Step 11: Commit
 step "Committing changes..."
 git commit -m "Release v$NEW_VERSION
 
@@ -226,11 +254,11 @@ git commit -m "Release v$NEW_VERSION
 - Bumped version to $NEW_VERSION
 - All linting and tests passed"
 
-# Step 11: Create version tag
+# Step 12: Create version tag
 step "Creating version tag v$NEW_VERSION..."
 git tag -a "v$NEW_VERSION" -m "Release version $NEW_VERSION"
 
-# Step 12: Push commits and tags
+# Step 13: Push commits and tags
 step "Pushing commits and tags to remote..."
 # Get the current branch name
 CURRENT_BRANCH=$(git branch --show-current)
@@ -247,7 +275,7 @@ else
     warn "Please verify manually: git ls-remote --tags origin | grep v$NEW_VERSION"
 fi
 
-# Step 13: Create GitHub release (if GitHub CLI is available and authenticated)
+# Step 14: Create GitHub release (if GitHub CLI is available and authenticated)
 if command -v gh &> /dev/null; then
     # Check if authenticated (either via stored auth or GH_TOKEN env var)
     IS_AUTHENTICATED=false
