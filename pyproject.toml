@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pywiim"
-version = "2.0.17"
+version = "2.0.18"
 description = "Python library for WiiM/LinkPlay device communication"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -98,3 +98,7 @@ known_first_party = ["pywiim"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "integration: marks tests as integration tests (require real device, skipped in CI)",
+]
+addopts = "-m 'not integration'"

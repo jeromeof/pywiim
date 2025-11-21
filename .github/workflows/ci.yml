@@ -45,5 +45,5 @@ jobs:
     
     - name: Test with pytest
       run: |
-        pytest tests/ -v
+        pytest tests/ -v -m "not integration"
 

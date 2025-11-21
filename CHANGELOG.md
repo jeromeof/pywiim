@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.18] - 2025-11-21
+
+### Fixed
+- **Fixed GitHub Actions CI to skip integration tests**
+  - Integration tests require a real device and are now properly skipped in CI
+  - Tests still pass locally when device is available
+  - Prevents CI failures when device is not accessible on GitHub runners
+  - Updated pytest configuration to skip integration tests by default
+
 ## [2.0.17] - 2025-11-21
 
 ### Added
