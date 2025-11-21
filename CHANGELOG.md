@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.12] - 2025-11-20
+
+### Fixed
+- **Cover art fallback now uses embedded logo instead of external URL**
+  - Embedded actual WiiM logo (PNG, 7.8 KB) as base64 in library
+  - `fetch_cover_art()` now returns embedded logo bytes directly when no artwork available
+  - No HTTP call needed for fallback - instant display with zero network dependency
+  - Fixes issue where external logo URL (`wiimhome.com`) returns HTTP 403
+  - **Impact**: Fallback logo will always display correctly in Home Assistant and other integrations
+
 ## [2.0.11] - 2025-11-20
 
 ### Changed

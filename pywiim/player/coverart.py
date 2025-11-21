@@ -51,25 +51,35 @@ class CoverArtManager:
                 del self.player._cover_art_cache[key]
 
     async def fetch_cover_art(self, url: str | None = None) -> tuple[bytes, str] | None:
-        """Fetch cover art image from URL.
+        """Fetch cover art image from URL or return embedded fallback logo.
 
         Args:
             url: Cover art URL to fetch. If None, uses current track's cover art URL.
-                If no valid URL is found, fetches the default WiiM logo.
+                If no valid URL is found, returns the embedded PyWiim logo (no HTTP call).
 
         Returns:
             Tuple of (image_bytes, content_type) if successful, None otherwise.
         """
+        import base64
+
         from .properties import PlayerProperties
 
         if url is None:
             url = PlayerProperties(self.player).media_image_url
 
-        # If no URL provided, use default WiiM logo
+        # If no URL provided, return embedded PyWiim logo directly (no HTTP call needed)
         if not url:
-            from ..api.constants import DEFAULT_WIIM_LOGO_URL
+            from ..api.constants import EMBEDDED_LOGO_BASE64
 
-            url = DEFAULT_WIIM_LOGO_URL
+            try:
+                # Decode the embedded base64 PNG logo (join tuple of strings first)
+                base64_string = "".join(EMBEDDED_LOGO_BASE64)
+                logo_bytes = base64.b64decode(base64_string)
+                _LOGGER.debug("Returning embedded PyWiim fallback logo (%d bytes)", len(logo_bytes))
+                return (logo_bytes, "image/png")
+            except Exception as e:
+                _LOGGER.error("Failed to decode embedded logo: %s", e)
+                return None
 
         # Clean up expired cache entries
         self._cleanup_cover_art_cache()

@@ -1215,37 +1215,29 @@ class TestPlayerMediaMetadata:
 
     @pytest.mark.asyncio
     async def test_fetch_cover_art_no_url(self, mock_client):
-        """Test fetching cover art when no URL is available - should fetch WiiM logo."""
-        from unittest.mock import AsyncMock, MagicMock, patch
+        """Test fetching cover art when no URL is available - should return embedded logo."""
+        import base64
 
-        from pywiim.api.constants import DEFAULT_WIIM_LOGO_URL
+        from pywiim.api.constants import EMBEDDED_LOGO_BASE64
         from pywiim.player import Player
 
         player = Player(mock_client)
         status = PlayerStatus(play_state="play")  # No cover art URL
         player._status_model = status
 
-        # Mock the session get method to return WiiM logo
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.read = AsyncMock(return_value=b"fake_wiim_logo_data")
-        mock_response.headers = {"Content-Type": "image/png"}
-
-        mock_session_get = MagicMock()
-        mock_session_get.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_session_get.__aexit__ = AsyncMock()
-
-        mock_client._session.get = MagicMock(return_value=mock_session_get)
-
-        with patch.object(mock_client, "_get_ssl_context", return_value=None):
-            result = await player.fetch_cover_art()
+        # Call fetch_cover_art() with no URL - should return embedded logo without HTTP call
+        result = await player.fetch_cover_art()
 
         assert result is not None
-        assert result == (b"fake_wiim_logo_data", "image/png")
-        # Verify it tried to fetch the default WiiM logo
-        mock_client._session.get.assert_called_once()
-        call_args = mock_client._session.get.call_args
-        assert DEFAULT_WIIM_LOGO_URL in str(call_args)
+        image_bytes, content_type = result
+
+        # Verify it returned the embedded logo (decoded from base64)
+        expected_bytes = base64.b64decode("".join(EMBEDDED_LOGO_BASE64))
+        assert image_bytes == expected_bytes
+        assert content_type == "image/png"
+
+        # Verify NO HTTP call was made (embedded logo served directly)
+        mock_client._session.get.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_fetch_cover_art_caching(self, mock_client):
@@ -1397,7 +1389,10 @@ class TestPlayerMediaMetadata:
 
     @pytest.mark.asyncio
     async def test_get_cover_art_bytes_none(self, mock_client):
-        """Test get_cover_art_bytes returns None when fetch fails."""
+        """Test get_cover_art_bytes returns embedded logo when no cover art."""
+        import base64
+
+        from pywiim.api.constants import EMBEDDED_LOGO_BASE64
         from pywiim.player import Player
 
         player = Player(mock_client)
@@ -1405,7 +1400,11 @@ class TestPlayerMediaMetadata:
         player._status_model = status
 
         result = await player.get_cover_art_bytes()
-        assert result is None
+
+        # Should return embedded logo bytes, not None
+        assert result is not None
+        expected_bytes = base64.b64decode("".join(EMBEDDED_LOGO_BASE64))
+        assert result == expected_bytes
 
     @pytest.mark.asyncio
     async def test_shuffle_state(self, mock_client):
