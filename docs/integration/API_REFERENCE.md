@@ -179,6 +179,84 @@ if player.is_master:
 - A master device shows `is_master=True` even if no slave Player objects exist
 - Role is always accurate regardless of whether Player objects are linked
 
+#### Media Position and Duration
+
+The Player provides real-time position tracking using a **hybrid approach** that combines HTTP polling, UPnP events, and position estimation for smooth updates:
+
+```python
+player.media_position  # int | None - Current position in seconds
+player.media_duration  # int | None - Track duration in seconds
+player.media_position_updated_at  # float | None - Unix timestamp of last update
+```
+
+**How Position Updates Work:**
+
+1. **HTTP Polling** - `await player.refresh()` fetches current state (typically every 5-10s)
+2. **UPnP Events** - Real-time notifications when tracks change or playback state changes (requires UPnP setup)
+3. **Position Estimation** - Automatically ticks every second while playing for smooth progress bars
+
+The `StateSynchronizer` intelligently merges these three sources, providing accurate position without constant network requests.
+
+**Example - Simple Position Monitoring:**
+
+```python
+from pywiim import Player, WiiMClient
+
+player = Player(WiiMClient("192.168.1.100"))
+await player.refresh()
+
+# Get current position and duration
+position = player.media_position  # e.g., 120 (2:00)
+duration = player.media_duration  # e.g., 240 (4:00)
+
+if position and duration:
+    progress = (position / duration) * 100
+    print(f"{position}/{duration}s ({progress:.1f}%)")
+```
+
+**Example - Real-time Position Updates:**
+
+```python
+def on_state_changed():
+    """Called every second while playing + on all state changes."""
+    pos = player.media_position
+    dur = player.media_duration
+    if pos and dur:
+        print(f"Position: {pos}/{dur}s")
+
+player = Player(client, on_state_changed=on_state_changed)
+await player.refresh()
+await player.play()  # Callback fires automatically every second while playing
+```
+
+**Example - With UPnP for Real-time Events:**
+
+```python
+from pywiim.upnp import UpnpClient, UpnpEventer
+
+# Setup UPnP for immediate track change notifications
+upnp_client = UpnpClient("192.168.1.100")
+player = Player(client, upnp_client=upnp_client)
+
+eventer = UpnpEventer(
+    upnp_client=upnp_client,
+    on_event=lambda changes: player.update_from_upnp(changes)
+)
+await eventer.async_subscribe()
+
+# Position now updates via:
+# - UPnP events (immediate track changes)
+# - Position estimation (smooth 1-second ticks)
+# - HTTP polling (fallback + verification)
+```
+
+**Position Estimation:**
+- Runs automatically in background while playing
+- Updates every second for smooth UI progress
+- Resets on track changes and seeks
+- Clamps to duration to prevent overflow
+- No manual intervention needed
+
 #### Other Properties
 
 ```python
@@ -268,6 +346,9 @@ await player.refresh()  # Fetch latest state from device
 await player.play()
 await player.pause()
 await player.stop()
+await player.next_track()
+await player.previous_track()
+await player.seek(position: int)  # Seek to position in seconds
 await player.set_volume(volume: float)  # 0.0-1.0
 await player.set_mute(muted: bool)
 await player.set_source(source: str)
@@ -349,6 +430,109 @@ await player.play()
 ```
 
 **See also**: `docs/design/OPERATION_PATTERNS.md` for detailed patterns
+
+### Seeking and Position Control
+
+The `seek()` method allows you to jump to a specific position in the current track.
+
+#### Basic Seek Usage
+
+```python
+# Seek to specific position (in seconds)
+await player.seek(120)  # Jump to 2:00
+
+# Seek to beginning
+await player.seek(0)
+
+# Seek to 50% through track
+if player.media_duration:
+    midpoint = player.media_duration // 2
+    await player.seek(midpoint)
+```
+
+#### Advanced Seek Examples
+
+```python
+# Skip forward 30 seconds
+if player.media_position and player.media_duration:
+    new_pos = min(player.media_position + 30, player.media_duration)
+    await player.seek(new_pos)
+
+# Skip backward 10 seconds
+if player.media_position:
+    new_pos = max(player.media_position - 10, 0)
+    await player.seek(new_pos)
+
+# Seek to percentage of track
+def seek_to_percent(player: Player, percent: float):
+    """Seek to percentage (0.0-1.0) of track."""
+    if player.media_duration:
+        position = int(player.media_duration * percent)
+        await player.seek(position)
+
+# Seek to 75%
+await seek_to_percent(player, 0.75)
+```
+
+#### How Seek Works
+
+When you call `seek()`:
+1. Command is sent to device via HTTP API
+2. Cached state is updated immediately (optimistic update)
+3. `on_state_changed` callback fires with new position
+4. Position is confirmed by next UPnP event or HTTP poll
+5. Position estimation resumes from new position
+
+```python
+def on_position_update():
+    """Called immediately after seek, then every second while playing."""
+    print(f"Position: {player.media_position}s")
+
+player = Player(client, on_state_changed=on_position_update)
+
+# Seek triggers immediate callback with optimistic update
+await player.seek(60)  # Callback fires right away
+# Then confirmed by UPnP event or next refresh()
+```
+
+#### Position Tracking for UI
+
+For progress bars and time displays that update smoothly:
+
+```python
+import asyncio
+from pywiim import Player, WiiMClient
+
+async def monitor_playback():
+    """Monitor playback with smooth position updates."""
+    
+    def on_state_changed():
+        # Called every second while playing
+        pos = player.media_position
+        dur = player.media_duration
+        
+        if pos and dur:
+            progress = (pos / dur) * 100
+            mins, secs = divmod(pos, 60)
+            dur_mins, dur_secs = divmod(dur, 60)
+            print(f"{mins:02d}:{secs:02d} / {dur_mins:02d}:{dur_secs:02d} ({progress:.1f}%)")
+    
+    player = Player(WiiMClient("192.168.1.100"), on_state_changed=on_state_changed)
+    await player.refresh()
+    await player.play()
+    
+    # Position updates automatically every second via callback
+    # No need to poll in a loop!
+    await asyncio.sleep(60)  # Just keep the program running
+
+asyncio.run(monitor_playback())
+```
+
+**Key Points:**
+- No need to call `refresh()` after `seek()` - state updates automatically
+- Position estimation provides smooth 1-second updates while playing
+- Callbacks fire on seeks, track changes, and every second during playback
+- Hybrid approach (HTTP + UPnP + estimation) ensures reliability
 
 ## Models
 
