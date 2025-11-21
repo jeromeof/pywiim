@@ -20,8 +20,8 @@ import sys
 from typing import Any
 
 from pywiim import WiiMClient
-from pywiim.player import Player
 from pywiim.exceptions import WiiMError
+from pywiim.player import Player
 
 
 async def wait_for_state_update(player: Player, delay: float = 1.0) -> None:
@@ -77,7 +77,7 @@ async def test_playback_controls(ip: str) -> dict[str, Any]:
         initial_shuffle = player.shuffle_state
         initial_repeat = player.repeat_mode
 
-        print(f"📊 Initial State:")
+        print("📊 Initial State:")
         print(f"   Play State: {initial_state}")
         print(f"   Shuffle: {initial_shuffle}")
         print(f"   Repeat: {initial_repeat}\n")
@@ -91,7 +91,7 @@ async def test_playback_controls(ip: str) -> dict[str, Any]:
             await wait_for_state_update(player, 1.5)
 
             new_state = player.play_state
-            print(f"   ✓ Play command sent")
+            print("   ✓ Play command sent")
             print(f"   State after play: {new_state}")
 
             results["tests"]["play"] = {
@@ -115,7 +115,7 @@ async def test_playback_controls(ip: str) -> dict[str, Any]:
             await wait_for_state_update(player, 1.5)
 
             new_state = player.play_state
-            print(f"   ✓ Pause command sent")
+            print("   ✓ Pause command sent")
             print(f"   State after pause: {new_state}")
 
             results["tests"]["pause"] = {
@@ -141,7 +141,7 @@ async def test_playback_controls(ip: str) -> dict[str, Any]:
 
             shuffle_on = player.shuffle_state
             repeat_after_shuffle = player.repeat_mode
-            print(f"   ✓ Set shuffle ON")
+            print("   ✓ Set shuffle ON")
             print(f"   Shuffle state: {shuffle_on}")
             print(f"   Repeat preserved: {repeat_after_shuffle}")
 
@@ -152,7 +152,7 @@ async def test_playback_controls(ip: str) -> dict[str, Any]:
 
             shuffle_off = player.shuffle_state
             repeat_after_unshuffle = player.repeat_mode
-            print(f"   ✓ Set shuffle OFF")
+            print("   ✓ Set shuffle OFF")
             print(f"   Shuffle state: {shuffle_off}")
             print(f"   Repeat preserved: {repeat_after_unshuffle}")
 
@@ -182,7 +182,7 @@ async def test_playback_controls(ip: str) -> dict[str, Any]:
 
             repeat_all = player.repeat_mode
             shuffle_after_repeat_all = player.shuffle_state
-            print(f"   ✓ Set repeat ALL")
+            print("   ✓ Set repeat ALL")
             print(f"   Repeat mode: {repeat_all}")
             print(f"   Shuffle preserved: {shuffle_after_repeat_all}")
 
@@ -193,7 +193,7 @@ async def test_playback_controls(ip: str) -> dict[str, Any]:
 
             repeat_one = player.repeat_mode
             shuffle_after_repeat_one = player.shuffle_state
-            print(f"   ✓ Set repeat ONE")
+            print("   ✓ Set repeat ONE")
             print(f"   Repeat mode: {repeat_one}")
             print(f"   Shuffle preserved: {shuffle_after_repeat_one}")
 
@@ -204,7 +204,7 @@ async def test_playback_controls(ip: str) -> dict[str, Any]:
 
             repeat_off = player.repeat_mode
             shuffle_after_repeat_off = player.shuffle_state
-            print(f"   ✓ Set repeat OFF")
+            print("   ✓ Set repeat OFF")
             print(f"   Repeat mode: {repeat_off}")
             print(f"   Shuffle preserved: {shuffle_after_repeat_off}")
 
@@ -224,7 +224,7 @@ async def test_playback_controls(ip: str) -> dict[str, Any]:
         # ================================================================
         # Restore Initial State
         # ================================================================
-        print(f"\n🔄 Restoring initial state...")
+        print("\n🔄 Restoring initial state...")
         try:
             if initial_shuffle is not None:
                 await player.set_shuffle(initial_shuffle)
@@ -235,7 +235,7 @@ async def test_playback_controls(ip: str) -> dict[str, Any]:
             elif initial_state and initial_state in ["pause", "paused"]:
                 await player.pause()
 
-            print(f"   ✓ State restored")
+            print("   ✓ State restored")
         except Exception as e:
             print(f"   ⚠ Could not fully restore state: {e}")
 
@@ -280,7 +280,7 @@ async def main():
     if result["connected"]:
         info = result["device_info"]
         print(f"Device: {info['name']} ({info['model']}) - fw: {info['firmware']}")
-        print(f"\nTest Results:")
+        print("\nTest Results:")
 
         for test_name, test_result in result["tests"].items():
             if test_result is None:
@@ -293,7 +293,7 @@ async def main():
             print(f"  {test_name.ljust(15)}: {status}")
 
         if result["errors"]:
-            print(f"\n⚠️  Errors encountered:")
+            print("\n⚠️  Errors encountered:")
             for error in result["errors"]:
                 print(f"  • {error}")
     else:

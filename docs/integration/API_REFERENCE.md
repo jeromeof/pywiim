@@ -281,7 +281,8 @@ await player.get_eq_presets()  # Returns list[str]
 await player.get_eq_status()  # Returns bool
 
 # Audio output control
-await player.set_audio_output_mode(mode: str | int)  # "Line Out" or 0-4
+# Official WiiM API: 1=SPDIF (Optical), 2=AUX (Line Out), 3=COAX
+await player.set_audio_output_mode(mode: str | int)  # "Line Out", "Optical Out", etc.
 
 # LED control
 await player.set_led(enabled: bool)
@@ -306,7 +307,7 @@ await player.scan_for_bluetooth_devices(duration: int = 3)  # Returns list[dict[
 outputs = player.available_outputs  # Returns list[str]
 bt_devices = player.bluetooth_output_devices  # Returns list[dict[str, str]]
 await player.audio.select_output("Optical Out")  # Hardware mode
-await player.audio.select_output("BT: Sony Speaker")  # Specific BT device
+await player.audio.select_output("BT: Sony Speaker")  # Specific paired Bluetooth device
 
 # Device management
 await player.reboot()

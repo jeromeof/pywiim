@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import sys
 import time
 from datetime import datetime
 
@@ -32,7 +31,7 @@ async def test_upnp_events(device_ip: str, callback_host: str | None = None) -> 
 
     # Create client
     client = WiiMClient(device_ip)
-    
+
     try:
         # Get device info
         print("📋 Getting device info...")
@@ -90,13 +89,13 @@ async def test_upnp_events(device_ip: str, callback_host: str | None = None) -> 
             callback_url = getattr(upnp_client.notify_server, "callback_url", None)
             server_host = getattr(upnp_client.notify_server, "host", "unknown")
             server_port = getattr(upnp_client.notify_server, "port", "unknown")
-            
+
             print("📡 Callback URL Information:")
             print(f"   Host: {server_host}")
             print(f"   Port: {server_port}")
             if callback_url:
                 print(f"   URL: {callback_url}")
-            
+
             # Check if callback URL is reachable
             if server_host == "0.0.0.0":
                 print()
@@ -115,7 +114,7 @@ async def test_upnp_events(device_ip: str, callback_host: str | None = None) -> 
         start_time = time.time()
         while True:
             await asyncio.sleep(1)
-            
+
             # Show status every 10 seconds
             elapsed = int(time.time() - start_time)
             if elapsed % 10 == 0 and elapsed > 0:
@@ -146,7 +145,7 @@ async def test_upnp_events(device_ip: str, callback_host: str | None = None) -> 
             print("      - Device not sending events")
             print("      - Network/firewall blocking")
             print("      - Try --callback-host to specify a reachable IP address")
-        
+
         await client.close()
 
 
@@ -159,7 +158,7 @@ async def main() -> None:
 Examples:
   # Basic test
   python scripts/test_upnp_events.py 192.168.1.68
-  
+
   # With callback host
   python scripts/test_upnp_events.py 192.168.1.68 --callback-host 192.168.1.254
         """
@@ -172,9 +171,9 @@ Examples:
         "--callback-host",
         help="IP address for UPnP callback URL (auto-detected if not specified)",
     )
-    
+
     args = parser.parse_args()
-    
+
     await test_upnp_events(args.device_ip, args.callback_host)
 
 

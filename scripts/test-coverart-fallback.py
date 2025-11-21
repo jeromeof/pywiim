@@ -6,8 +6,8 @@ import sys
 from pathlib import Path
 
 from pywiim import WiiMClient
-from pywiim.player import Player
 from pywiim.api.constants import DEFAULT_WIIM_LOGO_URL
+from pywiim.player import Player
 
 
 async def test_coverart_fallback(ip: str):
@@ -38,7 +38,7 @@ async def test_coverart_fallback(ip: str):
         cover_url = player.media_image_url
         if cover_url:
             print(f"  URL: {cover_url}")
-            
+
             # Check if it's the default logo
             if cover_url == DEFAULT_WIIM_LOGO_URL:
                 print("  ✅ Using default WiiM logo (fallback working)")
@@ -59,10 +59,10 @@ async def test_coverart_fallback(ip: str):
             result = await player.fetch_cover_art()
             if result:
                 image_bytes, content_type = result
-                print(f"  ✅ Success!")
+                print("  ✅ Success!")
                 print(f"     Content Type: {content_type}")
                 print(f"     Size: {len(image_bytes):,} bytes ({len(image_bytes) / 1024:.1f} KB)")
-                
+
                 # Save to file for verification
                 if is_fallback:
                     output_file = Path(f"coverart-fallback-{ip.replace('.', '-')}.jpg")
@@ -72,7 +72,7 @@ async def test_coverart_fallback(ip: str):
                 print(f"     Saved to: {output_file}")
                 print(f"     File exists: {output_file.exists()}")
                 print(f"     File size matches: {output_file.stat().st_size == len(image_bytes)}")
-                
+
                 # Verify it's actually an image
                 if content_type.startswith("image/"):
                     print(f"     ✅ Valid image file ({content_type})")
@@ -93,15 +93,15 @@ async def test_coverart_fallback(ip: str):
             result = await player.fetch_cover_art(DEFAULT_WIIM_LOGO_URL)
             if result:
                 image_bytes, content_type = result
-                print(f"  ✅ Success!")
+                print("  ✅ Success!")
                 print(f"     Content Type: {content_type}")
                 print(f"     Size: {len(image_bytes):,} bytes ({len(image_bytes) / 1024:.1f} KB)")
-                
+
                 # Save to file
-                output_file = Path(f"wiim-logo-direct.jpg")
+                output_file = Path("wiim-logo-direct.jpg")
                 output_file.write_bytes(image_bytes)
                 print(f"     Saved to: {output_file}")
-                print(f"     ✅ Default logo can be fetched successfully")
+                print("     ✅ Default logo can be fetched successfully")
             else:
                 print("  ❌ Failed to fetch default logo")
         except Exception as e:
@@ -131,6 +131,6 @@ if __name__ == "__main__":
     ip = "192.168.1.116"
     if len(sys.argv) > 1:
         ip = sys.argv[1]
-    
+
     asyncio.run(test_coverart_fallback(ip))
 

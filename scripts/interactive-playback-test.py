@@ -15,8 +15,8 @@ import asyncio
 import sys
 
 from pywiim import WiiMClient
-from pywiim.player import Player
 from pywiim.exceptions import WiiMError
+from pywiim.player import Player
 
 
 def print_menu():
@@ -57,7 +57,7 @@ async def show_status(player: Player):
     print(f"  Repeat: {player.repeat_mode}")
 
     if player.media_title:
-        print(f"\n  Now Playing:")
+        print("\n  Now Playing:")
         print(f"    Title: {player.media_title}")
         if player.media_artist:
             print(f"    Artist: {player.media_artist}")

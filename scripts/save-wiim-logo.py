@@ -4,6 +4,7 @@
 import asyncio
 import sys
 from pathlib import Path
+
 import aiohttp
 
 from pywiim.api.constants import DEFAULT_WIIM_LOGO_URL
@@ -23,17 +24,17 @@ async def save_wiim_logo(output_file: str = "wiim-logo-fallback.jpg"):
                 if response.status == 200:
                     image_bytes = await response.read()
                     content_type = response.headers.get("Content-Type", "image/png")
-                    
-                    print(f"✅ Success!")
+
+                    print("✅ Success!")
                     print(f"   Content Type: {content_type}")
                     print(f"   Size: {len(image_bytes):,} bytes ({len(image_bytes) / 1024:.1f} KB)")
-                    
+
                     # Save to file
                     output_path = Path(output_file)
                     output_path.write_bytes(image_bytes)
                     print(f"\n💾 Saved to: {output_path.absolute()}")
                     print(f"   File size: {output_path.stat().st_size:,} bytes")
-                    print(f"   ✅ WiiM logo saved successfully!")
+                    print("   ✅ WiiM logo saved successfully!")
                     return 0
                 else:
                     print(f"❌ Failed to fetch logo: HTTP {response.status}")
@@ -49,6 +50,6 @@ if __name__ == "__main__":
     output_file = "wiim-logo-fallback.jpg"
     if len(sys.argv) > 1:
         output_file = sys.argv[1]
-    
+
     sys.exit(asyncio.run(save_wiim_logo(output_file)))
 

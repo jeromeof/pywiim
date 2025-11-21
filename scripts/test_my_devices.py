@@ -13,7 +13,6 @@ import sys
 from typing import Any
 
 from pywiim import WiiMClient
-from pywiim.exceptions import WiiMError
 
 
 async def test_device(ip: str) -> dict[str, Any]:
@@ -21,7 +20,7 @@ async def test_device(ip: str) -> dict[str, Any]:
     print(f"\n{'='*60}")
     print(f"Testing device: {ip}")
     print(f"{'='*60}\n")
-    
+
     results = {
         "ip": ip,
         "connected": False,
@@ -30,9 +29,9 @@ async def test_device(ip: str) -> dict[str, Any]:
         "status": None,
         "errors": [],
     }
-    
+
     client = WiiMClient(ip, timeout=5.0)
-    
+
     try:
         # Test connection and device info
         print("📋 Getting device information...")
@@ -54,7 +53,7 @@ async def test_device(ip: str) -> dict[str, Any]:
             results["errors"].append(f"Device info failed: {e}")
             print(f"   ✗ Failed: {e}")
             return results
-        
+
         # Test capabilities
         print("\n🔧 Detecting capabilities...")
         try:
@@ -75,7 +74,7 @@ async def test_device(ip: str) -> dict[str, Any]:
         except Exception as e:
             results["errors"].append(f"Capability detection failed: {e}")
             print(f"   ✗ Failed: {e}")
-        
+
         # Test player status
         print("\n📊 Getting player status...")
         try:
@@ -92,10 +91,10 @@ async def test_device(ip: str) -> dict[str, Any]:
         except Exception as e:
             results["errors"].append(f"Status failed: {e}")
             print(f"   ✗ Failed: {e}")
-        
+
         # Test features
         print("\n🎯 Testing features...")
-        
+
         # Test presets
         if client.capabilities.get("supports_presets"):
             try:
@@ -104,8 +103,8 @@ async def test_device(ip: str) -> dict[str, Any]:
             except Exception as e:
                 print(f"   ⚠ Presets: Error - {e}")
         else:
-            print(f"   - Presets: Not supported")
-        
+            print("   - Presets: Not supported")
+
         # Test EQ
         if client.capabilities.get("supports_eq"):
             try:
@@ -114,17 +113,17 @@ async def test_device(ip: str) -> dict[str, Any]:
             except Exception as e:
                 print(f"   ⚠ EQ: Error - {e}")
         else:
-            print(f"   - EQ: Not supported")
-        
+            print("   - EQ: Not supported")
+
         # Test multiroom
         try:
-            multiroom = await client.get_multiroom_status()
-            print(f"   ✓ Multiroom: Supported")
-        except Exception as e:
-            print(f"   - Multiroom: Not supported or error")
-        
+            await client.get_multiroom_status()
+            print("   ✓ Multiroom: Supported")
+        except Exception:
+            print("   - Multiroom: Not supported or error")
+
         print(f"\n✅ Device {ip} test completed successfully!")
-        
+
     except KeyboardInterrupt:
         print("\n⚠️  Test interrupted by user")
         results["errors"].append("Test interrupted")
@@ -133,7 +132,7 @@ async def test_device(ip: str) -> dict[str, Any]:
         print(f"\n❌ Unexpected error: {e}")
     finally:
         await client.close()
-    
+
     return results
 
 
@@ -145,27 +144,27 @@ async def main():
         print("  python test_my_devices.py 192.168.1.100")
         print("  python test_my_devices.py 192.168.1.100 192.168.1.101")
         sys.exit(1)
-    
+
     device_ips = sys.argv[1:]
-    
+
     print(f"\n🧪 Testing {len(device_ips)} device(s)...")
     print(f"   Devices: {', '.join(device_ips)}\n")
-    
+
     # Test each device
     results = []
     for ip in device_ips:
         result = await test_device(ip)
         results.append(result)
-    
+
     # Summary
     print(f"\n{'='*60}")
     print("📊 TEST SUMMARY")
     print(f"{'='*60}\n")
-    
+
     successful = sum(1 for r in results if r["connected"])
     print(f"Devices tested: {len(results)}")
     print(f"Successful connections: {successful}/{len(results)}")
-    
+
     for result in results:
         print(f"\n{result['ip']}:")
         if result["connected"]:
@@ -175,11 +174,11 @@ async def main():
                 caps = result["capabilities"]
                 print(f"    Vendor: {caps['vendor']}, Type: {'WiiM' if caps['is_wiim'] else 'Legacy'}")
         else:
-            print(f"  ✗ Connection failed")
+            print("  ✗ Connection failed")
             if result["errors"]:
                 for error in result["errors"]:
                     print(f"    Error: {error}")
-    
+
     print(f"\n{'='*60}")
     print("💡 Tip: Run full diagnostics with:")
     print(f"   python -m pywiim.diagnostics {device_ips[0]} --output report.json")

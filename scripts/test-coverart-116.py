@@ -56,10 +56,10 @@ async def test_coverart(ip: str):
             result = await player.fetch_cover_art()
             if result:
                 image_bytes, content_type = result
-                print(f"  ✅ Success!")
+                print("  ✅ Success!")
                 print(f"     Content Type: {content_type}")
                 print(f"     Size: {len(image_bytes):,} bytes ({len(image_bytes) / 1024:.1f} KB)")
-                
+
                 # Save to file for verification
                 output_file = Path(f"coverart-{ip.replace('.', '-')}.jpg")
                 output_file.write_bytes(image_bytes)
@@ -90,6 +90,6 @@ if __name__ == "__main__":
     ip = "192.168.1.116"
     if len(sys.argv) > 1:
         ip = sys.argv[1]
-    
+
     asyncio.run(test_coverart(ip))
 

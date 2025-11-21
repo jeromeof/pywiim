@@ -485,6 +485,134 @@ This gives you:
 - ✅ Flexibility (application controls when to probe)
 - ✅ Framework-agnostic (library doesn't need to know storage mechanism)
 
+## Audio Output Control API (WiiM Devices Only)
+
+### Device Compatibility
+
+The audio output control API is **WiiM-specific** and not universally supported across LinkPlay devices:
+
+| Vendor | GET Status | SET Mode | Notes |
+|--------|------------|----------|-------|
+| **WiiM** | ✅ | ✅ | Full support (modes 0-3) |
+| **Arylic** | ⚠️ | ❌ | Read-only or not supported |
+| **Audio Pro** | ❓ | ❓ | Unknown (needs testing) |
+
+**Tested Devices:**
+- ✅ **WiiM Pro** (firmware 4.8.731953): Full support
+- ⚠️ **Arylic H50** (firmware 4.6.529755): Read-only (GET works, SET returns "unknown command")
+- ❌ **Arylic UP2STREAM_AMP_V4** (firmware 4.6.415145): Not supported (returns "unknown command")
+
+### Official WiiM API Mode Numbers
+
+According to the official WiiM API documentation (Section 2.10 Audio Output Control):
+
+- **Mode 1**: `AUDIO_OUTPUT_SPDIF_MODE` - Optical/TOSLINK output
+- **Mode 2**: `AUDIO_OUTPUT_AUX_MODE` - Line Out/Auxiliary/RCA output (primary line out)
+- **Mode 3**: `AUDIO_OUTPUT_COAX_MODE` - Coaxial output
+- **Mode 0**: Undocumented but functional on WiiM devices (legacy mode)
+
+**Key Finding:** Mode 2 is the official primary line out mode, not mode 0.
+
+### HTTP Endpoints
+
+#### Get Current Audio Output Status
+
+```bash
+GET https://DEVICE_IP:443/httpapi.asp?command=getAudioOutputStatus
+
+# Example response
+{
+  "hardware": "2",  # Current hardware mode (1=SPDIF, 2=AUX, 3=COAX)
+  "source": "0",    # BT source (0=disabled, 1=BT output active)
+  "audiocast": "0"  # Audiocast state (0=disabled, 1=active)
+}
+```
+
+**Field Meanings:**
+- `hardware`: Hardware output mode number (string)
+- `source`: Bluetooth output state (0=disabled, 1=active)
+- `audiocast`: Audiocast/multi-room casting state
+
+#### Set Audio Output Mode
+
+```bash
+GET https://DEVICE_IP:443/httpapi.asp?command=setAudioOutputHardwareMode:MODE
+
+# Examples
+curl -k "https://192.168.1.100:443/httpapi.asp?command=setAudioOutputHardwareMode:1"  # Optical
+curl -k "https://192.168.1.100:443/httpapi.asp?command=setAudioOutputHardwareMode:2"  # Line Out
+curl -k "https://192.168.1.100:443/httpapi.asp?command=setAudioOutputHardwareMode:3"  # Coax
+```
+
+**Note:** Use `-k` or `--insecure` with curl to bypass certificate verification, as WiiM devices use self-signed certificates.
+
+### Arylic Device Behavior
+
+Arylic devices have limited or no support for audio output control:
+
+**Common Failure Responses:**
+```bash
+# Plain text "unknown command" (not JSON)
+$ curl -k "https://192.168.6.50:443/httpapi.asp?command=setAudioOutputHardwareMode:2"
+unknown command
+
+# Empty response
+$ curl "http://192.168.6.95:80/httpapi.asp?command=getAudioOutputStatus"
+[empty response]
+```
+
+**Why this matters:**
+- Arylic firmware does not implement `setAudioOutputHardwareMode` command
+- Some models support reading status but not changing mode
+- Applications should probe for support and hide audio output controls on Arylic devices
+
+### Testing Device Compatibility
+
+```bash
+# Test if device supports audio output control
+curl -k "https://DEVICE_IP:443/httpapi.asp?command=getAudioOutputStatus"
+
+# Expected responses:
+# ✅ WiiM: {"hardware":"2","source":"0","audiocast":"0"}
+# ❌ Arylic: "unknown command" (plain text)
+# ❌ Arylic: "" (empty response)
+```
+
+### WiiM Ultra Unknown Modes
+
+The WiiM Ultra has additional physical outputs not yet documented in the API:
+
+- **HDMI eARC output**: Mode number unknown (possibly 5 or 6+)
+- **Physical 3.5mm headphone jack** (front panel): Mode number unknown (possibly 5 or 6+)
+
+These require physical testing on WiiM Ultra with actual devices connected to discover the mode numbers.
+
+**Note:** These are different from Bluetooth headphones, which use the `source` field (not `hardware` field).
+
+### Mode 0 Mystery
+
+Mode 0 is accepted by WiiM devices but is not documented in the official API:
+
+- Works on tested WiiM Pro devices
+- May be legacy compatibility mode
+- May be alternative line out configuration
+- Purpose and differences from mode 2 unclear
+
+### Best Practices
+
+**DO:**
+- ✅ Check device vendor before offering audio output control
+- ✅ Probe `getAudioOutputStatus` on startup to detect support
+- ✅ Use mode 2 for "Line Out" selection (official AUX mode)
+- ✅ Handle "unknown command" responses gracefully
+- ✅ Use HTTPS by default with proper SSL handling
+
+**DO NOT:**
+- ❌ Assume audio output API works on all LinkPlay devices
+- ❌ Use mode 0 as primary line out (mode 2 is official)
+- ❌ Show audio output controls on unsupported devices
+- ❌ Fail hard when device returns "unknown command"
+
 ## API Documentation Sources
 
 **Official Documentation**:

@@ -9,7 +9,6 @@ This script tests:
 import asyncio
 import logging
 import sys
-from typing import Any
 
 from pywiim import Player, WiiMClient
 

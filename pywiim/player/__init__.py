@@ -687,6 +687,22 @@ class Player(PlayerBase):
         """
         return self._properties.upnp_miss_rate
 
+    @property
+    def audio(self) -> AudioConfiguration:
+        """Audio configuration manager.
+
+        Provides access to audio-related methods:
+        - select_output() - Select hardware output or Bluetooth device
+        - set_source() - Set audio input source
+        - set_audio_output_mode() - Set hardware output mode
+        - set_led() - Control LED state
+        - set_led_brightness() - Control LED brightness
+
+        Returns:
+            AudioConfiguration instance for audio control.
+        """
+        return self._audio_config
+
 
 # Export Player class
 __all__ = ["Player"]

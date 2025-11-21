@@ -75,13 +75,13 @@ async def test_optimistic_notifications(master_ip: str, slave_ip: str):
         await slave.refresh()
 
         if master.is_master:
-            print(f"  ℹ️  Master is already master, disbanding...")
+            print("  ℹ️  Master is already master, disbanding...")
             await master.leave_group()
             await asyncio.sleep(1)
             await master.refresh()
 
         if slave.is_slave:
-            print(f"  ℹ️  Slave is already in group, leaving...")
+            print("  ℹ️  Slave is already in group, leaving...")
             await slave.leave_group()
             await asyncio.sleep(1)
             await slave.refresh()
@@ -98,9 +98,9 @@ async def test_optimistic_notifications(master_ip: str, slave_ip: str):
         start_time = datetime.now()
         print(f"  ⏱️  Starting at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
 
-        group = await master.create_group()
+        await master.create_group()
 
-        print(f"  ✓ Group created")
+        print("  ✓ Group created")
         print(f"  ✓ Master role: {master.role}")
         print(f"  ✓ Master has group object: {master.group is not None}")
 
@@ -112,7 +112,7 @@ async def test_optimistic_notifications(master_ip: str, slave_ip: str):
         print("-" * 70)
         join_start = datetime.now()
         print(f"  ⏱️  Starting join at {join_start.strftime('%H:%M:%S.%f')[:-3]}")
-        print(f"  📡 Calling slave.join_group(master)...")
+        print("  📡 Calling slave.join_group(master)...")
 
         # This is the critical operation - watch for notifications
         await slave.join_group(master)
@@ -126,14 +126,14 @@ async def test_optimistic_notifications(master_ip: str, slave_ip: str):
         print("-" * 70)
 
         # Check immediate state (no refresh)
-        print(f"\n  📍 Immediate state (no refresh/polling):")
+        print("\n  📍 Immediate state (no refresh/polling):")
         print(f"     Master role: {master.role}")
         print(f"     Slave role: {slave.role}")
         print(f"     Master group size: {master.group.size if master.group else 0}")
         print(f"     Slave in master's group: {slave in (master.group.slaves if master.group else [])}")
 
         # Notification analysis
-        print(f"\n  🔔 Notifications received:")
+        print("\n  🔔 Notifications received:")
         print(f"     Master notifications: {len(master_tracker.notifications)}")
         print(f"     Slave notifications: {len(slave_tracker.notifications)}")
 
@@ -148,7 +148,7 @@ async def test_optimistic_notifications(master_ip: str, slave_ip: str):
                 print(f"       #{i}: +{delta_ms:.1f}ms (role={notif['role']})")
 
         # Verification
-        print(f"\n  ✅ Verification:")
+        print("\n  ✅ Verification:")
         master_notified = len(master_tracker.notifications) > 0
         slave_notified = len(slave_tracker.notifications) > 0
         master_correct_role = master.role == "master"
@@ -172,15 +172,15 @@ async def test_optimistic_notifications(master_ip: str, slave_ip: str):
         )
 
         if all_passed:
-            print(f"\n  🎉 SUCCESS! Both master and slave were notified optimistically!")
-            print(f"     No polling or refresh required - state updates were immediate.")
+            print("\n  🎉 SUCCESS! Both master and slave were notified optimistically!")
+            print("     No polling or refresh required - state updates were immediate.")
         else:
-            print(f"\n  ❌ FAILED! Some verifications did not pass.")
+            print("\n  ❌ FAILED! Some verifications did not pass.")
 
         # Optional: verify device state matches library state
-        print(f"\n📋 Step 4: Verify device state (optional)")
+        print("\n📋 Step 4: Verify device state (optional)")
         print("-" * 70)
-        print(f"  ℹ️  Refreshing from devices to verify...")
+        print("  ℹ️  Refreshing from devices to verify...")
 
         await master.refresh()
         await slave.refresh()
@@ -190,11 +190,11 @@ async def test_optimistic_notifications(master_ip: str, slave_ip: str):
         print(f"     Device state matches library: {master.role == 'master' and slave.role == 'slave'}")
 
         # Cleanup
-        print(f"\n📋 Step 5: Cleanup")
+        print("\n📋 Step 5: Cleanup")
         print("-" * 70)
-        print(f"  🧹 Disbanding group...")
+        print("  🧹 Disbanding group...")
         await master.leave_group()
-        print(f"  ✓ Cleanup complete")
+        print("  ✓ Cleanup complete")
 
         return 0 if all_passed else 1
 

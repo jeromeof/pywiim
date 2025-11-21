@@ -3,11 +3,10 @@
 
 import asyncio
 import sys
-import json
 
 from pywiim import WiiMClient
-from pywiim.player import Player
 from pywiim.api.constants import DEFAULT_WIIM_LOGO_URL
+from pywiim.player import Player
 
 
 async def test_coverart_fallback_full(ip: str):
@@ -26,7 +25,7 @@ async def test_coverart_fallback_full(ip: str):
             raw_status = await client._request("/httpapi.asp?command=getPlayerStatusEx")
         except Exception:
             raw_status = await client._request("/httpapi.asp?command=getStatusEx")
-        
+
         # Check if getMetaInfo is available
         meta_info = None
         if hasattr(client, "get_meta_info"):
@@ -39,19 +38,19 @@ async def test_coverart_fallback_full(ip: str):
 
         # Check what cover art fields exist
         print("🔍 Analyzing cover art in responses:")
-        
+
         # Check getPlayerStatusEx
         cover_fields_status = {}
         for key, value in raw_status.items():
             key_lower = key.lower()
             if any(term in key_lower for term in ["cover", "art", "album", "pic", "image", "artwork", "picture"]):
                 cover_fields_status[key] = value
-        
+
         if cover_fields_status:
             print(f"   getPlayerStatusEx has cover art fields: {list(cover_fields_status.keys())}")
         else:
             print("   getPlayerStatusEx: ❌ No cover art fields")
-        
+
         # Check getMetaInfo
         if meta_info and "metaData" in meta_info:
             meta_data = meta_info["metaData"]
@@ -61,7 +60,7 @@ async def test_coverart_fallback_full(ip: str):
                 if any(term in key_lower for term in ["cover", "art", "album", "pic", "image", "artwork", "picture"]):
                     if "album" not in key_lower or "art" in key_lower:  # Exclude just "album" field
                         cover_fields_meta[key] = value
-            
+
             if cover_fields_meta:
                 print(f"   getMetaInfo has cover art fields: {list(cover_fields_meta.keys())}")
             else:
@@ -74,14 +73,14 @@ async def test_coverart_fallback_full(ip: str):
         # Get parsed status (this should handle the fallback)
         print("📋 Getting parsed player status (with fallback logic)...")
         parsed = await client.get_player_status()
-        
+
         entity_picture = parsed.get("entity_picture")
         print(f"   entity_picture: {entity_picture}")
         print()
 
         # Verify fallback behavior
         print("✅ Verifying fallback behavior:")
-        
+
         if not cover_fields_status and (not meta_info or not meta_info.get("metaData", {}).get("albumArtURI")):
             # No artwork in either source
             if entity_picture == DEFAULT_WIIM_LOGO_URL:
@@ -92,7 +91,7 @@ async def test_coverart_fallback_full(ip: str):
             print("   ℹ️  Artwork found in getPlayerStatusEx (no fallback needed)")
         elif meta_info and meta_info.get("metaData", {}).get("albumArtURI"):
             print("   ℹ️  Artwork found in getMetaInfo (fallback to getMetaInfo worked)")
-            print(f"   ✅ SUCCESS: getMetaInfo fallback is working!")
+            print("   ✅ SUCCESS: getMetaInfo fallback is working!")
         else:
             print("   ⚠️  Unexpected state")
 
@@ -103,7 +102,7 @@ async def test_coverart_fallback_full(ip: str):
         await player.refresh()
         player_url = player.media_image_url
         print(f"   player.media_image_url: {player_url}")
-        
+
         if player_url == DEFAULT_WIIM_LOGO_URL:
             print("   ✅ Player is using default logo (fallback working)")
         elif player_url and player_url != DEFAULT_WIIM_LOGO_URL:
@@ -119,7 +118,7 @@ async def test_coverart_fallback_full(ip: str):
             result = await player.fetch_cover_art()
             if result:
                 image_bytes, content_type = result
-                print(f"   ✅ Success!")
+                print("   ✅ Success!")
                 print(f"      Content Type: {content_type}")
                 print(f"      Size: {len(image_bytes):,} bytes ({len(image_bytes) / 1024:.1f} KB)")
             else:
@@ -135,12 +134,12 @@ async def test_coverart_fallback_full(ip: str):
         print("=" * 70)
         print("✅ Complete Fallback Test Summary")
         print("=" * 70)
-        print(f"\n📊 Results:")
+        print("\n📊 Results:")
         print(f"   - getPlayerStatusEx has artwork: {bool(cover_fields_status)}")
         print(f"   - getMetaInfo has artwork: {bool(meta_info and meta_info.get('metaData', {}).get('albumArtURI'))}")
         print(f"   - Final entity_picture: {entity_picture}")
         print(f"   - Is default logo: {entity_picture == DEFAULT_WIIM_LOGO_URL}")
-        print(f"   - Fallback logic working: ✅")
+        print("   - Fallback logic working: ✅")
 
     except Exception as e:
         print(f"\n❌ Error: {e}")
@@ -154,6 +153,6 @@ if __name__ == "__main__":
     ip = "192.168.1.116"
     if len(sys.argv) > 1:
         ip = sys.argv[1]
-    
+
     asyncio.run(test_coverart_fallback_full(ip))
 

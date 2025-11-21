@@ -399,31 +399,45 @@ API_ENDPOINT_SET_SHUTDOWN = "/httpapi.asp?command=setShutdown:"
 API_ENDPOINT_GET_SHUTDOWN = "/httpapi.asp?command=getShutdown"
 
 # Audio output mode constants
-AUDIO_OUTPUT_MODE_LINE_OUT = 0
-AUDIO_OUTPUT_MODE_OPTICAL_OUT = 1
-AUDIO_OUTPUT_MODE_LINE_OUT_2 = 2  # Some devices have multiple line out modes
-AUDIO_OUTPUT_MODE_COAX_OUT = 3
-AUDIO_OUTPUT_MODE_BLUETOOTH_OUT = 4
+# Based on official WiiM API documentation (Section 2.10 Audio Output Control):
+# hardware field values: 1=SPDIF, 2=AUX, 3=COAX
+# source field: 0=BT disabled, 1=BT active (mode 4)
+# NOTE: Mode 0 exists in practice but not documented in official API
+# NOTE: WiiM Ultra physical headphone jack and HDMI mode numbers unknown
+AUDIO_OUTPUT_MODE_LINE_OUT = 0  # Undocumented but works on WiiM devices
+AUDIO_OUTPUT_MODE_SPDIF_OUT = 1  # AUDIO_OUTPUT_SPDIF_MODE (Optical/TOSLINK)
+AUDIO_OUTPUT_MODE_AUX_OUT = 2  # AUDIO_OUTPUT_AUX_MODE (Line Out/Auxiliary/RCA)
+AUDIO_OUTPUT_MODE_COAX_OUT = 3  # AUDIO_OUTPUT_COAX_MODE (Coaxial)
+AUDIO_OUTPUT_MODE_BLUETOOTH_OUT = 4  # Bluetooth output (via source=1 field)
+
+# Legacy aliases for backward compatibility
+AUDIO_OUTPUT_MODE_OPTICAL_OUT = AUDIO_OUTPUT_MODE_SPDIF_OUT
+AUDIO_OUTPUT_MODE_LINE_OUT_2 = AUDIO_OUTPUT_MODE_AUX_OUT
 
 # Audio output mode mapping (mode integer -> friendly name)
 AUDIO_OUTPUT_MODE_MAP: dict[int, str] = {
-    AUDIO_OUTPUT_MODE_LINE_OUT: "Line Out",
-    AUDIO_OUTPUT_MODE_OPTICAL_OUT: "Optical Out",
-    AUDIO_OUTPUT_MODE_LINE_OUT_2: "Line Out",  # Treat as Line Out for display
-    AUDIO_OUTPUT_MODE_COAX_OUT: "Coax Out",
-    AUDIO_OUTPUT_MODE_BLUETOOTH_OUT: "Bluetooth Out",
+    AUDIO_OUTPUT_MODE_LINE_OUT: "Line Out",  # Mode 0 - undocumented
+    AUDIO_OUTPUT_MODE_SPDIF_OUT: "Optical Out",  # Mode 1 - SPDIF
+    AUDIO_OUTPUT_MODE_AUX_OUT: "Line Out",  # Mode 2 - AUX (primary line out)
+    AUDIO_OUTPUT_MODE_COAX_OUT: "Coax Out",  # Mode 3 - COAX
+    AUDIO_OUTPUT_MODE_BLUETOOTH_OUT: "Bluetooth Out",  # Mode 4 - BT
 }
 
 # Reverse mapping (friendly name -> mode integer)
+# Maps to mode 2 (AUX) as primary line out per API docs
 AUDIO_OUTPUT_MODE_NAME_TO_INT: dict[str, int] = {
-    "line out": AUDIO_OUTPUT_MODE_LINE_OUT,
-    "lineout": AUDIO_OUTPUT_MODE_LINE_OUT,
-    "optical out": AUDIO_OUTPUT_MODE_OPTICAL_OUT,
-    "optical": AUDIO_OUTPUT_MODE_OPTICAL_OUT,
-    "coax out": AUDIO_OUTPUT_MODE_COAX_OUT,
+    "line out": AUDIO_OUTPUT_MODE_AUX_OUT,  # Map to mode 2 (AUX) per API
+    "lineout": AUDIO_OUTPUT_MODE_AUX_OUT,
+    "aux": AUDIO_OUTPUT_MODE_AUX_OUT,
+    "aux out": AUDIO_OUTPUT_MODE_AUX_OUT,
+    "optical out": AUDIO_OUTPUT_MODE_SPDIF_OUT,  # Mode 1 (SPDIF)
+    "optical": AUDIO_OUTPUT_MODE_SPDIF_OUT,
+    "spdif": AUDIO_OUTPUT_MODE_SPDIF_OUT,
+    "spdif out": AUDIO_OUTPUT_MODE_SPDIF_OUT,
+    "coax out": AUDIO_OUTPUT_MODE_COAX_OUT,  # Mode 3
     "coax": AUDIO_OUTPUT_MODE_COAX_OUT,
     "coaxial": AUDIO_OUTPUT_MODE_COAX_OUT,
-    "bluetooth out": AUDIO_OUTPUT_MODE_BLUETOOTH_OUT,
+    "bluetooth out": AUDIO_OUTPUT_MODE_BLUETOOTH_OUT,  # Mode 4
     "bluetooth": AUDIO_OUTPUT_MODE_BLUETOOTH_OUT,
 }
 
@@ -452,8 +466,10 @@ API_ENDPOINT_ARYLIC_LED_BRIGHTNESS = "/httpapi.asp?command=MCU+PAS+RAKOIT:LEDBRI
 
 __all__ = [
     "AUDIO_OUTPUT_MODE_LINE_OUT",
-    "AUDIO_OUTPUT_MODE_OPTICAL_OUT",
-    "AUDIO_OUTPUT_MODE_LINE_OUT_2",
+    "AUDIO_OUTPUT_MODE_SPDIF_OUT",
+    "AUDIO_OUTPUT_MODE_AUX_OUT",
+    "AUDIO_OUTPUT_MODE_OPTICAL_OUT",  # Legacy alias
+    "AUDIO_OUTPUT_MODE_LINE_OUT_2",  # Legacy alias
     "AUDIO_OUTPUT_MODE_COAX_OUT",
     "AUDIO_OUTPUT_MODE_BLUETOOTH_OUT",
     "AUDIO_OUTPUT_MODE_MAP",

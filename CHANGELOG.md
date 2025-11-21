@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.15] - 2025-11-21
+
+### Fixed
+- Fixed audio output mode mapping to match official WiiM API documentation (1=SPDIF/Optical, 2=AUX/Line Out, 3=COAX)
+- "Line Out" now correctly maps to mode 2 (AUX) instead of mode 0, per official API specs
+- Added `player.audio` property to expose AudioConfiguration (documented API was previously broken)
+
 ## [2.0.14] - 2025-11-20
 
 ### Fixed

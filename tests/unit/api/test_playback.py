@@ -327,8 +327,8 @@ class TestPlaybackAPIAudioOutput:
     @pytest.mark.asyncio
     async def test_audio_output_name_to_mode(self, mock_client):
         """Test converting audio output name to mode."""
-        assert mock_client.audio_output_name_to_mode("Line Out") == 0
-        assert mock_client.audio_output_name_to_mode("Optical Out") == 1
+        assert mock_client.audio_output_name_to_mode("Line Out") == 2  # Maps to AUX per official API
+        assert mock_client.audio_output_name_to_mode("Optical Out") == 1  # Maps to SPDIF
         assert mock_client.audio_output_name_to_mode("Bluetooth Out") == 4
         assert mock_client.audio_output_name_to_mode("Unknown") is None
         assert mock_client.audio_output_name_to_mode("") is None
@@ -340,7 +340,7 @@ class TestPlaybackAPIAudioOutput:
 
         await mock_client.set_audio_output_mode("Line Out")
 
-        mock_client.set_audio_output_hardware_mode.assert_called_once_with(0)
+        mock_client.set_audio_output_hardware_mode.assert_called_once_with(2)  # AUX mode per official API
 
     @pytest.mark.asyncio
     async def test_set_audio_output_mode_by_int(self, mock_client):

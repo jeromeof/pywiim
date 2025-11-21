@@ -8,7 +8,6 @@ to generate properly formatted changelog entries in Keep a Changelog format.
 import argparse
 import subprocess
 import sys
-from pathlib import Path
 
 try:
     import openai
