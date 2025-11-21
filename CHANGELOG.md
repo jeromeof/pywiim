@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.19] - 2025-11-21
+
+### Fixed
+- **Position jitter fix - smooth playback position updates**
+  - Fixed position "jumping" inconsistently (+2, +3, +4 seconds) during Home Assistant polling
+  - Added 0.1s settling period after HTTP updates to return exact position before resuming estimation
+  - Increased drift tolerance from 3 to 5 seconds to prioritize smoothness over precision
+  - Position updates now match actual time elapsed consistently
+  - **Impact**: Home Assistant users see smooth, predictable position updates instead of jittery jumps
+  - **Philosophy**: Smoothness > Accuracy - users notice jitter, not 5-second drift
+
 ## [2.0.18] - 2025-11-21
 
 ### Fixed

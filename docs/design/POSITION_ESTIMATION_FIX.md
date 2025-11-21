@@ -42,13 +42,13 @@ if drift > POSITION_SYNC_TOLERANCE:
 
 ### 2. Increased Tolerance (Hysteresis)
 
-Changed tolerance from 2 seconds to 3 seconds, matching modern media player UX standards:
+Changed tolerance from 2 seconds to 5 seconds, prioritizing smoothness over accuracy:
 
 ```python
-POSITION_SYNC_TOLERANCE = 3  # seconds
+POSITION_SYNC_TOLERANCE = 5  # seconds
 ```
 
-**Rationale**: For UI display, 1-3 second accuracy is perfectly acceptable. Users don't notice small differences, but they DO notice jumpiness. Smoothness > Precision.
+**Rationale**: For UI display, SMOOTHNESS > ACCURACY. Users notice jitter, not 5-second drift. Keep timer smooth and consistent.
 
 ### 3. Fixed Order of Operations
 
@@ -145,13 +145,13 @@ All existing tests continue to pass:
 | Track change | Always | Reset | New track, reset to position 0 |
 | Seek backward | > 2s jump back | Reset | User skipped backward |
 | Seek forward | > 10s jump forward | Reset | User skipped forward |
-| Large drift | > 3s difference | Reset | Position correction needed |
-| Small drift | ≤ 3s difference | **Keep smooth** | HTTP confirms we're close enough |
+| Large drift | > 5s difference | Reset | Position correction needed |
+| Small drift | ≤ 5s difference | **Keep smooth** | HTTP confirms we're close enough |
 
 ### Key Parameters
 
 ```python
-POSITION_SYNC_TOLERANCE = 3  # Don't reset if within 3 seconds
+POSITION_SYNC_TOLERANCE = 5  # Don't reset if within 5 seconds (smoothness over accuracy)
 SEEK_BACKWARD_THRESHOLD = 2  # Detect seeks > 2 seconds backward
 SEEK_FORWARD_THRESHOLD = 10  # Detect seeks > 10 seconds forward
 ```

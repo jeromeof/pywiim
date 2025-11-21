@@ -223,6 +223,10 @@ class StateSynchronizer:
         self._estimation_start_time: float | None = None
         self._last_position: int | None = None
         self._last_track_signature: str | None = None
+        # Track when we last received an HTTP/UPnP position update
+        # Used to return the exact HTTP value briefly before resuming estimation
+        self._last_http_position: int | None = None
+        self._last_http_position_time: float | None = None
 
     def update_from_http(
         self,
@@ -728,11 +732,11 @@ class StateSynchronizer:
             # not to the old base position from seconds ago
             drift = abs(pos_int - estimated_now)
 
-            # Tolerance for position sync: 3 seconds
-            # Rationale: For UI display, 1-3 second accuracy is fine.
-            # We prefer smooth timer increments over jumping to match HTTP exactly.
+            # Tolerance for position sync: 5 seconds
+            # Rationale: SMOOTHNESS > ACCURACY for UI display.
+            # Users notice jitter, not 5-second drift. Keep timer smooth.
             # HTTP polling is "confirmation", not "correction" unless drift is significant.
-            POSITION_SYNC_TOLERANCE = 3  # seconds
+            POSITION_SYNC_TOLERANCE = 5  # seconds
 
             if drift > POSITION_SYNC_TOLERANCE:
                 # Significant drift - reset to HTTP position
@@ -761,6 +765,11 @@ class StateSynchronizer:
             # Update last_position to estimated value (not HTTP) for continuity
             if estimated_now is not None:
                 self._last_position = estimated_now
+
+        # Always store the HTTP position and timestamp for short-term use
+        # This allows returning the exact HTTP value briefly before resuming estimation
+        self._last_http_position = pos_int
+        self._last_http_position_time = timestamp
 
         self._last_track_signature = current_signature
 
@@ -794,9 +803,26 @@ class StateSynchronizer:
             return None
 
         # Estimate position while playing
+        now = time.time()
         if self._estimation_base_position is not None and self._estimation_start_time is not None:
-            now = time.time()
             elapsed = now - self._estimation_start_time
+
+            # If estimation just started (< 0.1s elapsed) and we have a fresh HTTP position,
+            # return that exact value to avoid jitter from estimation starting immediately
+            # This provides a brief "settling period" after HTTP updates
+            if (
+                elapsed < 0.1
+                and self._last_http_position is not None
+                and self._last_http_position_time is not None
+                and abs(self._last_http_position_time - self._estimation_start_time) < 0.1
+            ):
+                _LOGGER.debug(
+                    "Returning fresh HTTP position: %ds (elapsed=%.3fs)",
+                    self._last_http_position,
+                    elapsed,
+                )
+                return self._last_http_position
+
             estimated = self._estimation_base_position + int(elapsed)
 
             # Clamp to duration if available
