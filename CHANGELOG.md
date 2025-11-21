@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.13] - 2025-11-20
+
+### Fixed
+- **Fixed entity_picture sentinel value for embedded logo fallback**
+  - Set `entity_picture = "pywiim:embedded-logo"` when no artwork (was `None`)
+  - HA now correctly detects there's cover art to display
+  - `fetch_cover_art()` recognizes sentinel and serves embedded logo bytes
+  - **Impact**: Logo now actually displays in HA when nothing is playing
+
 ## [2.0.12] - 2025-11-20
 
 ### Fixed

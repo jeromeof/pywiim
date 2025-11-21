@@ -67,10 +67,10 @@ class CoverArtManager:
         if url is None:
             url = PlayerProperties(self.player).media_image_url
 
-        # If no URL provided, return embedded PyWiim logo directly (no HTTP call needed)
-        if not url:
-            from ..api.constants import EMBEDDED_LOGO_BASE64
+        # If no URL provided OR sentinel value, return embedded PyWiim logo directly (no HTTP call needed)
+        from ..api.constants import DEFAULT_WIIM_LOGO_URL, EMBEDDED_LOGO_BASE64
 
+        if not url or url == DEFAULT_WIIM_LOGO_URL:
             try:
                 # Decode the embedded base64 PNG logo (join tuple of strings first)
                 base64_string = "".join(EMBEDDED_LOGO_BASE64)

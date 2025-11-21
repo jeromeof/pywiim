@@ -139,9 +139,13 @@ MODE_MAP: dict[str, str] = {
     "99": "follower",
 }
 
+# Sentinel value for entity_picture when using embedded fallback logo
+# This tells HA there's cover art to fetch, and tells fetch_cover_art() to serve embedded logo
+DEFAULT_WIIM_LOGO_URL = "pywiim:embedded-logo"
+
 # Embedded PyWiim logo (PNG format) - used as fallback when no cover art is available
 # Size: 7977 bytes (7.79 KB) - Original WiiM logo from mjcumming/wiim integration
-# This is returned directly as bytes when fetch_cover_art() is called with no artwork
+# This is returned directly as bytes when fetch_cover_art() is called with embedded logo sentinel
 # No URL fetching needed - just decode base64 and serve the embedded image
 EMBEDDED_LOGO_BASE64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAgAAAAEACAYAAADFkM5nAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNS"
@@ -278,9 +282,6 @@ EMBEDDED_LOGO_BASE64 = (
     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAoFD/DwsJ30T/VoZMAAAAAElFTkSuQmCC"
 )
-
-# For backward compatibility - can be set to None or empty string since we serve bytes directly
-DEFAULT_WIIM_LOGO_URL = None  # No URL needed - logo is embedded
 
 # EQ preset numeric mapping
 # Maps numeric EQ preset values to preset names
