@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.14] - 2025-11-20
+
+### Fixed
+- **Replaced rectangular logo with square logo for better HA display**
+  - Now using 256x257 square icon from original WiiM HA integration
+  - Smaller file size: 4.85 KB (was 7.79 KB)
+  - Better visual appearance when displayed in Home Assistant UI
+  - **Impact**: Logo displays properly in square aspect ratio on HA media player cards
+
 ## [2.0.13] - 2025-11-20
 
 ### Fixed
