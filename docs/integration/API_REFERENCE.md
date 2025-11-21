@@ -257,6 +257,167 @@ await eventer.async_subscribe()
 - Clamps to duration to prevent overflow
 - No manual intervention needed
 
+#### Position & Duration Edge Cases
+
+The library automatically handles several edge cases and device quirks related to position and duration tracking. Understanding these helps when building integrations:
+
+##### 1. Time Unit Inconsistency (Issue [#75](https://github.com/mjcumming/wiim/issues/75))
+
+**Problem**: The LinkPlay/WiiM API returns time values in different units depending on the source:
+- Most sources (USB, Line In, etc.): **milliseconds** (1,000 ms = 1 second)
+- Streaming services (Spotify, Tidal, Qobuz, etc.): **microseconds** (1,000,000 μs = 1 second)
+
+**Solution**: The library uses intelligent auto-detection with a 10-hour threshold:
+
+```python
+# Values < 36,000,000 = treated as milliseconds
+# Values ≥ 36,000,000 = treated as microseconds
+
+# This works because most tracks are < 10 hours
+# If a value would be > 10 hours in ms, it's likely μs instead
+```
+
+**Impact**: Position and duration values are always returned in **seconds** regardless of source. No manual conversion needed.
+
+##### 2. Live Streams & Zero Duration
+
+**Problem**: Web radio, internet radio, and live streams report `duration=0` because there's no defined end time.
+
+**Solution**: The library converts zero duration to `None`:
+
+```python
+if player.media_duration is None:
+    # Live stream, web radio, or duration unavailable
+    # Don't show progress bar
+    print("Live stream - no duration available")
+else:
+    # Normal track with known duration
+    progress = (player.media_position / player.media_duration) * 100
+    print(f"Progress: {progress:.1f}%")
+```
+
+**Sources affected**: `wifi`, `webradio`, `iheartradio`, `pandora`, `tunein`
+
+##### 3. Position Exceeds Duration (Firmware Bugs)
+
+**Problem**: Device firmware sometimes reports impossible states where position > duration.
+
+**Solution**: The library has intelligent detection and correction:
+
+```python
+# Scenario A: Duration seems too short (< 2 minutes) but position is reasonable
+# → Likely firmware bug in duration calculation
+# → Hide duration, keep position
+if position > 30 and duration < 120:
+    media_duration = None  # Hide bad duration
+    
+# Scenario B: Position clearly exceeds reasonable duration
+# → Likely firmware bug in position reporting
+# → Reset position to 0
+else:
+    media_position = 0  # Reset bad position
+```
+
+**Additional protection**: Position is clamped to duration at the property level:
+
+```python
+# Position can never exceed duration
+if player.media_position and player.media_duration:
+    assert player.media_position <= player.media_duration  # Always True
+```
+
+##### 4. AirPlay Duration Interpretation
+
+**Problem**: Early versions incorrectly interpreted the `totlen` field as "remaining time" instead of "total duration" for AirPlay sources.
+
+**Solution**: Fixed in v1.0.75+. The `totlen` field is now correctly interpreted as total track duration for all sources, including AirPlay.
+
+```python
+# ✅ Correct (current): totlen = total duration
+# AirPlay playing 4:00 track at 2:00 position:
+#   position = 120 seconds (elapsed)
+#   duration = 240 seconds (total)
+#   progress = 50%
+```
+
+##### 5. Negative Position Values
+
+**Problem**: Device API sometimes returns negative position values (invalid).
+
+**Solution**: Negative values are filtered out:
+
+```python
+if player.media_position is not None:
+    # Always ≥ 0, never negative
+    # Negative values from API return None instead
+    pass
+```
+
+##### 6. UPnP Position Updates
+
+**Important limitation**: UPnP events provide position/duration **only when tracks start**, not continuously during playback.
+
+```python
+# ✅ UPnP sends position/duration in these scenarios:
+# - Track changes (new song starts)
+# - Playback starts from idle/stopped
+# - Manual seek completes
+
+# ❌ UPnP does NOT send position during continuous playback
+# Position is estimated locally using a timer
+# HTTP polling every 5 seconds corrects drift
+```
+
+This is why the library uses **hybrid position tracking** (UPnP events + local estimation + HTTP polling).
+
+##### 7. Source-Specific Behavior Summary
+
+Different sources have different position/duration characteristics:
+
+| Source Type | Position | Duration | Time Unit | Notes |
+|-------------|----------|----------|-----------|-------|
+| **USB/Local Files** | ✅ Always | ✅ Always | milliseconds | Most reliable |
+| **Spotify/Tidal/Qobuz** | ✅ Always | ✅ Always | **microseconds** | Auto-detected |
+| **AirPlay** | ✅ Always | ✅ Always | milliseconds | totlen = total duration |
+| **Bluetooth** | ✅ Usually | ✅ Usually | milliseconds | Depends on source device |
+| **DLNA** | ✅ Usually | ✅ Usually | milliseconds | Depends on server |
+| **Web Radio/WiFi** | ❌ Often N/A | ❌ `None` | - | Live streams |
+| **Line In/Optical** | ❌ N/A | ❌ N/A | - | Real-time input |
+
+##### 8. Best Practices for Integrations
+
+When building UI or integrations, follow these patterns:
+
+```python
+# ✅ GOOD: Always check if duration exists before calculating progress
+if player.media_position and player.media_duration:
+    progress = (player.media_position / player.media_duration) * 100
+    # Show progress bar
+else:
+    # Don't show progress bar (live stream or no playback)
+    pass
+
+# ✅ GOOD: Handle None values gracefully
+position = player.media_position or 0
+duration = player.media_duration or 0
+
+# ✅ GOOD: Use position_updated_at to detect stale data
+if player.media_position_updated_at:
+    age = time.time() - player.media_position_updated_at
+    if age > 30:
+        # Position data is stale
+        pass
+
+# ❌ BAD: Assume position/duration always exist
+progress = (player.media_position / player.media_duration) * 100  # May raise TypeError/ZeroDivisionError
+```
+
+**Summary**: The library handles all position/duration edge cases automatically. Your integration code should:
+1. Always check for `None` before using position/duration
+2. Don't show progress bars when duration is `None` (live streams)
+3. Trust the returned values - they're already validated and clamped
+4. Use the automatic position callbacks for smooth UI updates
+
 #### Other Properties
 
 ```python

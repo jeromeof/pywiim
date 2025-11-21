@@ -254,8 +254,6 @@ class StateSynchronizer:
                 source="http",
                 timestamp=ts,
             )
-            # Update position estimation when we get new position from HTTP
-            self._update_position_estimation(position_value, ts)
 
         if "duration" in data:
             self._http_state["duration"] = TimestampedField(
@@ -305,6 +303,11 @@ class StateSynchronizer:
         self._merged_state.http_last_update = ts
         self._merge_state()
 
+        # Update position estimation AFTER merge so metadata is available for track change detection
+        if "position" in data:
+            position_value = data.get("position")
+            self._update_position_estimation(position_value, ts)
+
     def update_from_upnp(
         self,
         data: dict[str, Any],
@@ -335,8 +338,6 @@ class StateSynchronizer:
                 source="upnp",
                 timestamp=ts,
             )
-            # Update position estimation when we get new position from UPnP
-            self._update_position_estimation(position_value, ts)
 
         if "duration" in data:
             self._upnp_state["duration"] = TimestampedField(
@@ -385,6 +386,11 @@ class StateSynchronizer:
 
         self._merged_state.upnp_last_update = ts
         self._merge_state()
+
+        # Update position estimation AFTER merge so metadata is available for track change detection
+        if "position" in data:
+            position_value = data.get("position")
+            self._update_position_estimation(position_value, ts)
 
     def _merge_state(self) -> None:
         """Merge HTTP and UPnP state using conflict resolution rules."""
@@ -654,6 +660,15 @@ class StateSynchronizer:
     def _update_position_estimation(self, position_value: int | None, timestamp: float) -> None:
         """Update position estimation state when new position is received.
 
+        This method provides smooth position tracking by:
+        1. Using internal timer estimation as primary source while playing
+        2. Using HTTP/UPnP updates as confirmation (not immediate correction)
+        3. Only resetting estimation when drift exceeds tolerance (3 seconds)
+        4. Immediately resetting on track changes or seeks
+
+        Design Philosophy: Smoothness > Precision for UI display.
+        Small drift (< 3s) is acceptable for user experience.
+
         Args:
             position_value: New position value from HTTP or UPnP
             timestamp: Timestamp when position was received
@@ -676,28 +691,77 @@ class StateSynchronizer:
             current_signature and self._last_track_signature and current_signature != self._last_track_signature
         )
 
+        # Calculate CURRENT estimated position (what our timer thinks the position is now)
+        estimated_now = None
+        if self._estimation_base_position is not None and self._estimation_start_time is not None:
+            elapsed = timestamp - self._estimation_start_time
+            estimated_now = self._estimation_base_position + int(elapsed)
+
         # Detect seeks (position jumps >2 seconds backward or >10 seconds forward)
+        # Compare to CURRENT estimate if available, otherwise use last_position
         position_jumped = False
-        if pos_int is not None and self._last_position is not None:
-            jump_backward = pos_int + 2 < self._last_position
-            jump_forward = pos_int > self._last_position + 10
+        reference_position = estimated_now if estimated_now is not None else self._last_position
+        if pos_int is not None and reference_position is not None:
+            jump_backward = pos_int + 2 < reference_position
+            jump_forward = pos_int > reference_position + 10
             position_jumped = jump_backward or jump_forward
 
-        # Reset estimation on track changes, seeks, or when position becomes None
-        if track_changed or position_jumped:
-            self._estimated_position = None
-            self._estimation_start_time = None
-            self._estimation_base_position = None
+        # Determine if we should reset estimation
+        should_reset = False
+        reset_reason = None
 
-        # Update estimation base when we get a new position from device
-        if pos_int is not None:
-            # If estimation not started or base changed significantly, reset
-            if self._estimation_base_position is None or abs(pos_int - self._estimation_base_position) > 2:
-                self._estimation_base_position = pos_int
-                self._estimation_start_time = timestamp
-                self._estimated_position = pos_int
+        if track_changed:
+            # Always reset on track changes
+            should_reset = True
+            reset_reason = "track_change"
+        elif position_jumped:
+            # Always reset on seeks
+            should_reset = True
+            reset_reason = "seek_detected"
+        elif estimated_now is None:
+            # No estimation running - start it
+            should_reset = True
+            reset_reason = "estimation_start"
+        else:
+            # Compare HTTP/UPnP position to CURRENT estimate
+            # This is the key fix: compare to what we think position is NOW,
+            # not to the old base position from seconds ago
+            drift = abs(pos_int - estimated_now)
 
-        self._last_position = pos_int
+            # Tolerance for position sync: 3 seconds
+            # Rationale: For UI display, 1-3 second accuracy is fine.
+            # We prefer smooth timer increments over jumping to match HTTP exactly.
+            # HTTP polling is "confirmation", not "correction" unless drift is significant.
+            POSITION_SYNC_TOLERANCE = 3  # seconds
+
+            if drift > POSITION_SYNC_TOLERANCE:
+                # Significant drift - reset to HTTP position
+                should_reset = True
+                reset_reason = f"drift_exceeded (estimated={estimated_now}s, http={pos_int}s, drift={drift}s)"
+            else:
+                # Within tolerance - keep smooth estimation, HTTP confirms we're close
+                _LOGGER.debug(
+                    "Position within tolerance: estimated=%ds, http=%ds, drift=%ds - keeping smooth timer",
+                    estimated_now,
+                    pos_int,
+                    drift,
+                )
+
+        # Apply reset if needed
+        if should_reset:
+            if reset_reason:
+                _LOGGER.debug("Resetting position estimation: %s (new_position=%ds)", reset_reason, pos_int)
+
+            self._estimation_base_position = pos_int
+            self._estimation_start_time = timestamp
+            self._estimated_position = pos_int
+            self._last_position = pos_int
+        else:
+            # Keep smooth estimation, don't reset
+            # Update last_position to estimated value (not HTTP) for continuity
+            if estimated_now is not None:
+                self._last_position = estimated_now
+
         self._last_track_signature = current_signature
 
     def tick_position_estimation(self) -> int | None:

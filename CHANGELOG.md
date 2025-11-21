@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.16] - 2025-11-21
+
+### Documentation
+- **Added comprehensive Position & Duration Edge Cases section to API_REFERENCE.md**
+  - Documents time unit inconsistency (milliseconds vs microseconds) for different sources (Issue #75)
+  - Explains live stream and zero duration handling for web radio
+  - Details position > duration firmware bug detection and correction
+  - Clarifies AirPlay duration interpretation (totlen field)
+  - Documents negative position value filtering
+  - Explains UPnP position update behavior (only on track start, not continuously)
+  - Provides source-specific behavior reference table
+  - Includes best practices with code examples for integrations
+  - **Impact**: Integrators can now understand all position/duration edge cases without digging through closed issues
+
 ## [2.0.15] - 2025-11-21
 
 ### Fixed
