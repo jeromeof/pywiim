@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.17] - 2025-11-21
+
+### Added
+- **Added `pywiim_version` to diagnostics**
+  - The library version is now included in diagnostic information
+  - Displayed in Home Assistant device diagnostics section
+  - Helps with troubleshooting and support
+
 ## [2.0.16] - 2025-11-21
 
 ### Documentation

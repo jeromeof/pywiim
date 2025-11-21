@@ -22,9 +22,13 @@ class DiagnosticsCollector:
 
     async def get_diagnostics(self) -> dict[str, Any]:
         """Get comprehensive diagnostic information for this player."""
+        # Import __version__ here to avoid circular import
+        from .. import __version__
+
         diagnostics: dict[str, Any] = {
             "timestamp": time.time(),
             "host": self.player.host,
+            "pywiim_version": __version__,
         }
 
         # Device information
