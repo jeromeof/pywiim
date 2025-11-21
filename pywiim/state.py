@@ -217,17 +217,6 @@ class StateSynchronizer:
         self._merged_state = SynchronizedState()
         self._last_merge_time: float = 0.0
 
-        # Position estimation state (for smooth updates between polls/events)
-        self._estimated_position: int | None = None
-        self._estimation_base_position: int | None = None
-        self._estimation_start_time: float | None = None
-        self._last_position: int | None = None
-        self._last_track_signature: str | None = None
-        # Track when we last received an HTTP/UPnP position update
-        # Used to return the exact HTTP value briefly before resuming estimation
-        self._last_http_position: int | None = None
-        self._last_http_position_time: float | None = None
-
     def update_from_http(
         self,
         data: dict[str, Any],
@@ -306,11 +295,6 @@ class StateSynchronizer:
 
         self._merged_state.http_last_update = ts
         self._merge_state()
-
-        # Update position estimation AFTER merge so metadata is available for track change detection
-        if "position" in data:
-            position_value = data.get("position")
-            self._update_position_estimation(position_value, ts)
 
     def update_from_upnp(
         self,
@@ -391,11 +375,6 @@ class StateSynchronizer:
         self._merged_state.upnp_last_update = ts
         self._merge_state()
 
-        # Update position estimation AFTER merge so metadata is available for track change detection
-        if "position" in data:
-            position_value = data.get("position")
-            self._update_position_estimation(position_value, ts)
-
     def _merge_state(self) -> None:
         """Merge HTTP and UPnP state using conflict resolution rules."""
         now = time.time()
@@ -427,19 +406,6 @@ class StateSynchronizer:
             )
 
             setattr(self._merged_state, field_name, merged_field)
-
-        # Update track signature for position estimation (check after all fields merged)
-        title = self._merged_state.title.value if self._merged_state.title else ""
-        artist = self._merged_state.artist.value if self._merged_state.artist else ""
-        album = self._merged_state.album.value if self._merged_state.album else ""
-        current_signature = f"{title}|{artist}|{album}"
-        if current_signature != self._last_track_signature:
-            # Track changed - reset position estimation
-            if current_signature and self._last_track_signature:
-                self._estimated_position = None
-                self._estimation_start_time = None
-                self._estimation_base_position = None
-            self._last_track_signature = current_signature
 
         self._last_merge_time = now
 
@@ -641,17 +607,13 @@ class StateSynchronizer:
     def get_merged_state(self) -> dict[str, Any]:
         """Get current merged state as dictionary.
 
+        Returns raw device position without estimation. Home Assistant
+        integration handles position advancement based on updated_at timestamp.
+
         Returns:
             Dictionary with state values and source health info
         """
-        state_dict = self._merged_state.to_dict()
-
-        # Apply position estimation if playing
-        estimated_position = self._get_estimated_position()
-        if estimated_position is not None:
-            state_dict["position"] = estimated_position
-
-        return state_dict
+        return self._merged_state.to_dict()
 
     def get_state_object(self) -> SynchronizedState:
         """Get current merged state object.
@@ -660,190 +622,6 @@ class StateSynchronizer:
             SynchronizedState object with full timestamp information
         """
         return self._merged_state
-
-    def _update_position_estimation(self, position_value: int | None, timestamp: float) -> None:
-        """Update position estimation state when new position is received.
-
-        This method provides smooth position tracking by:
-        1. Using internal timer estimation as primary source while playing
-        2. Using HTTP/UPnP updates as confirmation (not immediate correction)
-        3. Only resetting estimation when drift exceeds tolerance (3 seconds)
-        4. Immediately resetting on track changes or seeks
-
-        Design Philosophy: Smoothness > Precision for UI display.
-        Small drift (< 3s) is acceptable for user experience.
-
-        Args:
-            position_value: New position value from HTTP or UPnP
-            timestamp: Timestamp when position was received
-        """
-        if position_value is None:
-            return
-
-        try:
-            pos_int = int(float(position_value))
-        except (TypeError, ValueError):
-            return
-
-        # Detect track changes by checking metadata signature
-        title = self._merged_state.title.value if self._merged_state.title else ""
-        artist = self._merged_state.artist.value if self._merged_state.artist else ""
-        album = self._merged_state.album.value if self._merged_state.album else ""
-        current_signature = f"{title}|{artist}|{album}"
-
-        track_changed = (
-            current_signature and self._last_track_signature and current_signature != self._last_track_signature
-        )
-
-        # Calculate CURRENT estimated position (what our timer thinks the position is now)
-        estimated_now = None
-        if self._estimation_base_position is not None and self._estimation_start_time is not None:
-            elapsed = timestamp - self._estimation_start_time
-            estimated_now = self._estimation_base_position + int(elapsed)
-
-        # Detect seeks (position jumps >2 seconds backward or >10 seconds forward)
-        # Compare to CURRENT estimate if available, otherwise use last_position
-        position_jumped = False
-        reference_position = estimated_now if estimated_now is not None else self._last_position
-        if pos_int is not None and reference_position is not None:
-            jump_backward = pos_int + 2 < reference_position
-            jump_forward = pos_int > reference_position + 10
-            position_jumped = jump_backward or jump_forward
-
-        # Determine if we should reset estimation
-        should_reset = False
-        reset_reason = None
-
-        if track_changed:
-            # Always reset on track changes
-            should_reset = True
-            reset_reason = "track_change"
-        elif position_jumped:
-            # Always reset on seeks
-            should_reset = True
-            reset_reason = "seek_detected"
-        elif estimated_now is None:
-            # No estimation running - start it
-            should_reset = True
-            reset_reason = "estimation_start"
-        else:
-            # Compare HTTP/UPnP position to CURRENT estimate
-            # This is the key fix: compare to what we think position is NOW,
-            # not to the old base position from seconds ago
-            drift = abs(pos_int - estimated_now)
-
-            # Tolerance for position sync: 5 seconds
-            # Rationale: SMOOTHNESS > ACCURACY for UI display.
-            # Users notice jitter, not 5-second drift. Keep timer smooth.
-            # HTTP polling is "confirmation", not "correction" unless drift is significant.
-            POSITION_SYNC_TOLERANCE = 5  # seconds
-
-            if drift > POSITION_SYNC_TOLERANCE:
-                # Significant drift - reset to HTTP position
-                should_reset = True
-                reset_reason = f"drift_exceeded (estimated={estimated_now}s, http={pos_int}s, drift={drift}s)"
-            else:
-                # Within tolerance - keep smooth estimation, HTTP confirms we're close
-                _LOGGER.debug(
-                    "Position within tolerance: estimated=%ds, http=%ds, drift=%ds - keeping smooth timer",
-                    estimated_now,
-                    pos_int,
-                    drift,
-                )
-
-        # Apply reset if needed
-        if should_reset:
-            if reset_reason:
-                _LOGGER.debug("Resetting position estimation: %s (new_position=%ds)", reset_reason, pos_int)
-
-            self._estimation_base_position = pos_int
-            self._estimation_start_time = timestamp
-            self._estimated_position = pos_int
-            self._last_position = pos_int
-        else:
-            # Keep smooth estimation, don't reset
-            # Update last_position to estimated value (not HTTP) for continuity
-            if estimated_now is not None:
-                self._last_position = estimated_now
-
-        # Always store the HTTP position and timestamp for short-term use
-        # This allows returning the exact HTTP value briefly before resuming estimation
-        self._last_http_position = pos_int
-        self._last_http_position_time = timestamp
-
-        self._last_track_signature = current_signature
-
-    def tick_position_estimation(self) -> int | None:
-        """Update position estimation (called by timer while playing).
-
-        This explicitly updates the estimated position and stores it in _last_position.
-        Call this from a timer every second while playing to keep position current.
-
-        Returns:
-            Current estimated position in seconds, or None if not playing
-        """
-        estimated = self._get_estimated_position()
-        if estimated is not None:
-            self._last_position = estimated
-        return estimated
-
-    def _get_estimated_position(self) -> int | None:
-        """Get estimated position if playing, otherwise return None.
-
-        Returns:
-            Estimated position in seconds if playing, None otherwise
-        """
-        # Check if playing
-        play_state = self._merged_state.play_state
-        if not play_state or not play_state.value:
-            return None
-
-        is_playing = any(state in str(play_state.value).lower() for state in PLAYING_STATES)
-        if not is_playing:
-            return None
-
-        # Estimate position while playing
-        now = time.time()
-        if self._estimation_base_position is not None and self._estimation_start_time is not None:
-            elapsed = now - self._estimation_start_time
-
-            # If estimation just started (< 0.1s elapsed) and we have a fresh HTTP position,
-            # return that exact value to avoid jitter from estimation starting immediately
-            # This provides a brief "settling period" after HTTP updates
-            if (
-                elapsed < 0.1
-                and self._last_http_position is not None
-                and self._last_http_position_time is not None
-                and abs(self._last_http_position_time - self._estimation_start_time) < 0.1
-            ):
-                _LOGGER.debug(
-                    "Returning fresh HTTP position: %ds (elapsed=%.3fs)",
-                    self._last_http_position,
-                    elapsed,
-                )
-                return self._last_http_position
-
-            estimated = self._estimation_base_position + int(elapsed)
-
-            # Clamp to duration if available
-            duration_value = None
-            if self._merged_state.duration and self._merged_state.duration.value is not None:
-                try:
-                    duration_value = int(float(self._merged_state.duration.value))
-                except (TypeError, ValueError):
-                    pass
-
-            if duration_value is not None and duration_value > 0:
-                estimated = min(estimated, duration_value)
-
-            # Only use estimation if it's reasonable (not too far from base)
-            # This prevents drift from accumulating too much
-            max_drift = 30  # Allow up to 30 seconds of estimation
-            if estimated <= self._estimation_base_position + max_drift:
-                return estimated
-
-        # Return None if estimation not available
-        return None
 
 
 class GroupStateSynchronizer:

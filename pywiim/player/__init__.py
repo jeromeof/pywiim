@@ -484,11 +484,6 @@ class Player(PlayerBase):
         return self._properties.media_position
 
     @property
-    def media_position_updated_at(self) -> float | None:
-        """Timestamp when media position was last updated."""
-        return self._properties.media_position_updated_at
-
-    @property
     def media_image_url(self) -> str | None:
         """Media image URL from cached status."""
         return self._properties.media_image_url

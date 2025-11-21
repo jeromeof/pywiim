@@ -1080,8 +1080,8 @@ class TestPlayerMediaMetadata:
         assert player.media_position == 240  # Clamped to duration
 
     @pytest.mark.asyncio
-    async def test_media_position_playing_estimation(self, mock_client):
-        """Test media position estimation while playing."""
+    async def test_media_position_returns_raw_device_value(self, mock_client):
+        """Test media position returns raw device value without estimation."""
         import time
 
         from pywiim.player import Player
@@ -1096,25 +1096,13 @@ class TestPlayerMediaMetadata:
         pos1 = player.media_position
         assert pos1 == 100
 
-        # Wait a bit and check again (should estimate)
+        # Wait a bit and check again (should NOT estimate - returns raw value)
         time.sleep(0.1)
         pos2 = player.media_position
-        # Should be estimated (greater than initial)
-        assert pos2 >= 100
+        # Should remain unchanged (raw device value, no estimation)
+        assert pos2 == 100
 
     @pytest.mark.asyncio
-    async def test_media_position_updated_at(self, mock_client):
-        """Test media position updated at timestamp."""
-        from pywiim.player import Player
-
-        player = Player(mock_client)
-        status = PlayerStatus(position=120, duration=240, play_state="play", title="Test Song")
-        player._status_model = status
-
-        timestamp = player.media_position_updated_at
-        assert timestamp is not None
-        assert isinstance(timestamp, float)
-
     @pytest.mark.asyncio
     async def test_media_image_url(self, mock_client):
         """Test getting media image URL."""
@@ -2056,23 +2044,6 @@ class TestPlayerMediaMetadata:
         assert pos <= 130  # 100 + 30 max drift
 
     @pytest.mark.asyncio
-    async def test_media_position_updated_at_track_change(self, mock_client):
-        """Test position updated at on track change."""
-        from pywiim.player import Player
-
-        player = Player(mock_client)
-        status1 = PlayerStatus(position=100, duration=240, play_state="play", title="Song 1")
-        player._status_model = status1
-
-        timestamp1 = player.media_position_updated_at
-
-        # Change track
-        status2 = PlayerStatus(position=50, duration=200, play_state="play", title="Song 2")
-        player._status_model = status2
-
-        timestamp2 = player.media_position_updated_at
-        assert timestamp2 >= timestamp1
-
     @pytest.mark.asyncio
     async def test_available_output_modes_wiim_amp(self, mock_client):
         """Test available output modes for WiiM Amp."""

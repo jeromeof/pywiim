@@ -96,15 +96,6 @@ class StateManager:
                 is_playing,
             )
 
-            if was_playing and not is_playing:
-                # Stopped playing - stop position timer
-                _LOGGER.info("🛑 Stopping position timer (playback stopped)")
-                self.player._stop_position_timer()
-            elif not was_playing and is_playing:
-                # Started playing - start position timer if we have a base position
-                _LOGGER.info("▶️  Starting position timer (playback started)")
-                self.player._start_position_timer()
-
         return old_state != new_state
 
     def update_from_upnp(self, data: dict[str, Any]) -> None:
@@ -681,13 +672,6 @@ class StateManager:
             # If this is a master, propagate metadata to all linked slaves
             if self.player.is_master and self.player._group and self.player._group.slaves:
                 self._propagate_metadata_to_slaves()
-
-            # Start position timer if player is already playing (important for initial connection)
-            merged = self.player._state_synchronizer.get_merged_state()
-            play_state = merged.get("play_state")
-            is_playing = play_state and str(play_state).lower() in ("play", "playing", "load")
-            if is_playing and merged.get("position") is not None:
-                self.player._start_position_timer()
 
             # Notify callback
             if self.player._on_state_changed:

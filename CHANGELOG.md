@@ -7,16 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2025-11-21
+
+### Changed
+- **BREAKING: Removed position estimation - return raw device position**
+  - PyWiim now returns RAW position values from device (no estimation or timer)
+  - Removed `media_position_updated_at` property - integrations must manage timestamps
+  - Removed internal position timer and all estimation logic (~300 lines deleted)
+  - **Rationale**: Position estimation caused jitter by fighting with HA frontend advancement
+  - **Home Assistant Integration Impact**: HA integration must now manage `media_position_updated_at` timestamp
+  - **Benefit**: Simpler architecture, matches all other HA integrations (Sonos, LinkPlay, etc.)
+  - **Architecture**: PyWiim returns "what device said", HA integration tracks "when we read it", HA frontend does smooth display
+  - This is the correct separation of concerns and eliminates position jitter at the root cause
+
 ## [2.0.19] - 2025-11-21
 
 ### Fixed
-- **Position jitter fix - smooth playback position updates**
-  - Fixed position "jumping" inconsistently (+2, +3, +4 seconds) during Home Assistant polling
-  - Added 0.1s settling period after HTTP updates to return exact position before resuming estimation
-  - Increased drift tolerance from 3 to 5 seconds to prioritize smoothness over precision
-  - Position updates now match actual time elapsed consistently
-  - **Impact**: Home Assistant users see smooth, predictable position updates instead of jittery jumps
-  - **Philosophy**: Smoothness > Accuracy - users notice jitter, not 5-second drift
+- **Position jitter fix attempt (SUPERSEDED by 2.1.0)**
+  - This release attempted to fix jitter with estimation improvements
+  - The correct fix was to remove estimation entirely (done in 2.1.0)
 
 ## [2.0.18] - 2025-11-21
 

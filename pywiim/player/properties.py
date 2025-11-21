@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import time
 from typing import TYPE_CHECKING, Any
 
 from ..device_capabilities import filter_plm_inputs, get_device_inputs
@@ -166,23 +165,6 @@ class PlayerProperties:
                 return None
 
         return None
-
-    @property
-    def media_position_updated_at(self) -> float | None:
-        """Timestamp when media position was last updated.
-
-        Returns the timestamp from StateSynchronizer which tracks when position
-        was last updated from HTTP or UPnP sources.
-        """
-        # Get the full state object with timestamp information
-        state_obj = self.player._state_synchronizer.get_state_object()
-
-        # Return the position field's timestamp if available
-        if state_obj.position and state_obj.position.timestamp:
-            return state_obj.position.timestamp
-
-        # Fallback to current time if no position data
-        return time.time()
 
     @property
     def media_image_url(self) -> str | None:
