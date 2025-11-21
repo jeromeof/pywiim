@@ -264,7 +264,20 @@ class GroupOperations:
         return self.player._group
 
     async def join_group(self, master: Any) -> None:
-        """Join this player to another player."""
+        """Join this player to another player's group.
+
+        This method handles all preconditions automatically:
+        - If this player is master: disbands its group first
+        - If this player is slave: leaves current group first
+        - If target is slave: has target leave its group first
+        - If target is solo: creates a group on target first
+
+        The integration/caller doesn't need to check roles or handle preconditions -
+        just call this method and it will orchestrate everything needed.
+
+        Args:
+            master: The player to join (will become or is already the master).
+        """
         old_group = self.player._group if self.player.is_slave else None
 
         if self.player.is_master:
@@ -295,13 +308,26 @@ class GroupOperations:
             self._notify_all_group_members(old_group)
 
     async def leave_group(self) -> None:
-        """Leave the current group."""
+        """Leave the current group.
+
+        This method works for all player roles:
+        - Solo: No-op (idempotent, returns immediately)
+        - Master: Disbands the entire group (all players become solo)
+        - Slave: Leaves the group (master and other slaves remain grouped)
+
+        The integration/caller doesn't need to check player role - just call this method
+        and it will do the right thing.
+        """
+        # Idempotent: if already solo, nothing to do
         if self.player.is_solo:
-            raise RuntimeError("Player is not in a group")
+            _LOGGER.debug("Player %s is already solo, nothing to do", self.player.host)
+            return
 
         group = self.player._group
         if group is None:
-            raise RuntimeError("Group reference is None")
+            # Shouldn't happen (is_solo should have caught this), but handle gracefully
+            _LOGGER.warning("Player %s reports non-solo but has no group reference", self.player.host)
+            return
 
         master = group.master if group else None
 
@@ -309,8 +335,12 @@ class GroupOperations:
         self._notify_all_group_members(group)
 
         if self.player.is_master:
+            # Master leaving = disband the entire group
+            _LOGGER.debug("Player %s is master, disbanding group", self.player.host)
             await group.disband()
         else:
+            # Slave leaving = just leave the group
+            _LOGGER.debug("Player %s is slave, leaving group", self.player.host)
             await self.player.client._request("/httpapi.asp?command=multiroom:Ungroup")
             group.remove_slave(self.player)
 

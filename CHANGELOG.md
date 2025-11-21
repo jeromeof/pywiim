@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Made `leave_group()` idempotent and intelligent**
+  - Solo players: Returns immediately (no error) - idempotent behavior
+  - Master players: Disbands entire group (all players become solo)
+  - Slave players: Leaves group normally (master and other slaves remain)
+  - **Impact**: Integrations no longer need to check player role before calling `leave_group()`
+  - **Impact**: HA integration can remove defensive check that blocked master unjoin
+
+### Documentation
+- Enhanced `join_group()` and `leave_group()` docstrings to explicitly document automatic role handling
+- Updated HA_INTEGRATION.md to emphasize that role checking is unnecessary
+- Updated API_REFERENCE.md with clear examples showing role-agnostic usage
+- Added prominent comments: "NO NEED to check player.is_master or player.is_slave - just call it!"
+
 ## [2.0.10] - 2025-11-20
 
 ### Documentation

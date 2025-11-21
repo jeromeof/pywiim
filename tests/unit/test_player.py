@@ -2147,7 +2147,7 @@ class TestPlayerMediaMetadata:
 
     @pytest.mark.asyncio
     async def test_leave_group_group_none(self, mock_client):
-        """Test leaving group when group reference is None."""
+        """Test leaving group when group reference is None - idempotent behavior."""
         from pywiim.group import Group
         from pywiim.player import Player
 
@@ -2160,14 +2160,9 @@ class TestPlayerMediaMetadata:
         # This can happen in edge cases where role detection succeeded but group creation failed
         master._group = None  # Simulate None group after role is set
 
-        # When _group is None, is_solo will be True, so we'll get "Player is not in a group"
-        # To test the "Group reference is None" path, we need to bypass is_solo check
-        # This is an internal edge case, so we'll test it by directly calling the logic
-        # Actually, the code checks is_solo first, so if _group is None, is_solo is True
-        # and we get "Player is not in a group" instead. This test case may not be reachable
-        # in normal operation, so we'll test the actual behavior:
-        with pytest.raises(RuntimeError, match="Player is not in a group"):
-            await master.leave_group()
+        # Idempotent behavior: When _group is None, is_solo will be True
+        # leave_group() should return without error (idempotent)
+        await master.leave_group()  # Should not raise
 
     @pytest.mark.asyncio
     async def test_get_diagnostics_comprehensive(self, mock_client):
@@ -2799,13 +2794,13 @@ class TestPlayerGroupOperations:
 
     @pytest.mark.asyncio
     async def test_leave_group_when_solo(self, mock_client):
-        """Test leaving group when solo."""
+        """Test leaving group when solo - should be idempotent (no error)."""
         from pywiim.player import Player
 
         player = Player(mock_client)
 
-        with pytest.raises(RuntimeError, match="Player is not in a group"):
-            await player.leave_group()
+        # Idempotent behavior: no error when solo, just returns
+        await player.leave_group()  # Should not raise
 
 
 class TestPlayerReboot:

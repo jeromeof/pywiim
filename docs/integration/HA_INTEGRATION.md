@@ -1457,7 +1457,7 @@ async def async_join_group(
     slave_player = get_player_for_entity(slave_entity_id)
     master_player = get_player_for_entity(master_entity_id)
     
-    # That's it! Library handles everything:
+    # That's it! Library handles everything automatically:
     # - Disbands joiner's group if it's a master
     # - Removes joiner from group if it's a slave
     # - Removes target from group if it's a slave
@@ -1465,6 +1465,8 @@ async def async_join_group(
     # - Calls API
     # - Updates Group objects immediately
     # - Calls callbacks (which trigger coordinator.async_update_listeners())
+    # 
+    # NO NEED to check roles or handle preconditions - just call it!
     await slave_player.join_group(master_player)
 ```
 
@@ -1478,11 +1480,14 @@ async def async_leave_group(
     """Leave a group (HA service)."""
     player = get_player_for_entity(entity_id)
     
-    # That's it! Library handles everything:
-    # - Calls API
+    # That's it! Library handles everything based on player role:
+    # - Solo: No-op (idempotent, returns immediately)
+    # - Master: Disbands entire group (all players become solo)
+    # - Slave: Leaves group (master and other slaves remain)
     # - Updates Group objects immediately
-    # - Auto-disbands if master has no slaves
     # - Calls callbacks (which trigger coordinator.async_update_listeners())
+    # 
+    # NO NEED to check player.is_master or player.is_slave - just call it!
     await player.leave_group()
 ```
 

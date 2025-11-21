@@ -649,13 +649,19 @@ When a slave's volume/mute changes, both slave and master callbacks fire:
 # Create group (makes player a master)
 group = await player.create_group()
 
-# Join group (makes player a slave)
+# Join group (automatically handles all preconditions)
+# - Works regardless of either player's current role
+# - Disbands/leaves groups as needed automatically
 await slave_player.join_group(master_player)
 
-# Leave group
+# Leave group (works for any role)
+# - Solo: No-op (idempotent)
+# - Master: Disbands entire group
+# - Slave: Leaves group
+# NO NEED to check player role before calling!
 await player.leave_group()
 
-# Disband group
+# Disband group (explicit disband via Group object)
 await group.disband()
 ```
 
