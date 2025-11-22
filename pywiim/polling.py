@@ -232,6 +232,97 @@ class PollingStrategy:
         # Fallback: Consistency check every 60s
         return (now - last_fetch_time) >= self.CONFIGURATION_INTERVAL
 
+    def should_fetch_eq_info(
+        self,
+        last_fetch_time: float,
+        eq_supported: bool | None,
+        now: float | None = None,
+    ) -> bool:
+        """Check if EQ info should be fetched.
+
+        Fetch logic:
+        1. On Startup (last_fetch_time == 0)
+        2. Every 60s (Background consistency)
+        3. Only if device supports EQ
+
+        Args:
+            last_fetch_time: Timestamp of last EQ info fetch
+            eq_supported: Whether device supports EQ endpoint
+            now: Current time (defaults to time.time())
+
+        Returns:
+            True if EQ info should be fetched
+        """
+        if eq_supported is False:
+            return False  # Endpoint not supported
+
+        if now is None:
+            now = time.time()
+
+        # Always fetch on first check
+        if last_fetch_time == 0:
+            return True
+
+        # Fetch every 60s
+        return (now - last_fetch_time) >= self.CONFIGURATION_INTERVAL
+
+    def should_fetch_device_info(
+        self,
+        last_fetch_time: float,
+        now: float | None = None,
+    ) -> bool:
+        """Check if device info should be fetched.
+
+        Fetch logic:
+        1. On Startup (last_fetch_time == 0)
+        2. Every 60s (Background consistency)
+
+        Args:
+            last_fetch_time: Timestamp of last device info fetch
+            now: Current time (defaults to time.time())
+
+        Returns:
+            True if device info should be fetched
+        """
+        if now is None:
+            now = time.time()
+
+        # Always fetch on first check
+        if last_fetch_time == 0:
+            return True
+
+        # Fetch every 60s
+        return (now - last_fetch_time) >= self.CONFIGURATION_INTERVAL
+
+    def should_fetch_multiroom(
+        self,
+        last_fetch_time: float,
+        now: float | None = None,
+    ) -> bool:
+        """Check if multiroom info should be fetched.
+
+        Fetch logic:
+        1. On Startup (last_fetch_time == 0)
+        2. Every 15s (More frequent than configuration data)
+
+        Args:
+            last_fetch_time: Timestamp of last multiroom fetch
+            now: Current time (defaults to time.time())
+
+        Returns:
+            True if multiroom info should be fetched
+        """
+        if now is None:
+            now = time.time()
+
+        # Always fetch on first check
+        if last_fetch_time == 0:
+            return True
+
+        # Fetch every 15s (more frequent than configuration)
+        MULTIROOM_INTERVAL = 15.0
+        return (now - last_fetch_time) >= MULTIROOM_INTERVAL
+
 
 class TrackChangeDetector:
     """Detect track changes for metadata fetching.

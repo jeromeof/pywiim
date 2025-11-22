@@ -169,6 +169,94 @@ class TestPollingStrategy:
 
         assert strategy.should_fetch_audio_output(0, source_changed=False, audio_output_supported=False) is False
 
+    def test_should_fetch_eq_info_first_time(self):
+        """Test EQ info fetch on first check."""
+        capabilities = {"is_legacy_device": False}
+        strategy = PollingStrategy(capabilities)
+
+        assert strategy.should_fetch_eq_info(0, eq_supported=True) is True
+
+    def test_should_fetch_eq_info_interval(self):
+        """Test EQ info fetch after interval."""
+        capabilities = {"is_legacy_device": False}
+        strategy = PollingStrategy(capabilities)
+
+        now = time.time()
+        last_fetch = now - 61.0  # 61 seconds ago
+
+        assert strategy.should_fetch_eq_info(last_fetch, eq_supported=True, now=now) is True
+
+    def test_should_fetch_eq_info_not_supported(self):
+        """Test EQ info fetch when not supported."""
+        capabilities = {"is_legacy_device": False}
+        strategy = PollingStrategy(capabilities)
+
+        assert strategy.should_fetch_eq_info(0, eq_supported=False) is False
+
+    def test_should_fetch_eq_info_too_soon(self):
+        """Test EQ info fetch before interval."""
+        capabilities = {"is_legacy_device": False}
+        strategy = PollingStrategy(capabilities)
+
+        now = time.time()
+        last_fetch = now - 30.0  # 30 seconds ago
+
+        assert strategy.should_fetch_eq_info(last_fetch, eq_supported=True, now=now) is False
+
+    def test_should_fetch_device_info_first_time(self):
+        """Test device info fetch on first check."""
+        capabilities = {"is_legacy_device": False}
+        strategy = PollingStrategy(capabilities)
+
+        assert strategy.should_fetch_device_info(0) is True
+
+    def test_should_fetch_device_info_interval(self):
+        """Test device info fetch after interval."""
+        capabilities = {"is_legacy_device": False}
+        strategy = PollingStrategy(capabilities)
+
+        now = time.time()
+        last_fetch = now - 61.0  # 61 seconds ago
+
+        assert strategy.should_fetch_device_info(last_fetch, now=now) is True
+
+    def test_should_fetch_device_info_too_soon(self):
+        """Test device info fetch before interval."""
+        capabilities = {"is_legacy_device": False}
+        strategy = PollingStrategy(capabilities)
+
+        now = time.time()
+        last_fetch = now - 30.0  # 30 seconds ago
+
+        assert strategy.should_fetch_device_info(last_fetch, now=now) is False
+
+    def test_should_fetch_multiroom_first_time(self):
+        """Test multiroom fetch on first check."""
+        capabilities = {"is_legacy_device": False}
+        strategy = PollingStrategy(capabilities)
+
+        assert strategy.should_fetch_multiroom(0) is True
+
+    def test_should_fetch_multiroom_interval(self):
+        """Test multiroom fetch after interval."""
+        capabilities = {"is_legacy_device": False}
+        strategy = PollingStrategy(capabilities)
+
+        now = time.time()
+        last_fetch = now - 16.0  # 16 seconds ago (more than 15s interval)
+
+        assert strategy.should_fetch_multiroom(last_fetch, now=now) is True
+
+    def test_should_fetch_multiroom_too_soon(self):
+        """Test multiroom fetch before interval."""
+        capabilities = {"is_legacy_device": False}
+        strategy = PollingStrategy(capabilities)
+
+        now = time.time()
+        last_fetch = now - 10.0  # 10 seconds ago (less than 15s interval)
+
+        assert strategy.should_fetch_multiroom(last_fetch, now=now) is False
+
 
 class TestTrackChangeDetector:
     """Test TrackChangeDetector class."""

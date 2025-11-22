@@ -324,105 +324,158 @@ async def _fetch_hls_metadata(url: str, session: aiohttp.ClientSession, timeout:
         # Handle media playlists (playlists with segments)
         if not playlist.segments:
             _LOGGER.debug("HLS playlist has no segments: %s", url)
-            return None
+            # Try to extract station name from URL as fallback
+            metadata = _extract_station_name_from_url(url)
+            return metadata if metadata.station_name else None
 
-        # Get the latest segment (usually the most recent one)
-        last_segment = playlist.segments[-1]
-        # m3u8 handles relative URLs when base_uri is provided
-        segment_url = last_segment.uri
-        if not segment_url.startswith(("http://", "https://")):
-            # Resolve relative URL against playlist base URL
-            from urllib.parse import urljoin
+        # Try multiple segments (last few) to find metadata
+        # Some streams only embed metadata in certain segments
+        segments_to_check = playlist.segments[-3:] if len(playlist.segments) >= 3 else playlist.segments
+        for segment in reversed(segments_to_check):  # Check most recent first
+            # m3u8 handles relative URLs when base_uri is provided
+            segment_url = segment.uri
+            if not segment_url.startswith(("http://", "https://")):
+                # Resolve relative URL against playlist base URL
+                from urllib.parse import urljoin
 
-            segment_url = urljoin(url, segment_url)
+                segment_url = urljoin(url, segment_url)
 
-        _LOGGER.debug("Fetching HLS segment for metadata: %s", segment_url)
+            _LOGGER.debug("Fetching HLS segment for metadata: %s", segment_url)
 
-        # Download the segment
-        async with session.get(
-            segment_url,
-            headers={"User-Agent": USER_AGENT},
-            timeout=aiohttp.ClientTimeout(total=timeout),
-        ) as response:
-            if response.status != 200:
-                _LOGGER.debug("Failed to download HLS segment: HTTP %d", response.status)
-                return None
+            try:
+                # Download the segment
+                async with session.get(
+                    segment_url,
+                    headers={"User-Agent": USER_AGENT},
+                    timeout=aiohttp.ClientTimeout(total=timeout),
+                ) as response:
+                    if response.status != 200:
+                        _LOGGER.debug("Failed to download HLS segment: HTTP %d", response.status)
+                        continue  # Try next segment
 
-            segment_data = await response.read()
+                    segment_data = await response.read()
 
-        # Parse ID3 tags from the segment using mutagen
-        # HLS segments often have ID3 tags embedded in AAC streams
-        audio_data = BytesIO(segment_data)
-        metadata = StreamMetadata()
+                # Parse ID3 tags from the segment using mutagen
+                # HLS segments often have ID3 tags embedded in AAC streams
+                audio_data = BytesIO(segment_data)
+                metadata = StreamMetadata()
 
-        try:
-            # Check if segment starts with ID3 tag
-            if segment_data.startswith(b"ID3"):
-                # Try to parse ID3 tags directly
-                try:
-                    from mutagen.id3 import ID3
+                # Check if segment starts with ID3 tag
+                if segment_data.startswith(b"ID3"):
+                    # Try to parse ID3 tags directly
+                    try:
+                        from mutagen.id3 import ID3
 
-                    # ID3 tags might be at the start of the file
-                    id3_tags = ID3(audio_data)
-                    if id3_tags:
-                        # Extract standard ID3 tags
-                        title_tag = id3_tags.get("TIT2")  # Title
-                        artist_tag = id3_tags.get("TPE1")  # Artist
+                        # ID3 tags might be at the start of the file
+                        id3_tags = ID3(audio_data)
+                        if id3_tags:
+                            # Extract standard ID3 tags
+                            title_tag = id3_tags.get("TIT2")  # Title
+                            artist_tag = id3_tags.get("TPE1")  # Artist
 
-                        if title_tag:
-                            metadata.title = _decode_text(str(title_tag))
-                        if artist_tag:
-                            metadata.artist = _decode_text(str(artist_tag))
+                            if title_tag:
+                                metadata.title = _decode_text(str(title_tag))
+                            if artist_tag:
+                                metadata.artist = _decode_text(str(artist_tag))
 
-                        if metadata.title or metadata.artist:
-                            _LOGGER.debug(
-                                "Extracted HLS metadata from ID3: title=%s, artist=%s",
-                                metadata.title,
-                                metadata.artist,
-                            )
-                            return metadata
-                except Exception as id3_err:
-                    _LOGGER.debug("Failed to parse ID3 tags directly: %s", id3_err)
+                            if metadata.title or metadata.artist:
+                                _LOGGER.debug(
+                                    "Extracted HLS metadata from ID3: title=%s, artist=%s",
+                                    metadata.title,
+                                    metadata.artist,
+                                )
+                                return metadata
+                    except Exception as id3_err:
+                        _LOGGER.debug("Failed to parse ID3 tags directly: %s", id3_err)
 
-            # Fallback: Try mutagen File() for other formats
-            tags = MutagenFile(audio_data)
-            if tags and tags.tags:
-                # Extract standard ID3 tags
-                title_tag = tags.tags.get("TIT2") if tags.tags else None
-                artist_tag = tags.tags.get("TPE1") if tags.tags else None
+                # Fallback: Try mutagen File() for other formats
+                tags = MutagenFile(audio_data)
+                if tags and tags.tags:
+                    # Extract standard ID3 tags
+                    title_tag = tags.tags.get("TIT2") if tags.tags else None
+                    artist_tag = tags.tags.get("TPE1") if tags.tags else None
 
-                # Also try common alternative tag names
-                if not title_tag:
-                    title_tag = tags.tags.get("TITLE") if tags.tags else None
-                if not artist_tag:
-                    artist_tag = tags.tags.get("ARTIST") if tags.tags else None
+                    # Also try common alternative tag names
+                    if not title_tag:
+                        title_tag = tags.tags.get("TITLE") if tags.tags else None
+                    if not artist_tag:
+                        artist_tag = tags.tags.get("ARTIST") if tags.tags else None
 
-                # Extract text values from tags
-                if title_tag:
-                    title_value = str(title_tag[0]) if title_tag else None
-                    if title_value:
-                        metadata.title = _decode_text(title_value)
+                    # Extract text values from tags
+                    if title_tag:
+                        title_value = str(title_tag[0]) if title_tag else None
+                        if title_value:
+                            metadata.title = _decode_text(title_value)
 
-                if artist_tag:
-                    artist_value = str(artist_tag[0]) if artist_tag else None
-                    if artist_value:
-                        metadata.artist = _decode_text(artist_value)
+                    if artist_tag:
+                        artist_value = str(artist_tag[0]) if artist_tag else None
+                        if artist_value:
+                            metadata.artist = _decode_text(artist_value)
 
-            # If we got at least title or artist, return metadata
-            if metadata.title or metadata.artist:
-                _LOGGER.debug("Extracted HLS metadata: title=%s, artist=%s", metadata.title, metadata.artist)
-                return metadata
+                # If we found metadata in this segment, return it
+                if metadata.title or metadata.artist:
+                    _LOGGER.debug("Extracted HLS metadata: title=%s, artist=%s", metadata.title, metadata.artist)
+                    return metadata
 
-            _LOGGER.debug("HLS segment has no extractable metadata")
-            return None
+                _LOGGER.debug("HLS segment has no extractable metadata")
+                # Continue to next segment
 
-        except Exception as e:
-            _LOGGER.debug("Failed to parse metadata from HLS segment: %s", e)
-            return None
+            except Exception as e:
+                _LOGGER.debug("Failed to parse metadata from segment %s: %s", segment_url, e)
+                # Continue to next segment
+                continue
+
+        # If no metadata found in segments, try to extract station name from URL
+        _LOGGER.debug("No metadata found in segments, trying URL-based extraction")
+        metadata = _extract_station_name_from_url(url)
+        return metadata if metadata.station_name else None
 
     except Exception as err:
         _LOGGER.debug("Error extracting HLS metadata from %s: %s", url, err)
-        return None
+        # Try URL-based extraction as last resort
+        metadata = _extract_station_name_from_url(url)
+        return metadata if metadata.station_name else None
+
+
+def _extract_station_name_from_url(url: str) -> StreamMetadata:
+    """Extract station name from URL patterns as fallback.
+
+    Args:
+        url: Stream URL
+
+    Returns:
+        StreamMetadata with station_name if found
+    """
+    metadata = StreamMetadata()
+
+    # Radio-Canada patterns
+    if "rcavliveaudio" in url or "radio-canada" in url.lower():
+        if "P-2QMTL0_MTL" in url:
+            metadata.station_name = "Radio-Canada ICI Première Montréal"
+        elif "ICI_PREMIERE" in url.upper():
+            metadata.station_name = "Radio-Canada ICI Première"
+        elif "ICI_MUSIQUE" in url.upper():
+            metadata.station_name = "Radio-Canada ICI Musique"
+        else:
+            metadata.station_name = "Radio-Canada"
+
+    # BBC patterns
+    elif "bbc" in url.lower():
+        if "radio_one" in url.lower():
+            metadata.station_name = "BBC Radio 1"
+        elif "radio_two" in url.lower():
+            metadata.station_name = "BBC Radio 2"
+        else:
+            metadata.station_name = "BBC Radio"
+
+    # CBC patterns
+    elif "cbc" in url.lower():
+        if "CBCR1" in url.upper():
+            metadata.station_name = "CBC Radio One"
+        else:
+            metadata.station_name = "CBC Radio"
+
+    return metadata
 
 
 def _decode_text(data: str | bytes) -> str:
