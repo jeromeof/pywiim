@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.5] - 2025-11-22
+
 ### Fixed
 - **Fixed missing polling strategy methods that broke EQ in Home Assistant**
   - Added missing `should_fetch_eq_info()`, `should_fetch_device_info()`, and `should_fetch_multiroom()` methods to `PollingStrategy` class
@@ -18,7 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Enhanced HLS stream metadata extraction with URL-based fallback**
   - Added station name extraction from URL patterns when metadata isn't embedded in segments
   - Checks multiple segments (last 3) instead of just the latest one
-  - Supports Radio-Canada, BBC, and CBC stream URL patterns
   - Provides station name as fallback when track/artist metadata isn't available
   - **Impact**: Users now see station names even when streams don't embed metadata
 
