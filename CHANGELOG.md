@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.8] - 2025-11-22
+
+### Fixed
+- **Fixed `audio_output_mode` property returning None in Home Assistant integrations**
+  - Root cause: `player.get_audio_output_status()` was fetching data but not updating player's internal cache
+  - **Solution**: `get_audio_output_status()` now automatically updates player's `_audio_output_status` cache
+  - **Impact**: `player.audio_output_mode` property now works correctly when audio output status is fetched via coordinator
+  - Home Assistant select entities now correctly display the current output mode instead of showing "Audio Output Mode"
+  - Improved `current_option` implementation in documentation with better validation and fallback logic
+
 ## [2.1.7] - 2025-11-22
 
 ### Documentation

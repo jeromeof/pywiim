@@ -659,6 +659,8 @@ async def _async_update_data(self):
         if self._polling_strategy.should_fetch_audio_output(self._last_audio_output_check - 15, audio_output_supported, now):
             audio_output = results[result_idx] if not isinstance(results[result_idx], Exception) else None
             if audio_output:
+                # Note: get_audio_output_status() automatically updates player's internal cache
+                # so audio_output_mode property works correctly
                 additional_data["audio_output"] = audio_output
             result_idx += 1
 
@@ -1563,19 +1565,47 @@ class WiiMOutputSelectEntity(SelectEntity):
     
     @property
     def current_option(self) -> str | None:
-        """Return current output."""
+        """Return current output.
+        
+        Returns the currently selected output mode, which must match one of the
+        options in the available_outputs list. Returns None if output status
+        is not available or doesn't match any option.
+        """
         player = self.coordinator.data.get("player")
         if not player:
+            return None
+        
+        # Get available options to ensure we return a valid value
+        available = player.available_outputs
+        if not available:
             return None
         
         # Check if BT output is active and which device is connected
         if player.is_bluetooth_output_active:
             for device in player.bluetooth_output_devices:
                 if device["connected"]:
-                    return f"BT: {device['name']}"
-            return "Bluetooth Out"
+                    bt_option = f"BT: {device['name']}"
+                    # Ensure this option exists in available_outputs
+                    if bt_option in available:
+                        return bt_option
+            # Fall back to generic "Bluetooth Out" if no specific device found
+            if "Bluetooth Out" in available:
+                return "Bluetooth Out"
         
-        return player.audio_output_mode
+        # Get current hardware output mode
+        current_mode = player.audio_output_mode
+        if current_mode and current_mode in available:
+            return current_mode
+        
+        # If current_mode doesn't match, try to find a matching option
+        # (handles case where device returns slightly different format)
+        if current_mode:
+            for option in available:
+                if option.lower() == current_mode.lower():
+                    return option
+        
+        # If still no match, return None (will show as "Unknown" in HA)
+        return None
     
     async def async_select_option(self, option: str) -> None:
         """Change the selected output."""
@@ -1595,6 +1625,10 @@ async def _async_update_data(self):
     """HA calls this method at the update_interval."""
     await self.player.refresh()
     
+    # IMPORTANT: Ensure audio output status is fetched for current_option to work
+    # This is done automatically if you follow the polling strategy pattern
+    # (see "Implement Adaptive Polling with Player" section above)
+    
     return {
         "player": self.player,
         # ... other properties ...
@@ -1602,6 +1636,30 @@ async def _async_update_data(self):
         # ... other properties ...
     }
 ```
+
+### Troubleshooting: Current Option Not Showing
+
+If the select entity shows "Audio Output Mode" instead of the actual selected value:
+
+1. **Ensure audio output status is being fetched:**
+   - Check that `get_audio_output_status()` is called in your coordinator's `_async_update_data()` method
+   - Verify that `supports_audio_output` capability is detected
+   - See "Implement Adaptive Polling with Player" section for the correct pattern
+
+2. **Check that `current_option` returns a valid value:**
+   - The returned value must exactly match one of the options in `available_outputs`
+   - If `audio_output_mode` returns `None`, `current_option` will also return `None`
+   - Add logging to debug: `_LOGGER.debug("Current mode: %s, Available: %s", player.audio_output_mode, player.available_outputs)`
+
+3. **Verify audio output status is being fetched:**
+   - Ensure `player.get_audio_output_status()` is called in coordinator's `_async_update_data()`
+   - The method automatically updates the player's internal cache, so `audio_output_mode` will work
+   - See coordinator example above for the correct pattern
+
+4. **Verify refresh is working:**
+   - Ensure `player.refresh()` is called in coordinator
+   - Check that `player._audio_output_status` is not `None` after coordinator update
+   - Audio output status is fetched every 15 seconds when supported (see polling strategy)
 
 ## Group Join/Unjoin Operations
 

@@ -208,8 +208,18 @@ class AudioConfiguration:
         return await self.player.client.get_multiroom_status()
 
     async def get_audio_output_status(self) -> dict[str, Any] | None:
-        """Get current audio output status."""
-        return await self.player.client.get_audio_output_status()
+        """Get current audio output status.
+
+        Fetches audio output status from the device and updates the player's
+        internal cache so that audio_output_mode property works correctly.
+
+        Returns:
+            Dict with audio output info (hardware, source, etc.), or None if not supported.
+        """
+        status = await self.player.client.get_audio_output_status()
+        # Update player's internal cache so audio_output_mode property works
+        self.player._audio_output_status = status
+        return status
 
     async def get_meta_info(self) -> dict[str, Any]:
         """Get detailed metadata information about current track."""

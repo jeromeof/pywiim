@@ -1414,17 +1414,45 @@ class WiiMOutputSelectEntity(SelectEntity):
     
     @property
     def current_option(self) -> str | None:
-        """Return current output."""
+        """Return current output.
+        
+        Returns the currently selected output mode, which must match one of the
+        options in the available_outputs list. Returns None if output status
+        is not available or doesn't match any option.
+        """
         player = self.coordinator.data
+        
+        # Get available options to ensure we return a valid value
+        available = player.available_outputs
+        if not available:
+            return None
         
         # Check if BT output is active and which device is connected
         if player.is_bluetooth_output_active:
             for device in player.bluetooth_output_devices:
                 if device["connected"]:
-                    return f"BT: {device['name']}"
+                    bt_option = f"BT: {device['name']}"
+                    # Ensure this option exists in available_outputs
+                    if bt_option in available:
+                        return bt_option
+            # Fall back to generic "Bluetooth Out" if no specific device found
+            if "Bluetooth Out" in available:
             return "Bluetooth Out"
         
-        return player.audio_output_mode
+        # Get current hardware output mode
+        current_mode = player.audio_output_mode
+        if current_mode and current_mode in available:
+            return current_mode
+        
+        # If current_mode doesn't match, try to find a matching option
+        # (handles case where device returns slightly different format)
+        if current_mode:
+            for option in available:
+                if option.lower() == current_mode.lower():
+                    return option
+        
+        # If still no match, return None (will show as "Unknown" in HA)
+        return None
     
     async def async_select_option(self, option: str) -> None:
         """Change the selected output."""
