@@ -56,12 +56,12 @@ class AudioConfiguration:
         """Select an output by name (hardware mode or specific BT device).
 
         This method handles both hardware output modes and specific Bluetooth devices:
-        - Hardware modes: "Line Out", "Optical Out", "Coax Out", "Bluetooth Out"
+        - Hardware modes: "Line Out", "Optical Out", "Coax Out", "Headphone Out"
         - BT devices: "BT: Device Name" (must be already paired)
+        - "Bluetooth Out": Activates last connected BT device
 
         When selecting a BT device:
-        1. Sets hardware mode to Bluetooth Out (4)
-        2. Connects to the specific device
+        1. Connects to the specific device (this automatically activates BT output mode)
 
         Args:
             output: Output name from available_outputs list
@@ -72,6 +72,7 @@ class AudioConfiguration:
         Example:
             # Select hardware output
             await player.audio.select_output("Optical Out")
+            await player.audio.select_output("Headphone Out")
 
             # Select specific BT device
             await player.audio.select_output("BT: Sony Speaker")
@@ -94,14 +95,21 @@ class AudioConfiguration:
                     f"Available BT devices: {[d['name'] for d in bt_devices]}"
                 )
 
-            # Set hardware mode to Bluetooth Out
-            await self.set_audio_output_mode("Bluetooth Out")
-
-            # Connect to the specific device
+            # Connect to the specific device (this automatically activates BT output mode)
             await self.player.connect_bluetooth_device(matching_device["mac"])
 
+        elif output.lower() in ("bluetooth out", "bluetooth"):
+            # Generic Bluetooth Out - connect to the last connected device
+            bt_devices = self.player._properties.bluetooth_output_devices
+            if not bt_devices:
+                raise ValueError("No paired Bluetooth devices found. Pair a device first.")
+
+            # Find the last connected device (ct=1) or first in list
+            last_device = next((d for d in bt_devices if d.get("connected")), bt_devices[0])
+            await self.player.connect_bluetooth_device(last_device["mac"])
+
         else:
-            # It's a hardware output mode
+            # It's a hardware output mode (Line Out, Optical Out, Coax Out, Headphone Out, etc.)
             await self.set_audio_output_mode(output)
 
     async def set_led(self, enabled: bool) -> None:

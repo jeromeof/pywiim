@@ -491,7 +491,7 @@ Different WiiM models support different output combinations:
 - **WiiM Mini**: Line Out, Optical Out
 - **WiiM Pro/Pro Plus**: Line Out, Optical Out, Coax Out, Bluetooth Out
 - **WiiM Amp**: Line Out (integrated amplifier, no digital outputs)
-- **WiiM Ultra**: Line Out, Optical Out, Coax Out, Bluetooth Out, HDMI Out
+- **WiiM Ultra**: Line Out, Optical Out, Coax Out, Bluetooth Out, Headphone Out, HDMI Out
 
 ### Usage Examples
 

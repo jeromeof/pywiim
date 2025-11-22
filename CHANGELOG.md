@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.1] - 2025-11-21
+
+### Changed
+- **Shuffle and repeat control availability - now permissive by default**
+  - Changed from whitelist (restrictive) to blacklist (permissive) approach for shuffle/repeat control
+  - Most sources now support shuffle/repeat controls (Spotify, Tidal, Amazon Music, Qobuz, Deezer, Pandora, Bluetooth, USB, physical inputs, etc.)
+  - Blacklist only blocks sources where we know controls don't work: AirPlay, TuneIn, iHeartRadio, multiroom slaves, and generic radio streams
+  - Resolves GitHub issue #111 - users can now shuffle collections in streaming services
+  - Easy to extend: add sources to blacklist as needed when discovering incompatibilities
+
 ## [2.1.0] - 2025-11-21
 
 ### Changed
@@ -804,7 +814,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Returns list of dicts with `name`, `mac`, `connected` keys
     - Automatically filters out Audio Source devices (input devices like phones)
   - New property `available_outputs`: Combines hardware output modes with paired BT devices
-    - Hardware modes: "Line Out", "Optical Out", "Coax Out", "Bluetooth Out", "HDMI Out"
+    - Hardware modes: "Line Out", "Optical Out", "Coax Out", "Bluetooth Out", "Headphone Out", "HDMI Out"
     - Paired devices: "BT: Device Name" format
     - Example: `["Line Out", "Optical Out", "BT: Sony Speaker", "BT: JBL Headphones"]`
   - New method `player.audio.select_output(name)`: Smart output selection

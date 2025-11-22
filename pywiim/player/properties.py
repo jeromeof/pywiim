@@ -242,9 +242,12 @@ class PlayerProperties:
     def _is_device_controlled_source(self) -> bool:
         """Check if current source allows device-controlled playback (shuffle/repeat).
 
+        Uses a blacklist approach: most sources support device control, but some
+        external sources don't (e.g., AirPlay, live radio streams).
+
         Returns:
-            True if the WiiM device controls playback (can set shuffle/repeat).
-            False if an external device/app controls playback (AirPlay, Bluetooth, etc.).
+            True if the WiiM device can control shuffle/repeat.
+            False if an external device/app exclusively controls playback.
         """
         source = self.source
         if source is None:
@@ -252,49 +255,36 @@ class PlayerProperties:
 
         source_lower = source.lower()
 
-        # Sources where WiiM device controls playback
-        device_controlled = {
-            "usb",  # Local USB storage
-            "line_in",  # Analog input (if device supports playback control)
-            "optical",  # Digital optical input
-            "coaxial",  # Digital coaxial input
-            "playlist",  # Device playlists
-            "preset",  # Saved presets
-            "http",  # HTTP streaming
-            "udisk",  # USB disk (some devices report as "udisk")
-        }
-
-        # External sources where source device/app controls playback
+        # Blacklist: Sources where device CANNOT control shuffle/repeat
+        # These are sources where playback is controlled externally
         external_controlled = {
-            "airplay",  # iOS/macOS controls shuffle/repeat
-            "bluetooth",  # Source device controls shuffle/repeat
-            "dlna",  # Source app controls shuffle/repeat
-            "chromecast",  # Casting app controls shuffle/repeat
-            "spotify",  # Spotify app controls (even via Spotify Connect)
-            "tidal",  # Tidal app controls
-            "amazon",  # Amazon Music app controls
-            "qobuz",  # Qobuz app controls
-            "deezer",  # Deezer app controls
-            "iheartradio",  # iHeartRadio app controls
-            "pandora",  # Pandora app controls
-            "tunein",  # TuneIn app controls
-            "multiroom",  # Slave device, can't control playback
+            "airplay",  # iOS/macOS/iTunes controls shuffle/repeat, not the device
+            "tunein",  # Radio streams - no shuffle/repeat support
+            "iheartradio",  # Radio streams - no shuffle/repeat support
+            "multiroom",  # Slave device in multiroom - can't control playback
         }
 
-        # Check explicit lists first
-        if source_lower in device_controlled:
-            return True
+        # Check if source is in blacklist
         if source_lower in external_controlled:
             return False
 
-        # Default: assume external control for unknown sources (conservative)
-        # This prevents misleading shuffle/repeat controls for new sources
-        _LOGGER.debug(
-            "Unknown source '%s' - assuming external control (shuffle/repeat not supported). "
-            "Please report this source to the library maintainers.",
-            source,
-        )
-        return False
+        # Check for radio-like sources that don't support shuffle/repeat
+        # Radio streams typically don't support these controls
+        radio_keywords = ["radio", "stream"]
+        if any(keyword in source_lower for keyword in radio_keywords):
+            # However, some services might have "radio" in their name but still support queues
+            # Only block if it's clearly a streaming radio service
+            if source_lower in {"radio", "internetradio", "webradio"}:
+                _LOGGER.debug(
+                    "Source '%s' appears to be a radio stream - shuffle/repeat not supported",
+                    source,
+                )
+                return False
+
+        # Default: assume device control for all other sources (permissive approach)
+        # This includes: USB, optical, coaxial, Spotify, Tidal, Amazon Music, Qobuz,
+        # Deezer, Bluetooth, DLNA, Chromecast, playlists, presets, HTTP, and more
+        return True
 
     @property
     def shuffle_supported(self) -> bool:
@@ -699,11 +689,21 @@ class PlayerProperties:
             return None
 
         source = self.player._audio_output_status.get("source")
-        if source == 1 or source == "1":
-            return "Bluetooth Out"
 
+        # Special handling for mode 4 on WiiM Ultra (Issue #86)
+        # For Ultra: hardware=4 with source=0 = Headphone Out, source=1 = Bluetooth Out
         try:
             mode_int = int(hardware_mode) if isinstance(hardware_mode, str) else hardware_mode
+            if mode_int == 4:
+                model = self.player._device_info.model if self.player._device_info else None
+                if model and "ultra" in model.lower():
+                    if source == 0 or source == "0":
+                        return "Headphone Out"
+                    elif source == 1 or source == "1":
+                        return "Bluetooth Out"
+            # Bluetooth Out via source field (non-Ultra or when source=1)
+            elif source == 1 or source == "1":
+                return "Bluetooth Out"
         except (ValueError, TypeError):
             return None
 
@@ -748,7 +748,7 @@ class PlayerProperties:
         elif "wiim mini" in model_lower:
             return ["Line Out", "Optical Out"]
         elif "wiim ultra" in model_lower:
-            return ["Line Out", "Optical Out", "Coax Out", "Bluetooth Out", "HDMI Out"]
+            return ["Line Out", "Optical Out", "Coax Out", "Bluetooth Out", "Headphone Out", "HDMI Out"]
         elif "wiim pro" in model_lower or "wiim" in model_lower:
             return ["Line Out", "Optical Out", "Coax Out", "Bluetooth Out"]
         else:

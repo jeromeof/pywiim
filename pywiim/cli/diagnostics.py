@@ -406,7 +406,7 @@ class DeviceDiagnostics:
             elif "wiim mini" in model_lower:
                 available_modes = ["Line Out", "Optical Out"]
             elif "wiim ultra" in model_lower:
-                available_modes = ["Line Out", "Optical Out", "Coax Out", "Bluetooth Out", "HDMI Out"]
+                available_modes = ["Line Out", "Optical Out", "Coax Out", "Bluetooth Out", "Headphone Out", "HDMI Out"]
             elif "wiim pro" in model_lower or "wiim" in model_lower:
                 available_modes = ["Line Out", "Optical Out", "Coax Out", "Bluetooth Out"]
             else:

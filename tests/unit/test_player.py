@@ -897,20 +897,20 @@ class TestPlayerPlaybackControl:
 
     @pytest.mark.asyncio
     async def test_set_repeat_raises_error_for_external_source(self, mock_client):
-        """Test set_repeat raises WiiMError for external sources."""
+        """Test set_repeat raises WiiMError for external sources (blacklist only)."""
         from pywiim.exceptions import WiiMError
         from pywiim.models import DeviceInfo, PlayerStatus
         from pywiim.player import Player
 
         mock_client.get_player_status_model = AsyncMock(
-            return_value=PlayerStatus(play_state="play", source="bluetooth")
+            return_value=PlayerStatus(play_state="play", source="airplay")  # Changed to airplay (blacklisted)
         )
         mock_client.get_device_info_model = AsyncMock(return_value=DeviceInfo(uuid="test"))
 
         player = Player(mock_client)
         await player.refresh()
 
-        # Should raise WiiMError because Bluetooth doesn't support device control
+        # Should raise WiiMError because AirPlay doesn't support device control
         with pytest.raises(WiiMError, match="Repeat cannot be controlled when playing from"):
             await player.set_repeat("all")
 
@@ -1467,16 +1467,22 @@ class TestPlayerMediaMetadata:
 
     @pytest.mark.asyncio
     async def test_shuffle_supported_external_source(self, mock_client):
-        """Test shuffle_supported returns False for external sources."""
+        """Test shuffle_supported returns False only for truly external sources."""
         from pywiim.player import Player
 
         player = Player(mock_client)
 
-        # Test external sources
-        for source in ["airplay", "bluetooth", "dlna", "spotify", "tidal", "multiroom"]:
+        # Test external sources (blacklist)
+        for source in ["airplay", "tunein", "iheartradio", "multiroom"]:
             status = PlayerStatus(source=source, play_state="play")
             player._status_model = status
             assert player.shuffle_supported is False, f"shuffle_supported should be False for {source}"
+
+        # Test sources that ARE now supported (permissive approach)
+        for source in ["bluetooth", "dlna", "spotify", "tidal", "qobuz", "deezer"]:
+            status = PlayerStatus(source=source, play_state="play")
+            player._status_model = status
+            assert player.shuffle_supported is True, f"shuffle_supported should be True for {source}"
 
     @pytest.mark.asyncio
     async def test_repeat_supported_device_controlled_source(self, mock_client):
@@ -1493,16 +1499,22 @@ class TestPlayerMediaMetadata:
 
     @pytest.mark.asyncio
     async def test_repeat_supported_external_source(self, mock_client):
-        """Test repeat_supported returns False for external sources."""
+        """Test repeat_supported returns False only for truly external sources."""
         from pywiim.player import Player
 
         player = Player(mock_client)
 
-        # Test external sources
-        for source in ["airplay", "bluetooth", "dlna", "spotify", "tidal", "multiroom"]:
+        # Test external sources (blacklist)
+        for source in ["airplay", "tunein", "iheartradio", "multiroom"]:
             status = PlayerStatus(source=source, play_state="play")
             player._status_model = status
             assert player.repeat_supported is False, f"repeat_supported should be False for {source}"
+
+        # Test sources that ARE now supported (permissive approach)
+        for source in ["bluetooth", "dlna", "spotify", "tidal", "qobuz", "deezer"]:
+            status = PlayerStatus(source=source, play_state="play")
+            player._status_model = status
+            assert player.repeat_supported is True, f"repeat_supported should be True for {source}"
 
     @pytest.mark.asyncio
     async def test_shuffle_state_returns_none_for_external_source(self, mock_client):
@@ -1518,15 +1530,20 @@ class TestPlayerMediaMetadata:
 
     @pytest.mark.asyncio
     async def test_repeat_mode_returns_none_for_external_source(self, mock_client):
-        """Test repeat_mode returns None for external sources."""
+        """Test repeat_mode returns None only for blacklisted external sources."""
         from pywiim.player import Player
 
         player = Player(mock_client)
-        status = PlayerStatus(source="bluetooth", play_state="play", loop_mode=2)  # loop_mode=2 is repeat_all
+        status = PlayerStatus(source="airplay", play_state="play", loop_mode=2)  # loop_mode=2 is repeat_all
         player._status_model = status
 
-        # Should return None because Bluetooth doesn't support device control
+        # Should return None because AirPlay doesn't support device control
         assert player.repeat_mode is None
+
+        # But bluetooth should now work (permissive approach)
+        status = PlayerStatus(source="bluetooth", play_state="play", loop_mode=2)
+        player._status_model = status
+        assert player.repeat_mode == "all"  # Bluetooth now supports device control
 
     @pytest.mark.asyncio
     async def test_shuffle_state_works_for_device_controlled_source(self, mock_client):
@@ -2075,6 +2092,7 @@ class TestPlayerMediaMetadata:
         modes = player.available_output_modes
 
         assert "HDMI Out" in modes
+        assert "Headphone Out" in modes
         assert "Line Out" in modes
 
     @pytest.mark.asyncio
@@ -2905,7 +2923,6 @@ class TestPlayerBluetoothOutputs:
         """Test selecting a specific Bluetooth device."""
         from pywiim.player import Player
 
-        mock_client.set_audio_output_mode = AsyncMock()
         mock_client.connect_bluetooth_device = AsyncMock()
         mock_client.get_player_status_model = AsyncMock(return_value=None)
         mock_client.get_device_info_model = AsyncMock(return_value=None)
@@ -2918,9 +2935,7 @@ class TestPlayerBluetoothOutputs:
 
         await player.select_output("BT: Sony Speaker")
 
-        # Should set hardware mode to Bluetooth Out
-        mock_client.set_audio_output_mode.assert_called_once_with("Bluetooth Out")
-        # Should connect to the specific device
+        # Should connect to the specific device (this automatically activates BT output mode)
         mock_client.connect_bluetooth_device.assert_called_once_with("AA:BB:CC:DD:EE:FF")
 
     @pytest.mark.asyncio

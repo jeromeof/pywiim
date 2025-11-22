@@ -400,27 +400,29 @@ API_ENDPOINT_GET_SHUTDOWN = "/httpapi.asp?command=getShutdown"
 
 # Audio output mode constants
 # Based on official WiiM API documentation (Section 2.10 Audio Output Control):
-# hardware field values: 1=SPDIF, 2=AUX, 3=COAX
-# source field: 0=BT disabled, 1=BT active (mode 4)
+# hardware field values: 1=SPDIF, 2=AUX, 3=COAX, 4=varies by device
+# source field: 0=BT disabled, 1=BT active (Bluetooth output uses source field)
 # NOTE: Mode 0 exists in practice but not documented in official API
-# NOTE: WiiM Ultra physical headphone jack and HDMI mode numbers unknown
+# NOTE: WiiM Ultra mode 4: source=0 = Headphone Out, source=1 = Bluetooth Out (Issue #86)
 AUDIO_OUTPUT_MODE_LINE_OUT = 0  # Undocumented but works on WiiM devices
 AUDIO_OUTPUT_MODE_SPDIF_OUT = 1  # AUDIO_OUTPUT_SPDIF_MODE (Optical/TOSLINK)
 AUDIO_OUTPUT_MODE_AUX_OUT = 2  # AUDIO_OUTPUT_AUX_MODE (Line Out/Auxiliary/RCA)
 AUDIO_OUTPUT_MODE_COAX_OUT = 3  # AUDIO_OUTPUT_COAX_MODE (Coaxial)
-AUDIO_OUTPUT_MODE_BLUETOOTH_OUT = 4  # Bluetooth output (via source=1 field)
+AUDIO_OUTPUT_MODE_BLUETOOTH_OUT = 4  # Bluetooth Out (or Headphone Out on Ultra with source=0)
 
 # Legacy aliases for backward compatibility
 AUDIO_OUTPUT_MODE_OPTICAL_OUT = AUDIO_OUTPUT_MODE_SPDIF_OUT
 AUDIO_OUTPUT_MODE_LINE_OUT_2 = AUDIO_OUTPUT_MODE_AUX_OUT
 
 # Audio output mode mapping (mode integer -> friendly name)
+# Note: Mode 4 defaults to "Bluetooth Out" but is context-dependent on Ultra devices
+# (see audio_output_mode property for special Ultra handling)
 AUDIO_OUTPUT_MODE_MAP: dict[int, str] = {
     AUDIO_OUTPUT_MODE_LINE_OUT: "Line Out",  # Mode 0 - undocumented
     AUDIO_OUTPUT_MODE_SPDIF_OUT: "Optical Out",  # Mode 1 - SPDIF
     AUDIO_OUTPUT_MODE_AUX_OUT: "Line Out",  # Mode 2 - AUX (primary line out)
     AUDIO_OUTPUT_MODE_COAX_OUT: "Coax Out",  # Mode 3 - COAX
-    AUDIO_OUTPUT_MODE_BLUETOOTH_OUT: "Bluetooth Out",  # Mode 4 - BT
+    AUDIO_OUTPUT_MODE_BLUETOOTH_OUT: "Bluetooth Out",  # Mode 4 - default mapping
 }
 
 # Reverse mapping (friendly name -> mode integer)
@@ -437,6 +439,9 @@ AUDIO_OUTPUT_MODE_NAME_TO_INT: dict[str, int] = {
     "coax out": AUDIO_OUTPUT_MODE_COAX_OUT,  # Mode 3
     "coax": AUDIO_OUTPUT_MODE_COAX_OUT,
     "coaxial": AUDIO_OUTPUT_MODE_COAX_OUT,
+    "headphone out": AUDIO_OUTPUT_MODE_BLUETOOTH_OUT,  # Mode 4 (uses special handling for Ultra)
+    "headphone": AUDIO_OUTPUT_MODE_BLUETOOTH_OUT,
+    "headphones": AUDIO_OUTPUT_MODE_BLUETOOTH_OUT,
     "bluetooth out": AUDIO_OUTPUT_MODE_BLUETOOTH_OUT,  # Mode 4
     "bluetooth": AUDIO_OUTPUT_MODE_BLUETOOTH_OUT,
 }

@@ -321,7 +321,7 @@ class TestPlaybackAPIAudioOutput:
         """Test converting audio output mode to name."""
         assert mock_client.audio_output_mode_to_name(0) == "Line Out"
         assert mock_client.audio_output_mode_to_name(1) == "Optical Out"
-        assert mock_client.audio_output_mode_to_name(4) == "Bluetooth Out"
+        assert mock_client.audio_output_mode_to_name(4) == "Bluetooth Out"  # Default for mode 4
         assert mock_client.audio_output_mode_to_name(None) is None
 
     @pytest.mark.asyncio
@@ -329,7 +329,8 @@ class TestPlaybackAPIAudioOutput:
         """Test converting audio output name to mode."""
         assert mock_client.audio_output_name_to_mode("Line Out") == 2  # Maps to AUX per official API
         assert mock_client.audio_output_name_to_mode("Optical Out") == 1  # Maps to SPDIF
-        assert mock_client.audio_output_name_to_mode("Bluetooth Out") == 4
+        assert mock_client.audio_output_name_to_mode("Headphone Out") == 4  # Mode 4
+        assert mock_client.audio_output_name_to_mode("Bluetooth Out") == 4  # Mode 4
         assert mock_client.audio_output_name_to_mode("Unknown") is None
         assert mock_client.audio_output_name_to_mode("") is None
 
@@ -361,7 +362,7 @@ class TestPlaybackAPIAudioOutput:
     async def test_set_audio_output_mode_invalid_int(self, mock_client):
         """Test setting audio output mode with invalid integer."""
         with pytest.raises(ValueError, match="Invalid audio output mode"):
-            await mock_client.set_audio_output_mode(99)
+            await mock_client.set_audio_output_mode(99)  # 99 is now invalid (was temporary sentinel)
 
     @pytest.mark.asyncio
     async def test_set_audio_output_mode_invalid_type(self, mock_client):

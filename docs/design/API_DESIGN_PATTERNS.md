@@ -578,16 +578,43 @@ curl -k "https://DEVICE_IP:443/httpapi.asp?command=getAudioOutputStatus"
 # ❌ Arylic: "" (empty response)
 ```
 
-### WiiM Ultra Unknown Modes
+### WiiM Ultra Mode 4 Behavior
 
-The WiiM Ultra has additional physical outputs not yet documented in the API:
+The WiiM Ultra uses mode 4 for BOTH Headphone Out and Bluetooth Out, distinguished by the `source` field:
 
-- **HDMI eARC output**: Mode number unknown (possibly 5 or 6+)
-- **Physical 3.5mm headphone jack** (front panel): Mode number unknown (possibly 5 or 6+)
+- **Mode 4 + source=0**: **Headphone Out** (physical 3.5mm jack on front panel) ✅
+- **Mode 4 + source=1**: **Bluetooth Out** (wireless audio to BT devices) ✅
 
-These require physical testing on WiiM Ultra with actual devices connected to discover the mode numbers.
+**Implementation:**
+```python
+if hardware_mode == 4:
+    if device_model == "WiiM Ultra":
+        if source == 0:
+            return "Headphone Out"
+        elif source == 1:
+            return "Bluetooth Out"
+```
 
-**Note:** These are different from Bluetooth headphones, which use the `source` field (not `hardware` field).
+**Setting Headphone Out on Ultra:**
+```bash
+# 1. Set hardware mode to 4
+curl -k https://DEVICE_IP/httpapi.asp?command=setAudioOutputHardwareMode:4
+
+# 2. Ensure Bluetooth is disconnected (source=0)
+curl -k https://DEVICE_IP/httpapi.asp?command=disconnectbta2dpsynk
+```
+
+**Setting Bluetooth Out on Ultra:**
+```bash
+# 1. Connect to Bluetooth device (automatically sets source=1)
+curl -k https://DEVICE_IP/httpapi.asp?command=connectbta2dpsynk:AA:BB:CC:DD:EE:FF
+```
+
+### WiiM Ultra HDMI Output
+
+- **HDMI eARC output**: Mode number still unknown (possibly 5 or 6+)
+  - Listed in `available_output_modes` as "HDMI Out"
+  - Mode number needs to be discovered via testing
 
 ### Mode 0 Mystery
 
