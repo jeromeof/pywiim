@@ -552,10 +552,12 @@ async def async_setup_coordinator(self):
     self._strategy_initialized = True
 
     # Track last fetch times for conditional polling
+    # Initialize to 0 so first check triggers immediate fetch (startup)
     self._last_device_info_check = 0
     self._last_multiroom_check = 0
     self._last_eq_info_check = 0
-    self._last_audio_output_check = 0
+    # Note: Audio output status is automatically fetched by player.refresh() on startup
+    # EQ presets and preset stations are automatically fetched by player.refresh() on track change
 ```
 
 ### 3. Implement Adaptive Polling with Player
@@ -596,35 +598,42 @@ async def _async_update_data(self):
     # Build fetch tasks for additional data (conditional fetching)
     now = time.time()
     fetch_tasks = []
+    fetch_flags = {}  # Track which fetches were added to process results correctly
 
     # Device info (every 60s) - use cached if recent
     if self._polling_strategy.should_fetch_device_info(self._last_device_info_check, now):
         fetch_tasks.append(self.player.get_device_info())
+        fetch_flags["device_info"] = True
         self._last_device_info_check = now
+    else:
+        fetch_flags["device_info"] = False
 
     # Multiroom info (every 15s)
     if self._polling_strategy.should_fetch_multiroom(self._last_multiroom_check, now):
         fetch_tasks.append(self.player.get_multiroom_status())
+        fetch_flags["multiroom"] = True
         self._last_multiroom_check = now
+    else:
+        fetch_flags["multiroom"] = False
 
-    # EQ info (every 60s, if supported)
+    # EQ info (every 60s, if supported) - only fetch EQ band values
+    # Note: EQ presets are automatically fetched by player.refresh() on track change
     eq_supported = self._capabilities.get("supports_eq", None)
     if self._polling_strategy.should_fetch_eq_info(
         self._last_eq_info_check, eq_supported, now
     ):
-        fetch_tasks.append(self.player.get_eq())
-        # Also fetch EQ presets list (returns list of preset names)
-        fetch_tasks.append(self.player.get_eq_presets())
+        fetch_tasks.append(self.player.get_eq())  # EQ band values only
+        # EQ presets are automatically refreshed by player.refresh() on track change
+        fetch_flags["eq"] = True
         self._last_eq_info_check = now
+    else:
+        fetch_flags["eq"] = False
 
-    # Audio output (every 60s, if supported)
-    audio_output_supported = self._capabilities.get("supports_audio_output", None)
-    source_changed = False  # Coordinator doesn't track source changes, use interval-based fetching
-    if self._polling_strategy.should_fetch_audio_output(
-        self._last_audio_output_check, source_changed, audio_output_supported, now
-    ):
-        fetch_tasks.append(self.player.get_audio_output_status())
-        self._last_audio_output_check = now
+    # Note: Preset stations are automatically fetched by player.refresh() on track change
+    # No need to manually fetch them here - the library handles it
+
+    # Audio output status is automatically fetched by player.refresh() on startup
+    # No need to manually fetch it here - the library handles it
 
     # Execute additional fetches in parallel (if any)
     additional_data = {}
@@ -635,36 +644,25 @@ async def _async_update_data(self):
         result_idx = 0
 
         # Device info (if fetched)
-        if self._polling_strategy.should_fetch_device_info(self._last_device_info_check - 60, now):
+        if fetch_flags.get("device_info", False):
             device_info = results[result_idx] if not isinstance(results[result_idx], Exception) else None
             if device_info:
                 additional_data["device_info"] = device_info
             result_idx += 1
 
         # Multiroom (if fetched)
-        if self._polling_strategy.should_fetch_multiroom(self._last_multiroom_check - 15, now):
+        if fetch_flags.get("multiroom", False):
             multiroom = results[result_idx] if not isinstance(results[result_idx], Exception) else None
             if multiroom:
                 additional_data["multiroom"] = multiroom
             result_idx += 1
 
-        # EQ info (if fetched) - two results: get_eq() and get_eq_presets()
-        if self._polling_strategy.should_fetch_eq_info(self._last_eq_info_check - 60, eq_supported, now):
+        # EQ info (if fetched) - only EQ band values (EQ presets handled by refresh() on track change)
+        if fetch_flags.get("eq", False):
             eq_status = results[result_idx] if not isinstance(results[result_idx], Exception) else None
-            eq_presets = results[result_idx + 1] if result_idx + 1 < len(results) and not isinstance(results[result_idx + 1], Exception) else None
-            if eq_presets is not None:
-                additional_data["eq_presets"] = eq_presets  # List of preset names (list[str])
-            result_idx += 2
-
-        # Audio output (if fetched)
-        source_changed = False  # Coordinator doesn't track source changes
-        if self._polling_strategy.should_fetch_audio_output(self._last_audio_output_check - 60, source_changed, audio_output_supported, now):
-            audio_output = results[result_idx] if not isinstance(results[result_idx], Exception) else None
-            if audio_output:
-                # Note: get_audio_output_status() automatically updates player's internal cache
-                # so audio_output_mode property works correctly
-                additional_data["audio_output"] = audio_output
+            # EQ presets are automatically refreshed by player.refresh() on track change
             result_idx += 1
+
 
     # Return data dict for entities (use Player properties)
     return {

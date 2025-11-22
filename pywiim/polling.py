@@ -266,6 +266,40 @@ class PollingStrategy:
         # Fetch every 60s
         return (now - last_fetch_time) >= self.CONFIGURATION_INTERVAL
 
+    def should_fetch_presets(
+        self,
+        last_fetch_time: float,
+        presets_supported: bool | None,
+        now: float | None = None,
+    ) -> bool:
+        """Check if preset stations should be fetched.
+
+        Fetch logic:
+        1. On Startup (last_fetch_time == 0)
+        2. Every 60s (Background consistency)
+        3. Only if device supports presets
+
+        Args:
+            last_fetch_time: Timestamp of last presets fetch
+            presets_supported: Whether device supports presets endpoint
+            now: Current time (defaults to time.time())
+
+        Returns:
+            True if presets should be fetched
+        """
+        if presets_supported is False:
+            return False  # Endpoint not supported
+
+        if now is None:
+            now = time.time()
+
+        # Always fetch on first check
+        if last_fetch_time == 0:
+            return True
+
+        # Fetch every 60s
+        return (now - last_fetch_time) >= self.CONFIGURATION_INTERVAL
+
     def should_fetch_device_info(
         self,
         last_fetch_time: float,

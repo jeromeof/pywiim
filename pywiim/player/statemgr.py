@@ -494,7 +494,16 @@ class StateManager:
         Args:
             full: If True, perform a full refresh including expensive endpoints (device info, EQ, BT).
                  If False (default), only fetch fast-changing status data (volume, playback).
+
+        Note:
+            On first refresh (when _last_refresh is None), automatically performs a full refresh
+            to ensure all state is populated (device info, EQ presets, audio output, etc.).
         """
+        # CRITICAL: On startup (first refresh), always do a full refresh
+        # This ensures the player is "ready for use" with all properties populated
+        if self.player._last_refresh is None:
+            full = True
+
         try:
             # Tier 1: Always fetch fast status
             status = await self.player.client.get_player_status_model()
@@ -550,7 +559,8 @@ class StateManager:
 
             # 1. Metadata (Bitrate/Sample Rate) - Only if track changed
             current_signature = f"{status.title}|{status.artist}|{status.album}"
-            if current_signature != self._last_track_signature:
+            track_changed = current_signature != self._last_track_signature
+            if track_changed:
                 # Track changed (or first run)
                 if self.player.client.capabilities.get("supports_metadata", False):
                     try:
@@ -559,19 +569,25 @@ class StateManager:
                     except Exception as err:
                         _LOGGER.debug("Failed to fetch metadata for %s: %s", self.player.host, err)
                         self.player._metadata = None
+                # Update track signature after processing track change
+                self._last_track_signature = current_signature
 
-            # 2. Audio Output Status - Only if source changed or full refresh
-            # TODO: Store last source to detect change
-            if full and self.player.client.capabilities.get("supports_audio_output", False):
-                try:
-                    audio_output_status = await self.player.client.get_audio_output_status()
-                    self.player._audio_output_status = audio_output_status
-                except Exception as err:
-                    _LOGGER.debug("Failed to fetch audio output status for %s: %s", self.player.host, err)
-                    self.player._audio_output_status = None
+            # 2. Audio Output Status - Fetch on first refresh or full refresh
+            # CRITICAL: Fetch on startup (when None) so audio_output_mode property works immediately
+            # This ensures the player is "ready for use" with all basic properties populated
+            if self.player.client.capabilities.get("supports_audio_output", False):
+                should_fetch = full or self.player._audio_output_status is None
+                if should_fetch:
+                    try:
+                        audio_output_status = await self.player.client.get_audio_output_status()
+                        self.player._audio_output_status = audio_output_status
+                    except Exception as err:
+                        _LOGGER.debug("Failed to fetch audio output status for %s: %s", self.player.host, err)
+                        self.player._audio_output_status = None
 
-            # 3. EQ Presets - Only on full refresh
-            if full and self.player.client.capabilities.get("supports_eq", False):
+            # 3. EQ Presets - Fetch on full refresh or track change
+            # Track changes may indicate preset changes (user switched to different preset/station)
+            if (full or track_changed) and self.player.client.capabilities.get("supports_eq", False):
                 try:
                     eq_presets = await self.player.client.get_eq_presets()
                     self.player._eq_presets = eq_presets if eq_presets else None
@@ -579,8 +595,19 @@ class StateManager:
                     _LOGGER.debug("Failed to fetch EQ presets for %s: %s", self.player.host, err)
                     self.player._eq_presets = None
 
-            # 4. Bluetooth History - Only on full refresh or explicit trigger
-            if full:
+            # 4. Preset Stations (playback presets) - Fetch on full refresh or track change
+            # Track changes may indicate preset changes (user switched to different preset/station)
+            if (full or track_changed) and self.player.client.capabilities.get("supports_presets", False):
+                try:
+                    presets = await self.player.client.get_presets()
+                    self.player._presets = presets if presets else []
+                except Exception as err:
+                    _LOGGER.debug("Failed to fetch presets for %s: %s", self.player.host, err)
+                    self.player._presets = []
+
+            # 5. Bluetooth History (paired devices) - Fetch on full refresh or track change
+            # Track changes may indicate BT device changes (user connected/disconnected device)
+            if full or track_changed:
                 try:
                     bluetooth_history = await self.player.client.get_bluetooth_history()
                     self.player._bluetooth_history = bluetooth_history if bluetooth_history else []

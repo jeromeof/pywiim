@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.10] - 2025-11-22
+
+### Changed
+- **`refresh()` now automatically performs full refresh on startup**
+  - First call to `refresh()` automatically sets `full=True` to ensure all state is populated
+  - Ensures player is "ready for use" with all properties available (device info, EQ presets, preset stations, audio output, Bluetooth history)
+  - Subsequent refreshes use lightweight polling (Tier 1 only)
+
+### Fixed
+- **EQ presets and preset stations now refresh on track change**
+  - Previously only fetched on full refresh, now also fetched when track changes
+  - Track changes may indicate user switched presets/stations, so refreshing keeps data current
+  - No periodic polling needed - library handles it automatically
+- **Bluetooth paired devices now refresh on track change**
+  - Bluetooth history (paired devices) now fetched on track change or full refresh
+  - Keeps BT device list current when users connect/disconnect devices
+- **Audio output status automatically fetched on startup**
+  - `refresh()` now fetches audio output status on first refresh (when `_audio_output_status` is None)
+  - Ensures `audio_output_mode` property works immediately after startup
+  - Integrations no longer need to manually fetch audio output status
+
+### Documentation
+- **Updated HA integration guide to reflect automatic refresh behavior**
+  - Removed manual fetching instructions for EQ presets, preset stations, and audio output
+  - Clarified that library handles these automatically (on startup and track change)
+  - Updated examples to show only EQ band values need periodic fetching
+
 ## [2.1.9] - 2025-11-22
 
 ### Added

@@ -623,6 +623,22 @@ class Player(PlayerBase):
         return self._eq_presets
 
     @property
+    def presets(self) -> list[dict[str, Any]] | None:
+        """Preset stations (playback presets) from cached state.
+
+        Returns:
+            List of preset dictionaries with number, name, url, and picurl fields,
+            or None if not available or presets not supported.
+
+        Example:
+            [
+                {"number": 1, "name": "Radio Paradise", "url": "...", "picurl": "..."},
+                {"number": 2, "name": "BBC Radio 1", "url": "...", "picurl": "..."}
+            ]
+        """
+        return self._presets
+
+    @property
     def metadata(self) -> dict[str, Any] | None:
         """Audio quality metadata from cached state.
 

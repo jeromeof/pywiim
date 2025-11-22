@@ -65,6 +65,11 @@ class PlayerBase:
 
         # Cached EQ presets (updated via refresh())
         self._eq_presets: list[str] | None = None
+        self._last_eq_presets_check: float = 0  # Track when EQ presets were last fetched
+
+        # Cached preset stations (playback presets - updated via refresh())
+        self._presets: list[dict[str, Any]] | None = None
+        self._last_presets_check: float = 0  # Track when presets were last fetched
 
         # Cached metadata (audio quality info - updated via refresh())
         self._metadata: dict[str, Any] | None = None
