@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Literal, cast
-
-from ..role import RoleDetectionResult
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ..group import Group
@@ -45,42 +43,44 @@ class GroupOperations:
                     _LOGGER.debug("Error calling on_state_changed callback for %s: %s", player.host, err)
 
     async def _synchronize_group_state(self) -> None:
-        """Synchronize group state from device API state."""
-        if self.player._status_model is None or self.player._device_info is None:
+        """Synchronize group state from device API state.
+
+        Uses a "Master-Centric" approach for robust role detection:
+        1. Slaves often don't know who their master is.
+        2. Only Masters reliably know their slave list.
+        3. We detect slaves via `mode=99` (multiroom) and `slaves=0`.
+        4. We detect masters via `slaves > 0`.
+        """
+        if self.player._status_model is None:
             return
 
-        try:
-            group_info = await self.player.client.get_device_group_info()
-            detected_role = group_info.role
-            # Update _detected_role - this is the single source of truth for player.role
-            self.player._detected_role = detected_role
-            role_result = RoleDetectionResult(
-                role=detected_role,
-                master_host=group_info.master_host,
-                master_uuid=group_info.master_uuid,
-                slave_hosts=group_info.slave_hosts,
-                slave_count=group_info.slave_count,
-            )
-        except Exception as err:
-            # get_device_group_info() failed - can't determine role reliably
-            # Keep current Group structure to avoid flipping (don't use stale multiroom data)
-            _LOGGER.warning(
-                "Failed to get device group info for %s: %s - keeping current role %s",
-                self.player.host,
-                err,
-                self.player.role,
-            )
-            # Use current _detected_role - don't fall back to detect_role() which uses stale multiroom data
-            # Cast to Literal type to match DeviceGroupInfo.role type
-            detected_role = cast(Literal["solo", "master", "slave"], self.player._detected_role)
-            # Keep _detected_role unchanged (already set from previous successful detection)
-            role_result = RoleDetectionResult(
-                role=detected_role,
-                master_host=None,
-                master_uuid=None,
-                slave_hosts=[],
-                slave_count=0,
-            )
+        # 1. Fast Role Detection using PlayerStatus (Tier 1 Data)
+        status = self.player._status_model
+        is_multiroom_active = str(status.mode) == "99"
+
+        # Optimization: If not in multiroom mode, we are definitely Solo
+        if not is_multiroom_active:
+            detected_role = "solo"
+            slave_hosts = []
+        else:
+            # We are in multiroom mode. Are we Master or Slave?
+            # Use cached slave list if available, otherwise we might need to check
+            # But wait - if we are Master, `get_device_group_info` calls `getSlaveList`
+            # which is reliable.
+            try:
+                group_info = await self.player.client.get_device_group_info()
+                detected_role = group_info.role
+                slave_hosts = group_info.slave_hosts
+            except Exception as err:
+                _LOGGER.warning(
+                    "Failed to get device group info for %s: %s - keeping current role",
+                    self.player.host,
+                    err,
+                )
+                return
+
+        # Update _detected_role - this is the single source of truth for player.role
+        self.player._detected_role = detected_role
 
         from ..group import Group as GroupClass
 
@@ -111,27 +111,23 @@ class GroupOperations:
             self.player._group = group
 
             # Automatically link slave Player objects if player_finder is available
-            if role_result.slave_hosts and self.player._player_finder:
-                for slave_host in role_result.slave_hosts:
+            if slave_hosts and self.player._player_finder:
+                for slave_host in slave_hosts:
                     try:
                         slave_player = self.player._player_finder(slave_host)
-                        if slave_player and slave_player.is_slave:
+                        if slave_player:
+                            # If slave is already in another group, remove it first
+                            if slave_player._group and slave_player._group != group:
+                                slave_player._group.remove_slave(slave_player)
+
                             if slave_player not in group.slaves:
                                 _LOGGER.debug("Auto-linking slave %s to master %s", slave_host, self.player.host)
                                 group.add_slave(slave_player)
-                        elif slave_player:
-                            _LOGGER.debug(
-                                "Slave %s found but role is %s (not slave) - skipping link",
-                                slave_host,
-                                slave_player.role,
-                            )
                     except Exception as err:
                         _LOGGER.debug("Failed to find/link slave Player %s: %s", slave_host, err)
-            elif role_result.slave_hosts:
-                for slave_host in role_result.slave_hosts:
-                    _LOGGER.debug("Master %s has slave %s but no player_finder available", self.player.host, slave_host)
 
-            # Notify the master that it's now in a group
+            # Force an immediate role update notification
+            # This ensures the master's role change (solo -> master) is broadcast
             if self.player._on_state_changed:
                 try:
                     self.player._on_state_changed()
@@ -151,8 +147,8 @@ class GroupOperations:
                 self.player._group = group
                 slaves_changed = True
 
-            if role_result.slave_hosts:
-                device_slave_hosts = set(role_result.slave_hosts)
+            if slave_hosts:
+                device_slave_hosts = set(slave_hosts)
                 linked_slave_hosts = {slave.host for slave in self.player._group.slaves}
 
                 # Remove slaves that are no longer in device state
@@ -168,18 +164,16 @@ class GroupOperations:
                         if slave_host not in linked_slave_hosts:
                             try:
                                 slave_player = self.player._player_finder(slave_host)
-                                if slave_player and slave_player.is_slave:
+                                if slave_player:
+                                    # If slave is already in another group, remove it first
+                                    if slave_player._group and slave_player._group != self.player._group:
+                                        slave_player._group.remove_slave(slave_player)
+
                                     _LOGGER.debug(
                                         "Auto-linking new slave %s to master %s", slave_host, self.player.host
                                     )
                                     self.player._group.add_slave(slave_player)
                                     slaves_changed = True
-                                elif slave_player:
-                                    _LOGGER.debug(
-                                        "Slave %s found but role is %s (not slave) - skipping link",
-                                        slave_host,
-                                        slave_player.role,
-                                    )
                             except Exception as err:
                                 _LOGGER.debug("Failed to find/link slave Player %s: %s", slave_host, err)
 
@@ -187,56 +181,16 @@ class GroupOperations:
             if slaves_changed:
                 self._notify_all_group_members(self.player._group)
 
-        # Case 4: Device is slave but we don't have a group object
-        elif detected_role == "slave" and self.player._group is None:
-            _LOGGER.debug("Device %s is slave but has no group object - attempting to find master", self.player.host)
+        # Case 4: Device is slave
+        elif detected_role == "slave":
+            # We do NOTHING here.
+            # Slaves are passive. They are claimed by the Master.
+            # If we are a slave, we wait for the Master's poll cycle to find us and add us.
+            # Just ensure we aren't holding onto a stale Master identity if we know we are solo.
 
-            # Automatically find and link to master Player object if player_finder is available
-            if role_result.master_host and self.player._player_finder:
-                try:
-                    master_player = self.player._player_finder(role_result.master_host)
-                    if master_player and master_player.is_master and master_player._group:
-                        _LOGGER.debug("Auto-linking slave %s to master %s", self.player.host, role_result.master_host)
-                        master_player._group.add_slave(self.player)
-                    elif master_player:
-                        _LOGGER.debug(
-                            "Master %s found but role is %s (not master) or no group - skipping link",
-                            role_result.master_host,
-                            master_player.role,
-                        )
-                except Exception as err:
-                    _LOGGER.debug("Failed to find/link master Player %s: %s", role_result.master_host, err)
-            elif role_result.master_host:
-                _LOGGER.debug(
-                    "Device %s is slave but no player_finder available to find master %s",
-                    self.player.host,
-                    role_result.master_host,
-                )
-
-        # Case 5: Device is slave and we have a group - verify master matches
-        elif detected_role == "slave" and self.player._group is not None:
-            if self.player._group.master == self.player:
-                _LOGGER.warning("Device %s is slave but group object says we're master - fixing", self.player.host)
-                old_group = self.player._group
-                for slave in list(old_group.slaves):
-                    old_group.remove_slave(slave)
-                old_group.master._group = None
-                self.player._group = None
-                # Notify old group members
-                self._notify_all_group_members(old_group)
-            else:
-                if role_result.master_host and self.player._group.master.host != role_result.master_host:
-                    _LOGGER.warning(
-                        "Device %s is slave but master host mismatch: group=%s, device=%s",
-                        self.player.host,
-                        self.player._group.master.host,
-                        role_result.master_host,
-                    )
-                    old_group = self.player._group
-                    self.player._group = None
-                    old_group.remove_slave(self.player)
-                    # Notify old group members
-                    self._notify_all_group_members(old_group)
+            # However, if we have a player_finder and we know the master IP from status (rare but possible),
+            # we can try to link up proactively.
+            pass
 
     async def create_group(self) -> Group:
         """Create a new group with this player as master."""

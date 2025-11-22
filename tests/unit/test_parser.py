@@ -203,26 +203,27 @@ class TestParsePlayerStatus:
         assert parsed4["mute"] is False
 
     def test_parse_play_mode_from_loop_mode(self):
-        """Test play mode extraction from loop_mode bit flags."""
-        # Bit 0 = repeat_one, bit 1 = repeat_all, bit 2 = shuffle
+        """Test play mode extraction from loop_mode using vendor-specific mappings (WiiM)."""
+        # WiiM loop mode mapping:
+        # 0 = repeat_all, 1 = repeat_one, 2 = shuffle_repeat_all, 3 = shuffle, 4 = normal
         # loop_mode = 1 (repeat_one)
         raw1 = {"loop_mode": 1}
-        parsed1, _ = parse_player_status(raw1)
+        parsed1, _ = parse_player_status(raw1, vendor="wiim")
         assert parsed1["play_mode"] == "repeat_one"
 
-        # loop_mode = 2 (repeat_all)
-        raw2 = {"loop_mode": 2}
-        parsed2, _ = parse_player_status(raw2)
+        # loop_mode = 0 (repeat_all for WiiM)
+        raw2 = {"loop_mode": 0}
+        parsed2, _ = parse_player_status(raw2, vendor="wiim")
         assert parsed2["play_mode"] == "repeat_all"
 
-        # loop_mode = 4 (shuffle)
-        raw3 = {"loop_mode": 4}
-        parsed3, _ = parse_player_status(raw3)
+        # loop_mode = 3 (shuffle for WiiM)
+        raw3 = {"loop_mode": 3}
+        parsed3, _ = parse_player_status(raw3, vendor="wiim")
         assert parsed3["play_mode"] == "shuffle"
 
-        # loop_mode = 6 (shuffle + repeat_all)
-        raw4 = {"loop_mode": 6}
-        parsed4, _ = parse_player_status(raw4)
+        # loop_mode = 2 (shuffle + repeat_all for WiiM)
+        raw4 = {"loop_mode": 2}
+        parsed4, _ = parse_player_status(raw4, vendor="wiim")
         assert parsed4["play_mode"] == "shuffle_repeat_all"
 
     def test_parse_source_from_mode(self):

@@ -833,7 +833,8 @@ class BaseWiiMClient:
     async def get_status(self) -> dict[str, Any]:
         """Return normalised output of *getStatusEx* (device-level info)."""
         raw = await self._request(API_ENDPOINT_STATUS)
-        parsed, self._last_track = parse_player_status(raw, self._last_track)
+        vendor = self._capabilities.get("vendor")
+        parsed, self._last_track = parse_player_status(raw, self._last_track, vendor)
         return parsed
 
     async def get_device_info(self) -> dict[str, Any]:
@@ -883,7 +884,7 @@ class BaseWiiMClient:
                 else:
                     raise primary_err
 
-            parsed, self._last_track = parse_player_status(raw, self._last_track)
+            parsed, self._last_track = parse_player_status(raw, self._last_track, self._capabilities.get("vendor"))
 
             # If artwork is missing or invalid and device supports getMetaInfo, try to fetch it
             entity_picture = parsed.get("entity_picture")

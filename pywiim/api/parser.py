@@ -76,7 +76,9 @@ def _normalize_time_value(value: int, field_name: str, source: str | None = None
         return result
 
 
-def parse_player_status(raw: dict[str, Any], last_track: str | None = None) -> tuple[dict[str, Any], str | None]:
+def parse_player_status(
+    raw: dict[str, Any], last_track: str | None = None, vendor: str | None = None
+) -> tuple[dict[str, Any], str | None]:
     """Normalise *getPlayerStatusEx* / *getStatusEx* responses.
 
     Parses raw API response and normalizes field names, values, and formats.
@@ -85,6 +87,7 @@ def parse_player_status(raw: dict[str, Any], last_track: str | None = None) -> t
     Args:
         raw: Raw API response dictionary
         last_track: Previous track identifier for change detection
+        vendor: Device vendor for vendor-specific loop mode parsing
 
     Returns:
         Tuple of (parsed_data, new_last_track)
@@ -235,8 +238,8 @@ def parse_player_status(raw: dict[str, Any], last_track: str | None = None) -> t
         except (TypeError, ValueError):  # noqa: PERF203 – clarity > micro perf.
             data["mute"] = bool(data["mute"])
 
-    # Play-mode mapping from loop_mode bit flags.
-    # WiiM devices use bit flags: bit 0=repeat_one, bit 1=repeat_all, bit 2=shuffle
+    # Play-mode mapping from loop_mode values.
+    # Different vendors use different loop_mode value schemes (see loop_mode.py)
     if "loop_mode" in data:
         try:
             # Convert loop_mode to int (API returns it as string)
@@ -249,25 +252,17 @@ def parse_player_status(raw: dict[str, Any], last_track: str | None = None) -> t
 
         # Only process play_mode if not already set
         if "play_mode" not in data:
-            # Decode bit flags
-            is_shuffle = bool(loop_val & 4)  # bit 2
-            is_repeat_one = bool(loop_val & 1)  # bit 0
-            is_repeat_all = bool(loop_val & 2)  # bit 1
+            # Use vendor-specific loop mode mapping
+            from .loop_mode import get_loop_mode_mapping
 
-            # Validate: both repeat bits should never be set simultaneously (invalid state)
-            if is_repeat_one and is_repeat_all:
-                _LOGGER.warning(
-                    "Invalid loop_mode %d: both repeat_one and repeat_all bits set. " "Defaulting to repeat_one",
-                    loop_val,
-                )
-                # Treat as repeat_one only (ignore repeat_all bit)
-                is_repeat_all = False
+            mapping = get_loop_mode_mapping(vendor)
+            is_shuffle, is_repeat_one, is_repeat_all = mapping.from_loop_mode(loop_val)
 
             # Map to play modes
             if is_shuffle and is_repeat_all:
                 data["play_mode"] = PLAY_MODE_SHUFFLE_REPEAT_ALL
             elif is_shuffle and is_repeat_one:
-                data["play_mode"] = PLAY_MODE_SHUFFLE  # WiiM doesn't support shuffle+repeat_one as separate mode
+                data["play_mode"] = PLAY_MODE_SHUFFLE  # Some devices don't differentiate shuffle+repeat_one
             elif is_shuffle:
                 data["play_mode"] = PLAY_MODE_SHUFFLE
             elif is_repeat_one:

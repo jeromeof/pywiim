@@ -7,6 +7,9 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
+from ..state import PLAYING_STATES, normalize_play_state
+from .stream import StreamMetadata, get_stream_metadata
+
 if TYPE_CHECKING:
     from ..models import DeviceInfo, PlayerStatus
     from . import Player
@@ -47,6 +50,15 @@ class StateManager:
         # Track if we're already fetching artwork to avoid duplicate requests
         self._artwork_fetch_task: asyncio.Task | None = None
 
+        # Stream enrichment state
+        self.stream_enrichment_enabled: bool = True
+        self._stream_enrichment_task: asyncio.Task | None = None
+        self._last_stream_url: str | None = None
+        self._last_stream_metadata: StreamMetadata | None = None  # StreamMetadata from .stream
+
+        # Track pending pause/stop/buffering state to debounce track changes
+        self._pending_state_task: asyncio.Task | None = None
+
     def apply_diff(self, changes: dict[str, Any]) -> bool:
         """Apply state changes from UPnP events.
 
@@ -85,8 +97,8 @@ class StateManager:
         # Handle position timer based on play state changes
         if old_play_state != new_play_state:
             # Check if transitioning from playing to paused/stopped
-            was_playing = old_play_state and str(old_play_state).lower() in ("play", "playing", "load")
-            is_playing = new_play_state and str(new_play_state).lower() in ("play", "playing", "load")
+            was_playing = old_play_state and any(s in str(old_play_state).lower() for s in PLAYING_STATES)
+            is_playing = new_play_state and any(s in str(new_play_state).lower() for s in PLAYING_STATES)
 
             _LOGGER.info(
                 "🎵 Play state changed: %s -> %s (was_playing=%s, is_playing=%s)",
@@ -104,6 +116,39 @@ class StateManager:
         Args:
             data: Dictionary with state fields from UPnP event.
         """
+        # Handle debounce for play state to smooth track changes
+        # Devices often report STOPPED/PAUSED briefly between tracks
+        if "play_state" in data:
+            raw_state = data["play_state"]
+
+            new_state = normalize_play_state(raw_state)
+            current_state = self.player.play_state
+
+            # Check if currently playing (or loading/transitioning)
+            is_playing = current_state and any(s in str(current_state).lower() for s in PLAYING_STATES)
+
+            # Check if new state is pause/stop or buffering
+            # We debounce buffering too, to avoid UI flashes during track transitions
+            is_interruption = new_state is not None and new_state in ("pause", "stop", "idle", "buffering")
+
+            if is_playing and is_interruption and new_state is not None:
+                # Transitioning Play -> Pause/Buffering: Debounce it
+                # Don't apply play_state immediately, schedule it
+                self._schedule_delayed_update(new_state)
+
+                # Make a copy without play_state to apply other changes immediately
+                data_copy = data.copy()
+                del data_copy["play_state"]
+                self.player._state_synchronizer.update_from_upnp(data_copy)
+                return
+
+            elif new_state in ("play", "playing"):
+                # Transitioning to Play: Cancel any pending state update and apply immediately
+                if self._pending_state_task and not self._pending_state_task.done():
+                    self._pending_state_task.cancel()
+                    self._pending_state_task = None
+                    _LOGGER.debug("Track change detected (Play -> Play), cancelled pending state update")
+
         self.player._state_synchronizer.update_from_upnp(data)
 
         # Update UPnP health tracker with UPnP event data
@@ -173,6 +218,52 @@ class StateManager:
         # If this is a master, propagate metadata to all linked slaves
         if self.player.is_master and self.player._group and self.player._group.slaves:
             self._propagate_metadata_to_slaves()
+
+    def _schedule_delayed_update(self, new_state: str) -> None:
+        """Schedule a delayed update to play state (pause/stop/buffering).
+
+        This debounces the 'stop' or 'buffering' events that occur during track changes.
+        """
+        if self._pending_state_task and not self._pending_state_task.done():
+            self._pending_state_task.cancel()
+
+        try:
+            loop = asyncio.get_event_loop()
+            self._pending_state_task = loop.create_task(self._apply_delayed_state(new_state))
+        except RuntimeError:
+            # No event loop (sync context) - apply immediately
+            self.player._state_synchronizer.update_from_upnp({"play_state": new_state})
+
+    async def _apply_delayed_state(self, new_state: str) -> None:
+        """Apply play state after delay."""
+        try:
+            # Wait 500ms - typical track change stop is < 100ms, but buffering can take longer
+            await asyncio.sleep(0.5)
+
+            # If we get here, the timer expired without being cancelled by a "Play" event
+            _LOGGER.debug("Debounce timer expired, applying delayed state: %s", new_state)
+
+            self.player._state_synchronizer.update_from_upnp({"play_state": new_state})
+
+            # Force update of cached model
+            merged = self.player._state_synchronizer.get_merged_state()
+            if self.player._status_model and "play_state" in merged:
+                self.player._status_model.play_state = merged["play_state"]
+
+            # Trigger callback
+            if self.player._on_state_changed:
+                try:
+                    self.player._on_state_changed()
+                except Exception as err:
+                    _LOGGER.debug("Error in callback after delayed state update: %s", err)
+
+        except asyncio.CancelledError:
+            # Task cancelled - track change confirmed (Play -> Interruption -> Play)
+            pass
+        except Exception as e:
+            _LOGGER.error("Error in delayed state task: %s", e)
+        finally:
+            self._pending_state_task = None
 
     def _check_and_fetch_artwork_on_track_change(self, merged: dict[str, Any]) -> None:
         """Check if track changed and fetch artwork immediately if missing.
@@ -397,11 +488,22 @@ class StateManager:
                 master_status.artist,
             )
 
-    async def refresh(self) -> None:
-        """Refresh cached state from device."""
+    async def refresh(self, full: bool = False) -> None:
+        """Refresh cached state from device.
+
+        Args:
+            full: If True, perform a full refresh including expensive endpoints (device info, EQ, BT).
+                 If False (default), only fetch fast-changing status data (volume, playback).
+        """
         try:
+            # Tier 1: Always fetch fast status
             status = await self.player.client.get_player_status_model()
-            device_info = await self.player.client.get_device_info_model()
+
+            # Tier 3: Only fetch Device Info on full refresh or if missing
+            device_info = self.player._device_info
+            if full or device_info is None:
+                device_info = await self.player.client.get_device_info_model()
+                self.player._device_info = device_info
 
             # Update StateSynchronizer with HTTP data
             status_dict = status.model_dump(exclude_none=False) if status else {}
@@ -410,15 +512,6 @@ class StateManager:
             for field_name in ["title", "artist", "album", "image_url"]:
                 if field_name not in status_dict:
                     status_dict[field_name] = None
-
-            # Replace "multiroom" with master's name for slaves
-            if status_dict.get("source") == "multiroom":
-                master_name = await self._get_master_name(device_info, status)
-                if master_name:
-                    status_dict["source"] = master_name
-                    _LOGGER.debug(
-                        "Replacing 'multiroom' with master name '%s' for slave %s", master_name, self.player.host
-                    )
 
             self.player._state_synchronizer.update_from_http(status_dict)
 
@@ -444,186 +537,32 @@ class StateManager:
             # Update cached models
             self.player._status_model = status
             if self.player._status_model and self.player._status_model.source == "multiroom":
-                master_name = await self._get_master_name(device_info, status)
-                if master_name:
-                    self.player._status_model.source = master_name
-                    _LOGGER.debug(
-                        "Updated status_model source to master name '%s' for slave %s", master_name, self.player.host
-                    )
+                # We don't fetch master name for slaves anymore - handled by Master
+                pass
 
-            self.player._device_info = device_info
+            # Enrich metadata if playing a stream
+            await self._enrich_stream_metadata(status)
+
             self.player._last_refresh = time.time()
             self.player._available = True
 
-            # Copy ALL metadata from master to slave when linked
-            # Slave devices report incomplete data - we populate from master
-            if self.player.is_slave:
-                master = None
-                # First try: Use linked Group object if available
-                if self.player._group and self.player._group.master:
-                    master = self.player._group.master
-                # Second try: Use master_ip from device_info to find master Player via player_finder
-                elif device_info.master_ip and self.player._player_finder:
+            # === Tier 2: Trigger-Based Fetching ===
+
+            # 1. Metadata (Bitrate/Sample Rate) - Only if track changed
+            current_signature = f"{status.title}|{status.artist}|{status.album}"
+            if current_signature != self._last_track_signature:
+                # Track changed (or first run)
+                if self.player.client.capabilities.get("supports_metadata", False):
                     try:
-                        master = self.player._player_finder(device_info.master_ip)
-                    except Exception as e:
-                        _LOGGER.debug(
-                            "Failed to find master Player via player_finder for %s: %s", device_info.master_ip, e
-                        )
+                        metadata = await self.player.client.get_meta_info()
+                        self.player._metadata = metadata if metadata else None
+                    except Exception as err:
+                        _LOGGER.debug("Failed to fetch metadata for %s: %s", self.player.host, err)
+                        self.player._metadata = None
 
-                if master and master._status_model and self.player._status_model:
-                    # Copy ALL playback metadata from master to slave
-                    self.player._status_model.title = master._status_model.title
-                    self.player._status_model.artist = master._status_model.artist
-                    self.player._status_model.album = master._status_model.album
-                    self.player._status_model.entity_picture = master._status_model.entity_picture
-                    self.player._status_model.cover_url = master._status_model.cover_url
-                    self.player._status_model.play_state = master._status_model.play_state
-                    self.player._status_model.position = master._status_model.position
-                    self.player._status_model.duration = master._status_model.duration
-
-                    # Update state synchronizer with master's metadata
-                    self.player._state_synchronizer.update_from_http(
-                        {
-                            "title": master._status_model.title,
-                            "artist": master._status_model.artist,
-                            "album": master._status_model.album,
-                            "image_url": master._status_model.entity_picture or master._status_model.cover_url,
-                            "play_state": master._status_model.play_state,
-                            "position": master._status_model.position,
-                            "duration": master._status_model.duration,
-                        }
-                    )
-
-                    _LOGGER.debug(
-                        "Copied metadata from master %s to slave %s: '%s' by %s",
-                        master.host,
-                        self.player.host,
-                        master._status_model.title,
-                        master._status_model.artist,
-                    )
-
-            # Clear source if device is no longer a slave
-            if self.player._status_model and self.player._status_model.source:
-                current_source = self.player._status_model.source
-                is_currently_solo = (
-                    self.player._group is None
-                    and (not device_info.master_ip and not device_info.master_uuid)
-                    and (device_info.group == "0" or not device_info.group)
-                    and (not status.master_ip and not status.master_uuid)
-                )
-                source_is_multiroom_or_master = current_source == "multiroom" or (
-                    current_source not in STANDARD_SOURCES and current_source is not None
-                )
-                if is_currently_solo and source_is_multiroom_or_master:
-                    # Clear ALL slave metadata when no longer a slave
-                    self.player._status_model.source = None
-                    self.player._status_model._multiroom_mode = None
-                    self.player._status_model.title = None
-                    self.player._status_model.artist = None
-                    self.player._status_model.album = None
-                    self.player._status_model.entity_picture = None
-                    self.player._status_model.cover_url = None
-
-                    self.player._state_synchronizer.update_from_http(
-                        {
-                            "source": None,
-                            "title": None,
-                            "artist": None,
-                            "album": None,
-                            "image_url": None,
-                        }
-                    )
-                    _LOGGER.debug(
-                        "Cleared source and metadata for device %s - no longer a slave (was: %s)",
-                        self.player.host,
-                        current_source,
-                    )
-
-            # Update cached status_model from merged state
-            merged = self.player._state_synchronizer.get_merged_state()
-            if self.player._status_model:
-                for field_name in ["play_state", "position", "duration", "source"]:
-                    if field_name in merged and merged[field_name] is not None:
-                        value = merged[field_name]
-                        if field_name == "source" and value == "multiroom":
-                            master_name = await self._get_master_name(
-                                self.player._device_info, self.player._status_model
-                            )
-                            if master_name:
-                                value = master_name
-                                self.player._state_synchronizer.update_from_http({"source": master_name})
-                                _LOGGER.debug(
-                                    "Replaced 'multiroom' with master name '%s' in merged state for slave %s",
-                                    master_name,
-                                    self.player.host,
-                                )
-                        setattr(self.player._status_model, field_name, value)
-
-                # Check again if source should be cleared after merged state update
-                if self.player._status_model.source:
-                    current_source = self.player._status_model.source
-                    is_currently_solo = (
-                        self.player._group is None
-                        and (not device_info.master_ip and not device_info.master_uuid)
-                        and (device_info.group == "0" or not device_info.group)
-                        and (not status.master_ip and not status.master_uuid)
-                    )
-                    source_is_multiroom_or_master = current_source == "multiroom" or (
-                        current_source not in STANDARD_SOURCES and current_source is not None
-                    )
-                    if is_currently_solo and source_is_multiroom_or_master:
-                        # Clear ALL slave metadata when no longer a slave
-                        self.player._status_model.source = None
-                        self.player._status_model._multiroom_mode = None
-                        self.player._status_model.title = None
-                        self.player._status_model.artist = None
-                        self.player._status_model.album = None
-                        self.player._status_model.entity_picture = None
-                        self.player._status_model.cover_url = None
-
-                        self.player._state_synchronizer.update_from_http(
-                            {
-                                "source": None,
-                                "title": None,
-                                "artist": None,
-                                "album": None,
-                                "image_url": None,
-                            }
-                        )
-                        _LOGGER.debug(
-                            "Cleared source and metadata for device %s after merged state update - "
-                            "no longer a slave (was: %s)",
-                            self.player.host,
-                            current_source,
-                        )
-
-                # Update volume and mute
-                if "volume" in merged and merged["volume"] is not None:
-                    vol = merged["volume"]
-                    if isinstance(vol, float) and 0.0 <= vol <= 1.0:
-                        self.player._status_model.volume = int(vol * 100)
-                    else:
-                        self.player._status_model.volume = int(vol) if vol is not None else None
-
-                if "muted" in merged and merged["muted"] is not None:
-                    self.player._status_model.mute = merged["muted"]
-
-                # Update metadata from merged state
-                for field_name in ["title", "artist", "album"]:
-                    value = merged.get(field_name)
-                    current_value = getattr(self.player._status_model, field_name, None)
-                    if value != current_value:
-                        setattr(self.player._status_model, field_name, value)
-                        if _LOGGER.isEnabledFor(logging.DEBUG):
-                            _LOGGER.debug("Updated %s from merged state: %s -> %s", field_name, current_value, value)
-
-                if "image_url" in merged:
-                    self.player._status_model.entity_picture = merged.get("image_url")
-                    self.player._status_model.cover_url = merged.get("image_url")
-
-            # Fetch audio output status if device supports it
-            if self.player.client.capabilities.get("supports_audio_output", False):
+            # 2. Audio Output Status - Only if source changed or full refresh
+            # TODO: Store last source to detect change
+            if full and self.player.client.capabilities.get("supports_audio_output", False):
                 try:
                     audio_output_status = await self.player.client.get_audio_output_status()
                     self.player._audio_output_status = audio_output_status
@@ -631,8 +570,8 @@ class StateManager:
                     _LOGGER.debug("Failed to fetch audio output status for %s: %s", self.player.host, err)
                     self.player._audio_output_status = None
 
-            # Fetch EQ presets if device supports EQ
-            if self.player.client.capabilities.get("supports_eq", False):
+            # 3. EQ Presets - Only on full refresh
+            if full and self.player.client.capabilities.get("supports_eq", False):
                 try:
                     eq_presets = await self.player.client.get_eq_presets()
                     self.player._eq_presets = eq_presets if eq_presets else None
@@ -640,26 +579,11 @@ class StateManager:
                     _LOGGER.debug("Failed to fetch EQ presets for %s: %s", self.player.host, err)
                     self.player._eq_presets = None
 
-            # Fetch metadata (audio quality info) if device supports it
-            if self.player.client.capabilities.get("supports_metadata", False):
-                try:
-                    metadata = await self.player.client.get_meta_info()
-                    self.player._metadata = metadata if metadata else None
-                except Exception as err:
-                    _LOGGER.debug("Failed to fetch metadata for %s: %s", self.player.host, err)
-                    self.player._metadata = None
-
-            # Fetch Bluetooth history (for output device list) - less frequently
-            # BT pairing doesn't change often, so fetch every 60 seconds instead of every poll
-            if not hasattr(self.player, "_last_bt_history_check"):
-                self.player._last_bt_history_check = 0
-
-            now_time = time.time()
-            if now_time - self.player._last_bt_history_check > 60:  # 60 seconds
+            # 4. Bluetooth History - Only on full refresh or explicit trigger
+            if full:
                 try:
                     bluetooth_history = await self.player.client.get_bluetooth_history()
                     self.player._bluetooth_history = bluetooth_history if bluetooth_history else []
-                    self.player._last_bt_history_check = now_time
                 except Exception as err:
                     _LOGGER.debug("Failed to fetch Bluetooth history for %s: %s", self.player.host, err)
                     self.player._bluetooth_history = []
@@ -702,3 +626,98 @@ class StateManager:
         """Get current playback state by querying device."""
         status = await self.get_status()
         return status.play_state or "stop"
+
+    async def _enrich_stream_metadata(self, status: PlayerStatus) -> None:
+        """Enrich status with stream metadata if playing a raw stream.
+
+        Handles cases where the device plays a direct URL (Icecast, M3U, PLS)
+        but returns the URL as the title instead of parsed metadata.
+        """
+        if not self.stream_enrichment_enabled:
+            return
+
+        # Check if we are playing
+        if not status.play_state or status.play_state in ("stop", "idle"):
+            return
+
+        # Check if source is suitable for enrichment (wifi/url playback)
+        # 'wifi' (10, 20, 3) or 'unknown' are candidates.
+        if status.source not in ("wifi", "unknown", None):
+            return
+
+        # Check if we have a URL in title
+        url = status.title
+        if not url or not str(url).startswith(("http://", "https://")):
+            return
+
+        # Avoid re-fetching same URL repeatedly if we have cached metadata
+        if url == self._last_stream_url and self._last_stream_metadata:
+            # Re-apply cached metadata
+            self._apply_stream_metadata(self._last_stream_metadata)
+            return
+
+        # If URL changed, start new fetch
+        if url != self._last_stream_url:
+            self._last_stream_url = url
+            self._last_stream_metadata = None  # Clear cache
+
+            # Cancel existing task
+            if self._stream_enrichment_task and not self._stream_enrichment_task.done():
+                self._stream_enrichment_task.cancel()
+
+            # Start new task
+            loop = asyncio.get_running_loop()
+            self._stream_enrichment_task = loop.create_task(self._fetch_and_apply_stream_metadata(url))
+
+    async def _fetch_and_apply_stream_metadata(self, url: str) -> None:
+        """Fetch metadata from stream and apply it to state."""
+        try:
+            # Use client session if available
+            session = None
+            if hasattr(self.player.client, "_session"):
+                session = self.player.client._session
+
+            metadata = await get_stream_metadata(url, session)
+
+            if metadata:
+                self._last_stream_metadata = metadata
+                self._apply_stream_metadata(metadata)
+
+                # Notify change
+                if self.player._on_state_changed:
+                    try:
+                        self.player._on_state_changed()
+                    except Exception as err:
+                        _LOGGER.debug("Error in callback after stream enrichment: %s", err)
+        except asyncio.CancelledError:
+            pass
+        except Exception as err:
+            _LOGGER.debug("Error enriching stream metadata for %s: %s", url, err)
+
+    def _apply_stream_metadata(self, metadata: StreamMetadata) -> None:
+        """Apply enriched metadata to state."""
+        update: dict[str, Any] = {}
+
+        # Only update if fields are present
+        if metadata.title:
+            update["title"] = metadata.title
+        if metadata.artist:
+            update["artist"] = metadata.artist
+
+        # Fallback: use station name as artist if artist is missing
+        if metadata.station_name and not metadata.artist and not update.get("artist"):
+            update["artist"] = metadata.station_name
+
+        if update:
+            _LOGGER.debug("Applying stream metadata enrichment: %s", update)
+
+            # Update synchronizer (as if from HTTP)
+            self.player._state_synchronizer.update_from_http(update, timestamp=time.time())
+
+            # Update cached status model immediately for UI responsiveness
+            if self.player._status_model:
+                merged = self.player._state_synchronizer.get_merged_state()
+                if "title" in merged:
+                    self.player._status_model.title = merged["title"]
+                if "artist" in merged:
+                    self.player._status_model.artist = merged["artist"]

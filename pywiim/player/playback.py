@@ -30,6 +30,7 @@ class PlaybackControl:
         Raises:
             WiiMError: If shuffle cannot be controlled on current source.
         """
+        from ..api.loop_mode import get_loop_mode_mapping
         from .properties import PlayerProperties
 
         props = PlayerProperties(self.player)
@@ -43,24 +44,17 @@ class PlaybackControl:
                 f"Supported sources: USB, Line In, Optical, Coaxial, Playlist, Preset."
             )
 
+        # Get vendor-specific loop mode mapping
+        vendor = self.player.client._capabilities.get("vendor")
+        mapping = get_loop_mode_mapping(vendor)
+
+        # Get current repeat state
         repeat_mode = props.repeat_mode
         is_repeat_one = repeat_mode == "one"
         is_repeat_all = repeat_mode == "all"
 
-        if enabled:
-            if is_repeat_one:
-                loop_mode = 5  # shuffle + repeat_one
-            elif is_repeat_all:
-                loop_mode = 6  # shuffle + repeat_all
-            else:
-                loop_mode = 4  # shuffle only
-        else:
-            if is_repeat_one:
-                loop_mode = 1  # repeat_one only
-            elif is_repeat_all:
-                loop_mode = 2  # repeat_all only
-            else:
-                loop_mode = 0  # normal
+        # Calculate new loop_mode using vendor mapping
+        loop_mode = mapping.to_loop_mode(shuffle=enabled, repeat_one=is_repeat_one, repeat_all=is_repeat_all)
 
         # Call API (raises on failure)
         await self.player.client.set_loop_mode(loop_mode)
@@ -87,6 +81,7 @@ class PlaybackControl:
         if mode_lower not in ("off", "one", "all"):
             raise ValueError(f"Invalid repeat mode: {mode}. Valid values: 'off', 'one', 'all'")
 
+        from ..api.loop_mode import get_loop_mode_mapping
         from .properties import PlayerProperties
 
         props = PlayerProperties(self.player)
@@ -100,22 +95,17 @@ class PlaybackControl:
                 f"Supported sources: USB, Line In, Optical, Coaxial, Playlist, Preset."
             )
 
+        # Get vendor-specific loop mode mapping
+        vendor = self.player.client._capabilities.get("vendor")
+        mapping = get_loop_mode_mapping(vendor)
+
+        # Get current shuffle state
         shuffle_enabled = props.shuffle_state or False
 
-        if shuffle_enabled:
-            if mode_lower == "one":
-                loop_mode = 5  # shuffle + repeat_one
-            elif mode_lower == "all":
-                loop_mode = 6  # shuffle + repeat_all
-            else:  # off
-                loop_mode = 4  # shuffle only
-        else:
-            if mode_lower == "one":
-                loop_mode = 1  # repeat_one only
-            elif mode_lower == "all":
-                loop_mode = 2  # repeat_all only
-            else:  # off
-                loop_mode = 0  # normal
+        # Calculate new loop_mode using vendor mapping
+        is_repeat_one = mode_lower == "one"
+        is_repeat_all = mode_lower == "all"
+        loop_mode = mapping.to_loop_mode(shuffle=shuffle_enabled, repeat_one=is_repeat_one, repeat_all=is_repeat_all)
 
         # Call API (raises on failure)
         await self.player.client.set_loop_mode(loop_mode)

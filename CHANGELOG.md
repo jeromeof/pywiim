@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.2] - 2025-11-22
+
+### Changed
+- **Smooth player state transitions with debounce logic**
+  - Added 500ms debounce buffer for "pause", "stop", and "buffering" events during playback
+  - Eliminates UI flickering (Play -> Pause -> Play) that occurred during track changes
+  - Legitimate pauses/stops are still applied after the short debounce period
+  - Metadata updates are always applied immediately to ensure track info updates instantly
+- **Standardized buffering state handling**
+  - Normalized device-specific states ("load", "loading", "transitioning") to standard "buffering" state
+  - Updated `play_state` model to include "buffering" as a valid state
+  - Updated UPnP event handler to treat "buffering" as an active state (preserving metadata)
+  - Prevents "Load" or "Loading" from appearing as a distinct state in integrations
+
+### Added
+- **Stream metadata enrichment for radio streams**
+  - Automatically extracts title/artist metadata from Icecast/SHOUTcast streams and M3U/PLS playlists
+  - Enriches player state when device reports raw URLs instead of parsed metadata
+  - Enabled by default, can be disabled via `StateManager.stream_enrichment_enabled`
+
+### Fixed
+- **CRITICAL: Fixed loop_mode interpretation for WiiM and Arylic devices (GitHub Issue #111)**
+  - Root cause: WiiM and Arylic devices use different loop_mode value schemes, pywiim was using incorrect bitfield interpretation
+  - WiiM devices use: 0=loop_all, 1=repeat_one, 2=shuffle_loop, **3=shuffle_no_loop**, 4=normal
+  - Arylic devices use: 0=repeat_all, 1=repeat_one, 2=shuffle_repeat_all, **3=shuffle**, 4=normal, 5=shuffle_repeat_one
+  - Previous code interpreted loop_mode as bitfields and flagged **loop_mode=3 as INVALID** (both repeat bits set)
+  - **This broke shuffle buttons in Home Assistant** - device returned valid loop_mode=3, but pywiim rejected it
+  - **Solution**: Added vendor-specific loop mode mappings (`pywiim/api/loop_mode.py`)
+  - Parser now uses `get_loop_mode_mapping(vendor)` to correctly interpret loop_mode values per device type
+  - Playback control now uses vendor-specific mappings when setting shuffle/repeat modes
+  - No more "Invalid loop_mode 3" warnings
+  - Shuffle and repeat buttons now work correctly for all device types
+
+### Changed
+- **Re-enabled shuffle/repeat support for AirPlay (testing)**
+  - AirPlay was previously blacklisted, but the problem may have been loop_mode misinterpretation
+  - With vendor-specific loop_mode parsing, AirPlay controls may now work correctly
+  - Requires testing with real devices to confirm functionality
+  - If unsuccessful, can easily be re-blacklisted
+  - Updated tests to use `tunein` (radio streams) for blacklist testing instead of AirPlay
+
 ## [2.1.1] - 2025-11-21
 
 ### Changed

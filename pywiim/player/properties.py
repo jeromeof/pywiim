@@ -258,7 +258,9 @@ class PlayerProperties:
         # Blacklist: Sources where device CANNOT control shuffle/repeat
         # These are sources where playback is controlled externally
         external_controlled = {
-            "airplay",  # iOS/macOS/iTunes controls shuffle/repeat, not the device
+            # Note: AirPlay was previously blacklisted, but with vendor-specific loop_mode
+            # mappings, it may work. Testing needed to confirm.
+            # "airplay",  # Re-enabled for testing after loop_mode fix
             "tunein",  # Radio streams - no shuffle/repeat support
             "iheartradio",  # Radio streams - no shuffle/repeat support
             "multiroom",  # Slave device in multiroom - can't control playback

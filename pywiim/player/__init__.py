@@ -99,9 +99,14 @@ class Player(PlayerBase):
         """Update state from UPnP event data."""
         self._state_mgr.update_from_upnp(data)
 
-    async def refresh(self) -> None:
-        """Refresh cached state from device."""
-        await self._state_mgr.refresh()
+    async def refresh(self, full: bool = False) -> None:
+        """Refresh cached state from device.
+
+        Args:
+            full: If True, perform a full refresh including expensive endpoints (device info, EQ, BT).
+                 If False (default), only fetch fast-changing status data (volume, playback).
+        """
+        await self._state_mgr.refresh(full=full)
 
     async def get_device_info(self) -> DeviceInfo:
         """Get device information (always queries device)."""

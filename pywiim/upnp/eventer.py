@@ -354,7 +354,8 @@ class UpnpEventer:
             # Only clear metadata if device is truly stopped/idle, not during transitions
             current_play_state = getattr(self.state_manager, "play_state", None)
             is_playing_or_transitioning = current_play_state and any(
-                state in str(current_play_state).lower() for state in ["play", "playing", "transitioning", "load"]
+                state in str(current_play_state).lower()
+                for state in ["play", "playing", "transitioning", "load", "loading", "buffering"]
             )
 
             # Extract metadata from CurrentTrackMetaData if present
@@ -438,7 +439,7 @@ class UpnpEventer:
                                 )
                                 is_playing_or_transitioning = current_play_state and any(
                                     state in str(current_play_state).lower()
-                                    for state in ["play", "playing", "transitioning", "load"]
+                                    for state in ["play", "playing", "transitioning", "load", "loading", "buffering"]
                                 )
                                 metadata_changes = self._parse_didl_metadata(
                                     var_value, allow_clear=not is_playing_or_transitioning
@@ -452,7 +453,7 @@ class UpnpEventer:
                                 )
                                 is_playing_or_transitioning = current_play_state and any(
                                     state in str(current_play_state).lower()
-                                    for state in ["play", "playing", "transitioning", "load"]
+                                    for state in ["play", "playing", "transitioning", "load", "loading", "buffering"]
                                 )
                                 metadata_changes = self._parse_didl_metadata(
                                     var_value, allow_clear=not is_playing_or_transitioning

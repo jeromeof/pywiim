@@ -1,0 +1,158 @@
+"""Loop mode mappings for different device vendors.
+
+WiiM and Arylic devices use different loop mode value schemes. This module
+provides vendor-specific mappings to handle both correctly.
+"""
+
+from __future__ import annotations
+
+from typing import NamedTuple
+
+__all__ = [
+    "LoopModeMapping",
+    "get_loop_mode_mapping",
+    "WIIM_LOOP_MODE",
+    "ARYLIC_LOOP_MODE",
+]
+
+
+class LoopModeMapping(NamedTuple):
+    """Loop mode value mapping for a specific vendor."""
+
+    # Map: (shuffle, repeat_one, repeat_all) -> loop_mode_value
+    normal: int  # No shuffle, no repeat
+    repeat_one: int  # No shuffle, repeat one
+    repeat_all: int  # No shuffle, repeat all
+    shuffle: int  # Shuffle, no repeat
+    shuffle_repeat_one: int  # Shuffle + repeat one
+    shuffle_repeat_all: int  # Shuffle + repeat all
+
+    def to_loop_mode(self, shuffle: bool, repeat_one: bool, repeat_all: bool) -> int:
+        """Convert shuffle/repeat flags to loop_mode value for this vendor.
+
+        Args:
+            shuffle: Whether shuffle is enabled
+            repeat_one: Whether repeat one is enabled
+            repeat_all: Whether repeat all is enabled
+
+        Returns:
+            The loop_mode value to send to the device
+        """
+        if shuffle and repeat_all:
+            return self.shuffle_repeat_all
+        if shuffle and repeat_one:
+            return self.shuffle_repeat_one
+        if shuffle:
+            return self.shuffle
+        if repeat_one:
+            return self.repeat_one
+        if repeat_all:
+            return self.repeat_all
+        return self.normal
+
+    def from_loop_mode(self, loop_mode: int) -> tuple[bool, bool, bool]:
+        """Convert loop_mode value to shuffle/repeat flags for this vendor.
+
+        Args:
+            loop_mode: The loop_mode value from the device
+
+        Returns:
+            Tuple of (shuffle, repeat_one, repeat_all) flags
+        """
+        if loop_mode == self.shuffle_repeat_all:
+            return (True, False, True)
+        if loop_mode == self.shuffle_repeat_one:
+            return (True, True, False)
+        if loop_mode == self.shuffle:
+            return (True, False, False)
+        if loop_mode == self.repeat_one:
+            return (False, True, False)
+        if loop_mode == self.repeat_all:
+            return (False, False, True)
+        if loop_mode == self.normal:
+            return (False, False, False)
+
+        # Unknown value - log and return safe default
+        import logging
+
+        _LOGGER = logging.getLogger(__name__)
+        _LOGGER.warning("Unknown loop_mode value: %d. Defaulting to normal playback.", loop_mode)
+        return (False, False, False)
+
+
+# WiiM Loop Mode Mapping
+# Based on WiiM HTTP API documentation
+# 0: loop all
+# 1: single loop
+# 2: shuffle loop
+# 3: shuffle, no loop
+# 4: no shuffle, no loop
+WIIM_LOOP_MODE = LoopModeMapping(
+    normal=4,  # no shuffle, no loop
+    repeat_one=1,  # single loop
+    repeat_all=0,  # loop all
+    shuffle=3,  # shuffle, no loop
+    shuffle_repeat_one=2,  # shuffle loop (WiiM doesn't differentiate shuffle+repeat_one from shuffle+repeat_all)
+    shuffle_repeat_all=2,  # shuffle loop
+)
+
+
+# Arylic Loop Mode Mapping
+# Based on Arylic HTTP API documentation
+# 0: SHUFFLE disabled, REPEAT enabled (loop)
+# 1: SHUFFLE disabled, REPEAT enabled (loop once)
+# 2: SHUFFLE enabled, REPEAT enabled (loop)
+# 3: SHUFFLE enabled, REPEAT disabled
+# 4: SHUFFLE disabled, REPEAT disabled
+# 5: SHUFFLE enabled, REPEAT enabled (loop once)
+ARYLIC_LOOP_MODE = LoopModeMapping(
+    normal=4,  # SHUFFLE disabled, REPEAT disabled
+    repeat_one=1,  # SHUFFLE disabled, REPEAT enabled (loop once)
+    repeat_all=0,  # SHUFFLE disabled, REPEAT enabled (loop)
+    shuffle=3,  # SHUFFLE enabled, REPEAT disabled
+    shuffle_repeat_one=5,  # SHUFFLE enabled, REPEAT enabled (loop once)
+    shuffle_repeat_all=2,  # SHUFFLE enabled, REPEAT enabled (loop)
+)
+
+
+# Legacy bitfield mapping (used before vendor-specific mappings were implemented)
+# This is kept for backwards compatibility with devices that might use this scheme
+# Values: 0=normal, 1=repeat_one, 2=repeat_all, 4=shuffle, 5=shuffle+repeat_one, 6=shuffle+repeat_all
+# Note: Value 3 (repeat_one + repeat_all) is invalid in this scheme
+LEGACY_BITFIELD_LOOP_MODE = LoopModeMapping(
+    normal=0,
+    repeat_one=1,
+    repeat_all=2,
+    shuffle=4,
+    shuffle_repeat_one=5,
+    shuffle_repeat_all=6,
+)
+
+
+def get_loop_mode_mapping(vendor: str | None) -> LoopModeMapping:
+    """Get the loop mode mapping for a specific vendor.
+
+    Args:
+        vendor: Device vendor ("wiim", "arylic", "audio_pro", "linkplay_generic", or None)
+
+    Returns:
+        LoopModeMapping for the vendor
+
+    Note:
+        - WiiM devices use sequential values (0,1,2,3,4)
+        - Arylic devices use a different sequential scheme (0,1,2,3,4,5)
+        - Audio Pro and generic LinkPlay devices default to Arylic mapping
+        - Unknown/None vendors default to WiiM mapping (most common)
+    """
+    if not vendor:
+        return WIIM_LOOP_MODE
+
+    vendor_lower = vendor.lower()
+
+    if vendor_lower == "wiim":
+        return WIIM_LOOP_MODE
+    elif vendor_lower in ("arylic", "audio_pro", "linkplay_generic"):
+        return ARYLIC_LOOP_MODE
+    else:
+        # Unknown vendor - default to WiiM (most common)
+        return WIIM_LOOP_MODE

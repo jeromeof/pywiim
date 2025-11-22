@@ -27,10 +27,10 @@ class PollingStrategy:
     based on device capabilities and state. Applications use these recommendations
     to manage their own polling loops.
 
-    The strategy is based on the proven approach from the Home Assistant integration:
-    - Adaptive intervals based on device state (playing vs idle)
-    - Conditional fetching based on data type
-    - Capability-aware endpoint selection
+    The strategy is based on a Tiered Polling approach:
+    - **Tier 1 (Fast):** Playback status (Volume, Play State) - Poll every 1s.
+    - **Tier 2 (Context):** Metadata, Output Mode - Poll on change/trigger.
+    - **Tier 3 (Slow):** Device Info, Bluetooth, EQ - Poll rarely (60s+).
 
     **Per-Player Polling Principle:**
     Each player should be polled independently based on its own state. When managing
@@ -54,37 +54,17 @@ class PollingStrategy:
         interval = strategy.get_optimal_interval(role, is_playing)
         print(f"Poll every {interval} seconds")
 
-        # Check if device info should be fetched
-        last_device_info = 0
-        if strategy.should_fetch_device_info(last_device_info):
-            device_info = await client.get_device_info_model()
-            last_device_info = time.time()
-        ```
-
-    Example with multiple players:
-        ```python
-        # Correct: Each player polls independently
-        for player in players:
-            is_playing = player.play_state in ("play", "playing")  # THIS player's state
-            interval = strategy.get_optimal_interval(player.role, is_playing)
-            # Poll this player at its own interval
-
-        # Wrong: Using master's state for all players
-        master_playing = master.play_state in ("play", "playing")
-        for player in players:
-            interval = strategy.get_optimal_interval(player.role, master_playing)  # ❌
+        # Check if Bluetooth/Device Info should be fetched (Lazy Polling)
+        if strategy.should_fetch_configuration(last_config_fetch):
+            await client.get_bluetooth_history()
         ```
     """
 
     # Polling interval constants (in seconds)
-    # Note: With hybrid position estimation, we poll less frequently during playback
-    # Position is estimated locally and corrected every 5-10 seconds via polling
-    FAST_POLL_INTERVAL = 5.0  # During active playback (was 1.0, now 5.0 with hybrid estimation)
-    NORMAL_POLL_INTERVAL = 5.0  # When idle
-    DEVICE_INFO_INTERVAL = 60.0  # Device health check
-    MULTIROOM_INTERVAL = 15.0  # Role detection + group changes
-    EQ_INFO_INTERVAL = 60.0  # Settings rarely change
-    AUDIO_OUTPUT_INTERVAL = 15.0  # Mode changes rarely
+    FAST_POLL_INTERVAL = 1.0  # Active Playback / UI Responsiveness
+    NORMAL_POLL_INTERVAL = 5.0  # Idle / Background
+    CONFIGURATION_INTERVAL = 60.0  # Bluetooth, EQ, Device Info
+    METADATA_CHECK_INTERVAL = 1.0  # Check for track changes
 
     # Legacy device intervals (longer for older devices)
     LEGACY_FAST_POLL_INTERVAL = 3.0  # Legacy devices during playback
@@ -98,6 +78,7 @@ class PollingStrategy:
             capabilities: Device capabilities dictionary from capability detection.
         """
         self.capabilities = capabilities
+        self._last_playing_time: float = time.time()  # Initialize to now for initial active window
 
     def get_optimal_interval(
         self,
@@ -126,21 +107,11 @@ class PollingStrategy:
 
         Returns:
             Recommended polling interval in seconds
-
-        Example:
-            ```python
-            # Correct: Each player polls based on its own state
-            for player in players:
-                is_playing = player.play_state in ("play", "playing")  # THIS player's state
-                interval = strategy.get_optimal_interval(player.role, is_playing)
-                # Poll this player at its own interval
-
-            # Wrong: Using master's state for all players
-            master_playing = master.play_state in ("play", "playing")
-            for player in players:
-                interval = strategy.get_optimal_interval(player.role, master_playing)  # ❌ Wrong!
-            ```
         """
+        # Update last playing time
+        if is_playing:
+            self._last_playing_time = time.time()
+
         if self.capabilities.get("is_legacy_device", False):
             # Legacy devices need longer intervals
             if role == "slave":
@@ -151,32 +122,45 @@ class PollingStrategy:
                 return self.LEGACY_NORMAL_POLL_INTERVAL
         else:
             # Modern WiiM devices
-            # With hybrid position estimation, we can poll less frequently
-            # Position is estimated locally and corrected via periodic polls
             if role == "slave":
-                return self.NORMAL_POLL_INTERVAL  # 5 seconds for slaves
-            elif is_playing:
-                return self.FAST_POLL_INTERVAL  # 5 seconds when playing (hybrid estimation handles smooth updates)
-            else:
-                return self.NORMAL_POLL_INTERVAL  # 5 seconds when idle
+                # Slaves always follow master - check less frequently
+                return self.NORMAL_POLL_INTERVAL  # 5 seconds
 
-    def should_fetch_device_info(
+            if is_playing:
+                # Playing: Fast poll for UI responsiveness
+                return self.FAST_POLL_INTERVAL  # 1 second
+
+            # Not playing: Check "Active Idle" window
+            time_since_playing = time.time() - self._last_playing_time
+            if time_since_playing < 300:  # 5 minutes
+                # Active Idle: Recently played, stay fast to catch resumed playback quickly
+                return self.FAST_POLL_INTERVAL  # 1 second
+
+            # Deep Idle: Not played for > 5 mins
+            return self.NORMAL_POLL_INTERVAL  # 5 seconds
+
+    def should_fetch_configuration(
         self,
         last_fetch_time: float,
+        force_refresh: bool = False,
         now: float | None = None,
     ) -> bool:
-        """Check if device info should be fetched (60s interval).
+        """Check if configuration (Bluetooth, Device Info, EQ) should be fetched.
 
-        Device info is fetched periodically for health checks. It doesn't change
-        frequently, so a 60-second interval is sufficient.
+        Configuration data is static or low-volatility. Fetch rarely (every 60s)
+        or on explicit triggers (force_refresh).
 
         Args:
-            last_fetch_time: Timestamp of last device info fetch (0 if never fetched)
+            last_fetch_time: Timestamp of last configuration fetch
+            force_refresh: Whether to force a refresh (e.g. user action)
             now: Current time (defaults to time.time())
 
         Returns:
-            True if device info should be fetched
+            True if configuration should be fetched
         """
+        if force_refresh:
+            return True
+
         if now is None:
             now = time.time()
 
@@ -184,43 +168,14 @@ class PollingStrategy:
         if last_fetch_time == 0:
             return True
 
-        return (now - last_fetch_time) >= self.DEVICE_INFO_INTERVAL
-
-    def should_fetch_multiroom(
-        self,
-        last_fetch_time: float,
-        is_activity_triggered: bool = False,
-        now: float | None = None,
-    ) -> bool:
-        """Check if multiroom info should be fetched (15s + activity).
-
-        Multiroom info is fetched:
-        - Every 15 seconds (for role detection and group changes)
-        - On activity triggers (track changes, source changes)
-
-        Args:
-            last_fetch_time: Timestamp of last multiroom fetch (0 if never fetched)
-            is_activity_triggered: Whether activity triggered this check
-            now: Current time (defaults to time.time())
-
-        Returns:
-            True if multiroom info should be fetched
-        """
-        if now is None:
-            now = time.time()
-
-        # Always fetch on first check or activity trigger
-        if last_fetch_time == 0 or is_activity_triggered:
-            return True
-
-        return (now - last_fetch_time) >= self.MULTIROOM_INTERVAL
+        return (now - last_fetch_time) >= self.CONFIGURATION_INTERVAL
 
     def should_fetch_metadata(
         self,
         track_changed: bool,
         metadata_supported: bool | None,
     ) -> bool:
-        """Check if metadata should be fetched (on track change only).
+        """Check if metadata (Bitrate, Sample Rate) should be fetched.
 
         Metadata is only fetched when:
         - Track has changed (title, artist, source, artwork)
@@ -238,48 +193,23 @@ class PollingStrategy:
 
         return track_changed
 
-    def should_fetch_eq_info(
-        self,
-        last_fetch_time: float,
-        eq_supported: bool | None,
-        now: float | None = None,
-    ) -> bool:
-        """Check if EQ info should be fetched (60s interval, if supported).
-
-        EQ settings change rarely, so a 60-second interval is sufficient.
-
-        Args:
-            last_fetch_time: Timestamp of last EQ info fetch (0 if never fetched)
-            eq_supported: Whether device supports EQ endpoint
-            now: Current time (defaults to time.time())
-
-        Returns:
-            True if EQ info should be fetched
-        """
-        if eq_supported is False:
-            return False  # Endpoint not supported
-
-        if now is None:
-            now = time.time()
-
-        # Always fetch on first check
-        if last_fetch_time == 0:
-            return True
-
-        return (now - last_fetch_time) >= self.EQ_INFO_INTERVAL
-
     def should_fetch_audio_output(
         self,
         last_fetch_time: float,
+        source_changed: bool,
         audio_output_supported: bool | None,
         now: float | None = None,
     ) -> bool:
-        """Check if audio output status should be fetched (15s interval, if supported).
+        """Check if audio output status should be fetched.
 
-        Audio output modes change rarely, so a 15-second interval is sufficient.
+        Fetch logic:
+        1. On Startup (last_fetch_time == 0)
+        2. If Source Changed (Bluetooth -> Wifi)
+        3. Every 60s (Background consistency)
 
         Args:
-            last_fetch_time: Timestamp of last audio output fetch (0 if never fetched)
+            last_fetch_time: Timestamp of last audio output fetch
+            source_changed: Whether the input source has changed
             audio_output_supported: Whether device supports audio output endpoint
             now: Current time (defaults to time.time())
 
@@ -289,6 +219,9 @@ class PollingStrategy:
         if audio_output_supported is False:
             return False  # Endpoint not supported
 
+        if source_changed:
+            return True
+
         if now is None:
             now = time.time()
 
@@ -296,7 +229,8 @@ class PollingStrategy:
         if last_fetch_time == 0:
             return True
 
-        return (now - last_fetch_time) >= self.AUDIO_OUTPUT_INTERVAL
+        # Fallback: Consistency check every 60s
+        return (now - last_fetch_time) >= self.CONFIGURATION_INTERVAL
 
 
 class TrackChangeDetector:

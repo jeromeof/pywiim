@@ -29,20 +29,32 @@ The LinkPlay HTTP API is accessed via `http://{device_ip}/httpapi.asp?command={c
 
 ### Loop Mode Integer Definitions
 
-The `setPlayerCmd:loopmode:{n}` command controls playback behavior, but interpretation depends on whether the device owns the playback queue:
+The `setPlayerCmd:loopmode:{n}` command controls playback behavior, but **different vendors use different value schemes**:
+
+#### WiiM Devices Loop Mode Values
 
 | Value | Mode Name | Behavior |
 |-------|-----------|----------|
-| `0` | Sequence, No Loop | Plays queue in order once, then stops |
+| `0` | Loop All | Plays queue in order and repeats indefinitely |
 | `1` | Single Loop | Repeats current track indefinitely |
 | `2` | Shuffle Loop | Randomizes queue and repeats indefinitely |
 | `3` | Shuffle, No Loop | Randomizes queue, plays once, stops |
-| `4` | Linear, No Loop | Disables shuffle and repeat |
-| `5` | Shuffle, Loop Once | Randomizes queue, plays through once, stops |
-| `-1` | Sequence Loop | Plays queue in order and repeats indefinitely |
-| `99` | Slave Loop | Reserved for multi-room slave devices |
+| `4` | No Shuffle, No Loop | Plays queue in order once, then stops |
+
+#### Arylic Devices Loop Mode Values
+
+| Value | Mode Name | Behavior |
+|-------|-----------|----------|
+| `0` | SHUFFLE disabled, REPEAT enabled (loop) | Plays queue in order and repeats indefinitely |
+| `1` | SHUFFLE disabled, REPEAT enabled (loop once) | Repeats current track indefinitely |
+| `2` | SHUFFLE enabled, REPEAT enabled (loop) | Randomizes queue and repeats indefinitely |
+| `3` | SHUFFLE enabled, REPEAT disabled | Randomizes queue, plays once, stops |
+| `4` | SHUFFLE disabled, REPEAT disabled | Plays queue in order once, then stops |
+| `5` | SHUFFLE enabled, REPEAT enabled (loop once) | Shuffle with repeat one |
 
 **Critical Limitation**: These commands are effective **ONLY** when `mode` field in `getPlayerStatus` indicates the device is managing the queue (Mode 10: Network, Mode 11: USB).
+
+**Implementation Note**: The `pywiim` library automatically detects device vendor and uses the correct loop mode mapping. See `pywiim/api/loop_mode.py` for vendor-specific mappings.
 
 ## Transport Protocol Analysis: The "Split Brain" System
 

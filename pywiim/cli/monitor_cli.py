@@ -322,7 +322,7 @@ class PlayerMonitor:
 
                 # Get optimal polling interval
                 if self.strategy:
-                    # Use strategy's interval (already handles playing state)
+                    # Use strategy's interval (already handles playing state and idle timeout)
                     interval = self.strategy.get_optimal_interval(role, is_playing)
 
                     # Override: if playing without working UPnP, force 1 second polling
@@ -345,7 +345,10 @@ class PlayerMonitor:
                     old_role = self.last_group_info.role
                 else:
                     old_role = self.player.role
-                await self.player.refresh()
+
+                # Perform lightweight refresh (Tier 1: Status only) by default
+                # Full refresh (Tier 3) is handled by specific checks below or explicit full=True
+                await self.player.refresh(full=False)
                 self.http_poll_count += 1
 
                 # Update health tracker with polling data (for change detection)
@@ -397,12 +400,12 @@ class PlayerMonitor:
                 now = time.time()
 
                 # Device info (every 60s)
-                if self.strategy and self.strategy.should_fetch_device_info(self.last_device_info_check, now):
+                if self.strategy and self.strategy.should_fetch_configuration(self.last_device_info_check, now=now):
                     await self.player.get_device_info()
                     self.last_device_info_check = now
 
                 # Preset count (every 60s, if supported)
-                if (now - self.last_preset_check) > 60.0:
+                if self.strategy and self.strategy.should_fetch_configuration(self.last_preset_check, now=now):
                     if self.player.client.capabilities.get("supports_presets", False):
                         try:
                             self.last_preset_count = await self.player.client.get_max_preset_slots()
@@ -410,9 +413,10 @@ class PlayerMonitor:
                             pass  # Don't fail if preset count fetch fails
                     self.last_preset_check = now
 
-                # Multiroom/grouping info (every 15s)
-                # All LinkPlay devices support grouping, but request may fail due to network/device issues
-                if self.strategy and self.strategy.should_fetch_multiroom(self.last_multiroom_check, False, now):
+                # Multiroom/grouping info (every 15s) is deprecated in favor of triggered updates
+                # but we keep it here for monitoring display purposes (to populate slave list)
+                # Using configuration interval (60s) instead of old 15s to reduce load
+                if self.strategy and self.strategy.should_fetch_configuration(self.last_multiroom_check, now=now):
                     try:
                         self.last_multiroom = await self.player.get_multiroom_status()
                     except WiiMError:
@@ -421,9 +425,9 @@ class PlayerMonitor:
                             self.last_multiroom = {}
                     self.last_multiroom_check = now
 
-                # Device group info (every 15s, same interval as multiroom)
+                # Device group info (every 60s)
                 # Used to get slave information even when slaves aren't linked to Player objects
-                if self.strategy and self.strategy.should_fetch_multiroom(self.last_group_info_check, False, now):
+                if self.strategy and self.strategy.should_fetch_configuration(self.last_group_info_check, now=now):
                     try:
                         self.last_group_info = await self.player.client.get_device_group_info()
                     except Exception:

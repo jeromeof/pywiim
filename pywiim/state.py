@@ -69,7 +69,7 @@ SOURCE_TIMEOUTS: dict[str, float] = {
 }
 
 # Playing states that indicate device is active
-PLAYING_STATES = ["play", "playing", "transitioning", "loading", "buffering"]
+PLAYING_STATES = ["play", "playing", "transitioning", "loading", "buffering", "load"]
 
 # Transition states that indicate device is changing tracks/states
 TRANSITION_STATES = ["load", "loading", "transitioning", "buffering"]
@@ -81,8 +81,8 @@ UPNP_STATE_MAP: dict[str, str] = {
     "paused": "pause",
     "stopped": "pause",  # Modern UX: stop == pause
     "no media present": "idle",
-    "transitioning": "load",
-    "loading": "load",
+    "transitioning": "buffering",
+    "loading": "buffering",
 }
 
 # Standard play state values
@@ -97,10 +97,10 @@ STANDARD_PLAY_STATES = {
     "idle": "idle",
     "none": "idle",  # HTTP API uses "none" for idle
     "no media present": "idle",
-    "load": "load",
-    "loading": "load",
-    "transitioning": "load",
-    "buffering": "load",
+    "load": "buffering",
+    "loading": "buffering",
+    "transitioning": "buffering",
+    "buffering": "buffering",
 }
 
 

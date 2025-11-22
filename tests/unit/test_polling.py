@@ -29,16 +29,18 @@ class TestPollingStrategy:
 
         interval = strategy.get_optimal_interval("master", is_playing=True)
 
-        assert interval == 5.0
+        assert interval == 1.0  # Fast poll during playback
 
     def test_get_optimal_interval_wiim_idle(self):
         """Test optimal interval for WiiM device idle."""
         capabilities = {"is_legacy_device": False}
         strategy = PollingStrategy(capabilities)
+        # Set last playing time to be > 5 minutes ago to get normal interval
+        strategy._last_playing_time = time.time() - 400
 
         interval = strategy.get_optimal_interval("master", is_playing=False)
 
-        assert interval == 5.0
+        assert interval == 5.0  # Normal poll when deep idle
 
     def test_get_optimal_interval_wiim_slave(self):
         """Test optimal interval for WiiM slave."""
@@ -76,59 +78,32 @@ class TestPollingStrategy:
 
         assert interval == 10.0
 
-    def test_should_fetch_device_info_first_time(self):
-        """Test device info fetch on first check."""
+    def test_should_fetch_configuration_first_time(self):
+        """Test configuration fetch on first check."""
         capabilities = {"is_legacy_device": False}
         strategy = PollingStrategy(capabilities)
 
-        assert strategy.should_fetch_device_info(0) is True
+        assert strategy.should_fetch_configuration(0) is True
 
-    def test_should_fetch_device_info_interval(self):
-        """Test device info fetch after interval."""
+    def test_should_fetch_configuration_interval(self):
+        """Test configuration fetch after interval."""
         capabilities = {"is_legacy_device": False}
         strategy = PollingStrategy(capabilities)
 
         now = time.time()
         last_fetch = now - 61.0  # 61 seconds ago
 
-        assert strategy.should_fetch_device_info(last_fetch, now) is True
+        assert strategy.should_fetch_configuration(last_fetch, now=now) is True
 
-    def test_should_fetch_device_info_too_soon(self):
-        """Test device info fetch before interval."""
+    def test_should_fetch_configuration_too_soon(self):
+        """Test configuration fetch before interval."""
         capabilities = {"is_legacy_device": False}
         strategy = PollingStrategy(capabilities)
 
         now = time.time()
         last_fetch = now - 30.0  # 30 seconds ago
 
-        assert strategy.should_fetch_device_info(last_fetch, now) is False
-
-    def test_should_fetch_multiroom_first_time(self):
-        """Test multiroom fetch on first check."""
-        capabilities = {"is_legacy_device": False}
-        strategy = PollingStrategy(capabilities)
-
-        assert strategy.should_fetch_multiroom(0) is True
-
-    def test_should_fetch_multiroom_activity_triggered(self):
-        """Test multiroom fetch on activity trigger."""
-        capabilities = {"is_legacy_device": False}
-        strategy = PollingStrategy(capabilities)
-
-        now = time.time()
-        last_fetch = now - 5.0  # 5 seconds ago
-
-        assert strategy.should_fetch_multiroom(last_fetch, is_activity_triggered=True, now=now) is True
-
-    def test_should_fetch_multiroom_interval(self):
-        """Test multiroom fetch after interval."""
-        capabilities = {"is_legacy_device": False}
-        strategy = PollingStrategy(capabilities)
-
-        now = time.time()
-        last_fetch = now - 16.0  # 16 seconds ago
-
-        assert strategy.should_fetch_multiroom(last_fetch, now=now) is True
+        assert strategy.should_fetch_configuration(last_fetch, now=now) is False
 
     def test_should_fetch_metadata_track_changed(self):
         """Test metadata fetch when track changed."""
@@ -151,22 +126,15 @@ class TestPollingStrategy:
 
         assert strategy.should_fetch_metadata(track_changed=False, metadata_supported=True) is False
 
-    def test_should_fetch_eq_info(self):
-        """Test EQ info fetch."""
+    def test_should_fetch_configuration_eq(self):
+        """Test configuration fetch for EQ info."""
         capabilities = {"is_legacy_device": False}
         strategy = PollingStrategy(capabilities)
 
         now = time.time()
         last_fetch = now - 61.0  # 61 seconds ago
 
-        assert strategy.should_fetch_eq_info(last_fetch, eq_supported=True, now=now) is True
-
-    def test_should_fetch_eq_info_not_supported(self):
-        """Test EQ info fetch when not supported."""
-        capabilities = {"is_legacy_device": False}
-        strategy = PollingStrategy(capabilities)
-
-        assert strategy.should_fetch_eq_info(0, eq_supported=False) is False
+        assert strategy.should_fetch_configuration(last_fetch, now=now) is True
 
     def test_should_fetch_audio_output(self):
         """Test audio output fetch."""
@@ -174,16 +142,32 @@ class TestPollingStrategy:
         strategy = PollingStrategy(capabilities)
 
         now = time.time()
-        last_fetch = now - 16.0  # 16 seconds ago
+        last_fetch = now - 61.0  # 61 seconds ago
 
-        assert strategy.should_fetch_audio_output(last_fetch, audio_output_supported=True, now=now) is True
+        assert (
+            strategy.should_fetch_audio_output(last_fetch, source_changed=False, audio_output_supported=True, now=now)
+            is True
+        )
+
+    def test_should_fetch_audio_output_source_changed(self):
+        """Test audio output fetch when source changed."""
+        capabilities = {"is_legacy_device": False}
+        strategy = PollingStrategy(capabilities)
+
+        now = time.time()
+        last_fetch = now - 10.0  # 10 seconds ago (would normally not fetch)
+
+        assert (
+            strategy.should_fetch_audio_output(last_fetch, source_changed=True, audio_output_supported=True, now=now)
+            is True
+        )
 
     def test_should_fetch_audio_output_not_supported(self):
         """Test audio output fetch when not supported."""
         capabilities = {"is_legacy_device": False}
         strategy = PollingStrategy(capabilities)
 
-        assert strategy.should_fetch_audio_output(0, audio_output_supported=False) is False
+        assert strategy.should_fetch_audio_output(0, source_changed=False, audio_output_supported=False) is False
 
 
 class TestTrackChangeDetector:
