@@ -1,7 +1,7 @@
 """Stream metadata extraction utilities.
 
 This module provides functionality to extract metadata (title, artist) directly
-from audio streams (Icecast/SHOUTcast) and parse playlist formats (M3U, PLS).
+from audio streams (Icecast/SHOUTcast, HLS) and parse playlist formats (M3U, PLS, M3U8).
 It is used to enrich player state when the device does not report metadata
 for certain stream types (e.g., direct URL playback).
 """
@@ -13,9 +13,20 @@ import logging
 import re
 import struct
 from dataclasses import dataclass
+from io import BytesIO
 from typing import Final
 
 import aiohttp
+
+try:
+    import m3u8  # type: ignore[import-untyped]
+except ImportError:
+    m3u8 = None
+
+try:
+    from mutagen import File as MutagenFile
+except ImportError:
+    MutagenFile = None
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,9 +57,9 @@ async def get_stream_metadata(
 
     This function attempts to:
     1. Follow redirects
-    2. Parse playlists (M3U, PLS) to find the actual stream URL
-    3. Connect to the stream requesting Icecast metadata
-    4. Extract the title/artist from the metadata stream
+    2. Detect stream type (HLS, Icecast, or direct)
+    3. Parse playlists (M3U, PLS, M3U8) to find the actual stream URL
+    4. Extract metadata using appropriate method (HLS ID3 tags or Icecast headers)
 
     Args:
         url: The URL to check.
@@ -68,12 +79,23 @@ async def get_stream_metadata(
         local_session = True
 
     try:
+        # Check if this is an HLS stream (.m3u8)
+        lower_url = url.lower()
+        is_hls = lower_url.endswith(".m3u8") or "/hls/" in lower_url or "/master.m3u8" in lower_url
+
+        if is_hls and m3u8 is not None:
+            # Try HLS metadata extraction first
+            metadata = await _fetch_hls_metadata(url, session, timeout)
+            if metadata:
+                return metadata
+            # Fall through to Icecast if HLS fails
+
         # 1. Resolve redirects and playlists
         final_url = await _resolve_stream_url(url, session)
         if not final_url:
             return None
 
-        # 2. Fetch Icecast metadata
+        # 2. Fetch Icecast metadata (fallback or primary for non-HLS)
         return await _fetch_icecast_metadata(final_url, session, timeout)
 
     except Exception as err:
@@ -124,8 +146,15 @@ async def _resolve_stream_url(url: str, session: aiohttp.ClientSession) -> str:
 
 
 async def _parse_m3u(url: str, session: aiohttp.ClientSession) -> str | None:
-    """Parse M3U playlist."""
+    """Parse M3U playlist (non-HLS).
+
+    For HLS playlists (.m3u8), use _fetch_hls_metadata() instead.
+    """
     try:
+        # Skip HLS playlists - they need special handling
+        if url.lower().endswith(".m3u8"):
+            return None
+
         async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as response:
             if response.status != 200:
                 return None
@@ -238,6 +267,162 @@ def _parse_stream_title(meta_block: bytes, metadata: StreamMetadata) -> None:
             metadata.title = full_title
             if metadata.station_name and not metadata.artist:
                 metadata.artist = metadata.station_name
+
+
+async def _fetch_hls_metadata(url: str, session: aiohttp.ClientSession, timeout: int) -> StreamMetadata | None:
+    """Extract metadata from HLS stream by parsing playlist and downloading latest segment.
+
+    Args:
+        url: The HLS playlist URL (.m3u8).
+        session: aiohttp session for HTTP requests.
+        timeout: Timeout in seconds.
+
+    Returns:
+        StreamMetadata object if successful, None otherwise.
+    """
+    if m3u8 is None:
+        _LOGGER.debug("m3u8 library not available, cannot extract HLS metadata")
+        return None
+
+    if MutagenFile is None:
+        _LOGGER.debug("mutagen library not available, cannot extract ID3 tags from HLS segments")
+        return None
+
+    try:
+        # Fetch the playlist content asynchronously
+        async with session.get(
+            url,
+            headers={"User-Agent": USER_AGENT},
+            timeout=aiohttp.ClientTimeout(total=timeout),
+        ) as response:
+            if response.status != 200:
+                _LOGGER.debug("Failed to fetch HLS playlist: HTTP %d", response.status)
+                return None
+            playlist_content = await response.text()
+
+        # Parse the HLS playlist from content
+        playlist = m3u8.loads(playlist_content, uri=url)
+
+        # Handle master playlists (playlists that contain variant playlists)
+        if playlist.is_variant:
+            _LOGGER.debug("Master playlist detected, selecting first variant")
+            if not playlist.playlists:
+                _LOGGER.debug("Master playlist has no variants: %s", url)
+                return None
+            # Select the first variant (or could select by bandwidth)
+            variant = playlist.playlists[0]
+            variant_url = variant.uri
+            if not variant_url.startswith(("http://", "https://")):
+                from urllib.parse import urljoin
+
+                variant_url = urljoin(url, variant_url)
+            _LOGGER.debug("Fetching variant playlist: %s", variant_url)
+
+            # Recursively fetch the variant playlist
+            return await _fetch_hls_metadata(variant_url, session, timeout)
+
+        # Handle media playlists (playlists with segments)
+        if not playlist.segments:
+            _LOGGER.debug("HLS playlist has no segments: %s", url)
+            return None
+
+        # Get the latest segment (usually the most recent one)
+        last_segment = playlist.segments[-1]
+        # m3u8 handles relative URLs when base_uri is provided
+        segment_url = last_segment.uri
+        if not segment_url.startswith(("http://", "https://")):
+            # Resolve relative URL against playlist base URL
+            from urllib.parse import urljoin
+
+            segment_url = urljoin(url, segment_url)
+
+        _LOGGER.debug("Fetching HLS segment for metadata: %s", segment_url)
+
+        # Download the segment
+        async with session.get(
+            segment_url,
+            headers={"User-Agent": USER_AGENT},
+            timeout=aiohttp.ClientTimeout(total=timeout),
+        ) as response:
+            if response.status != 200:
+                _LOGGER.debug("Failed to download HLS segment: HTTP %d", response.status)
+                return None
+
+            segment_data = await response.read()
+
+        # Parse ID3 tags from the segment using mutagen
+        # HLS segments often have ID3 tags embedded in AAC streams
+        audio_data = BytesIO(segment_data)
+        metadata = StreamMetadata()
+
+        try:
+            # Check if segment starts with ID3 tag
+            if segment_data.startswith(b"ID3"):
+                # Try to parse ID3 tags directly
+                try:
+                    from mutagen.id3 import ID3
+
+                    # ID3 tags might be at the start of the file
+                    id3_tags = ID3(audio_data)
+                    if id3_tags:
+                        # Extract standard ID3 tags
+                        title_tag = id3_tags.get("TIT2")  # Title
+                        artist_tag = id3_tags.get("TPE1")  # Artist
+
+                        if title_tag:
+                            metadata.title = _decode_text(str(title_tag))
+                        if artist_tag:
+                            metadata.artist = _decode_text(str(artist_tag))
+
+                        if metadata.title or metadata.artist:
+                            _LOGGER.debug(
+                                "Extracted HLS metadata from ID3: title=%s, artist=%s",
+                                metadata.title,
+                                metadata.artist,
+                            )
+                            return metadata
+                except Exception as id3_err:
+                    _LOGGER.debug("Failed to parse ID3 tags directly: %s", id3_err)
+
+            # Fallback: Try mutagen File() for other formats
+            tags = MutagenFile(audio_data)
+            if tags and tags.tags:
+                # Extract standard ID3 tags
+                title_tag = tags.tags.get("TIT2") if tags.tags else None
+                artist_tag = tags.tags.get("TPE1") if tags.tags else None
+
+                # Also try common alternative tag names
+                if not title_tag:
+                    title_tag = tags.tags.get("TITLE") if tags.tags else None
+                if not artist_tag:
+                    artist_tag = tags.tags.get("ARTIST") if tags.tags else None
+
+                # Extract text values from tags
+                if title_tag:
+                    title_value = str(title_tag[0]) if title_tag else None
+                    if title_value:
+                        metadata.title = _decode_text(title_value)
+
+                if artist_tag:
+                    artist_value = str(artist_tag[0]) if artist_tag else None
+                    if artist_value:
+                        metadata.artist = _decode_text(artist_value)
+
+            # If we got at least title or artist, return metadata
+            if metadata.title or metadata.artist:
+                _LOGGER.debug("Extracted HLS metadata: title=%s, artist=%s", metadata.title, metadata.artist)
+                return metadata
+
+            _LOGGER.debug("HLS segment has no extractable metadata")
+            return None
+
+        except Exception as e:
+            _LOGGER.debug("Failed to parse metadata from HLS segment: %s", e)
+            return None
+
+    except Exception as err:
+        _LOGGER.debug("Error extracting HLS metadata from %s: %s", url, err)
+        return None
 
 
 def _decode_text(data: str | bytes) -> str:

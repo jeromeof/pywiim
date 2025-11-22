@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.4] - 2025-11-22
+
+### Added
+- **HLS stream metadata extraction support**
+  - Added support for extracting metadata (title, artist) from HLS (HTTP Live Streaming) radio streams
+  - Handles master playlists and automatically resolves to variant playlists
+  - Extracts ID3 tags from HLS audio segments using `m3u8` and `mutagen` libraries
+  - Works alongside existing Icecast/SHOUTcast metadata extraction
+  - Gracefully handles streams that don't embed metadata in segments
+  - New dependencies: `m3u8>=3.5.0`, `mutagen>=1.47.0`
+
 ## [2.1.3] - 2025-11-22
 
 ### Fixed
