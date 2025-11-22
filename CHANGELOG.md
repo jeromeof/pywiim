@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.7] - 2025-11-22
+
+### Documentation
+- **Fixed incorrect documentation for `available_outputs` property**
+  - Corrected docstring to clarify that `available_outputs` is a property on `player` (not `player.audio`)
+  - Added comprehensive "Audio Output Selection" section to HA_INTEGRATION.md
+  - Clarified that `available_outputs` is a property (not a method) and should be accessed as `player.available_outputs`
+  - Removed incorrect reference to `player.audio.available_outputs` (does not exist)
+  - Updated example code to remove unnecessary `async_request_refresh()` call
+
+## [2.1.6] - 2025-11-22
+
+### Fixed
+- **Fixed protocol/port detection when integration passes incorrect port (GitHub Issue #114)**
+  - Root cause: When integration passes `port=443` but device uses HTTP on port 80, pywiim would try both HTTPS and HTTP on port 443, which always fails
+  - **Solution**: When a user-specified port fails, pywiim now falls back to the full standard probe list (HTTPS 443, HTTPS 4443, HTTPS 8443, HTTP 80, HTTP 8080)
+  - This ensures devices are found even if the integration incorrectly specifies a port
+  - **Impact**: Devices that use HTTP on port 80 (like LinkPlay "smart_audio" devices) now connect correctly even when integration defaults to port 443
+  - **Note**: Integration should ideally not pass a port at all, or persist and use the discovered endpoint (see HA_INTEGRATION.md)
+
+### Changed
+- **Enhanced port/protocol detection robustness**
+  - When `port=443` is specified: Tries HTTPS on 443 first, then falls back to standard probe list
+  - When `port=80` is specified: Tries HTTP on 80 first, then falls back to standard probe list
+  - When non-standard port is specified: Tries both protocols on that port, then falls back to standard probe list
+  - This makes pywiim resilient to incorrect port specifications from integrations
+
 ## [2.1.5] - 2025-11-22
 
 ### Fixed

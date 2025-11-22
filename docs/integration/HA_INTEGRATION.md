@@ -859,6 +859,81 @@ async def _async_update_data(self):
     }
 ```
 
+## Protocol and Port Detection
+
+### Automatic Detection (Recommended)
+
+**⚠️ IMPORTANT: pywiim automatically detects protocol (HTTP/HTTPS) and port. The integration should NOT pass a port unless it has a previously discovered endpoint.**
+
+**Simplest Pattern (Recommended):**
+
+```python
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+session = async_get_clientsession(hass)
+# Just pass host - pywiim figures out protocol and port automatically
+client = WiiMClient(host="192.168.1.100", session=session)
+```
+
+**What pywiim does:**
+- Automatically probes standard combinations (HTTPS 443, HTTPS 4443, HTTPS 8443, HTTP 80, HTTP 8080)
+- Caches the working endpoint permanently
+- Handles all device types (WiiM, Arylic, Audio Pro, LinkPlay)
+
+**Why this works:**
+- Devices use consistent protocol/port combinations
+- pywiim probes once and caches forever
+- Works for all device types without configuration
+
+### Optimized Pattern (Optional, for Faster Startup)
+
+If you want to avoid probing on every startup, you can persist the discovered endpoint:
+
+```python
+from urllib.parse import urlparse
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+session = async_get_clientsession(hass)
+
+# Check if we have a cached endpoint from previous discovery
+cached_endpoint = entry.data.get("endpoint")
+if cached_endpoint:
+    # Parse cached endpoint and pass port/protocol
+    parsed = urlparse(cached_endpoint)
+    client = WiiMClient(
+        host=entry.data["host"],
+        port=parsed.port,
+        protocol=parsed.scheme,
+        session=session
+    )
+else:
+    # First time - let pywiim probe automatically
+    client = WiiMClient(host=entry.data["host"], session=session)
+
+# After first successful connection, persist the discovered endpoint
+# (Do this in async_setup_entry after first refresh)
+if not cached_endpoint:
+    await client.get_player_status()  # Triggers probe
+    discovered = client.discovered_endpoint  # e.g., "http://192.168.0.210:80"
+    if discovered:
+        hass.config_entries.async_update_entry(
+            entry,
+            data={**entry.data, "endpoint": discovered}
+        )
+```
+
+**Important Notes:**
+- ✅ **DO**: Pass only `host` if you don't have a cached endpoint
+- ✅ **DO**: Persist `client.discovered_endpoint` after first connection
+- ✅ **DO**: Pass `port` and `protocol` if you have a cached endpoint
+- ❌ **DON'T**: Default to `port=443` - many devices use HTTP on port 80
+- ❌ **DON'T**: Pass a port without a protocol unless you're sure
+
+**What pywiim does when port is specified:**
+- If `port=443` is specified: Tries HTTPS on 443 first, then falls back to standard probe list (including HTTP on 80)
+- If `port=80` is specified: Tries HTTP on 80 first, then falls back to standard probe list (including HTTPS on 443)
+- This ensures devices are found even if the wrong port is specified
+
 ## HTTP Client Session Management
 
 ### HA Provides HTTP Session Helper
@@ -1414,6 +1489,118 @@ class WiiMMediaPlayer(MediaPlayerEntity):
                 # Handle error for external sources
                 _LOGGER.warning("Cannot set repeat: %s", e)
                 raise HomeAssistantError(str(e))
+```
+
+## Audio Output Selection
+
+### Available Outputs Property
+
+The `available_outputs` property provides a unified list of all available outputs (hardware modes + paired Bluetooth devices):
+
+```python
+# Access as a property on player (not a method)
+outputs = player.available_outputs  # Returns list[str]
+
+# Example output:
+# ["Line Out", "Optical Out", "Coax Out", "Bluetooth Out", "BT: Sony Speaker", "BT: JBL Headphones"]
+```
+
+**Important Notes:**
+- ✅ `available_outputs` is a **property** on `player` (accessed as `player.available_outputs`)
+- ✅ It's **not** a method - no parentheses needed
+- ❌ There is **no** `player.audio.available_outputs` - `player.audio` is for methods like `select_output()`
+- ✅ Returns a list of strings combining hardware output modes and paired Bluetooth devices
+- ✅ Bluetooth devices are prefixed with "BT: " in the list
+
+### Related Properties
+
+```python
+# Get just hardware output modes
+hardware_modes = player.available_output_modes  # ["Line Out", "Optical Out", ...]
+
+# Get just paired Bluetooth output devices
+bt_devices = player.bluetooth_output_devices  # [{"name": "...", "mac": "...", "connected": bool}, ...]
+
+# Get current output mode
+current_mode = player.audio_output_mode  # e.g., "Optical Out"
+
+# Check if Bluetooth output is active
+is_bt_active = player.is_bluetooth_output_active  # True/False
+```
+
+### Selecting Outputs
+
+Use `player.audio.select_output()` to change the output:
+
+```python
+# Select hardware output mode
+await player.audio.select_output("Optical Out")
+await player.audio.select_output("Line Out")
+
+# Select specific Bluetooth device (auto-switches to BT mode and connects)
+await player.audio.select_output("BT: Sony Speaker")
+```
+
+### Home Assistant Select Entity Example
+
+```python
+from homeassistant.components.select import SelectEntity
+
+class WiiMOutputSelectEntity(SelectEntity):
+    """Select entity for output selection."""
+    
+    @property
+    def options(self) -> list[str]:
+        """Return available output options.
+        
+        Available as a property on player: player.available_outputs
+        Returns a list of output names (hardware modes + paired BT devices).
+        """
+        player = self.coordinator.data.get("player")
+        if not player:
+            return []
+        return player.available_outputs
+    
+    @property
+    def current_option(self) -> str | None:
+        """Return current output."""
+        player = self.coordinator.data.get("player")
+        if not player:
+            return None
+        
+        # Check if BT output is active and which device is connected
+        if player.is_bluetooth_output_active:
+            for device in player.bluetooth_output_devices:
+                if device["connected"]:
+                    return f"BT: {device['name']}"
+            return "Bluetooth Out"
+        
+        return player.audio_output_mode
+    
+    async def async_select_option(self, option: str) -> None:
+        """Change the selected output."""
+        player = self.coordinator.data.get("player")
+        if not player:
+            return
+        await player.audio.select_output(option)
+        # State updates automatically via callback - no manual refresh needed
+```
+
+### Including in Coordinator Data
+
+If you need `available_outputs` in your coordinator data:
+
+```python
+async def _async_update_data(self):
+    """HA calls this method at the update_interval."""
+    await self.player.refresh()
+    
+    return {
+        "player": self.player,
+        # ... other properties ...
+        "available_outputs": self.player.available_outputs,  # Include if needed
+        # ... other properties ...
+    }
 ```
 
 ## Group Join/Unjoin Operations

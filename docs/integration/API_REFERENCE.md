@@ -1405,7 +1405,11 @@ class WiiMOutputSelectEntity(SelectEntity):
     
     @property
     def options(self) -> list[str]:
-        """Return available output options."""
+        """Return available output options.
+        
+        Available as a property on player: player.available_outputs
+        Returns a list of output names (hardware modes + paired BT devices).
+        """
         return self.coordinator.data.available_outputs
     
     @property
@@ -1425,6 +1429,6 @@ class WiiMOutputSelectEntity(SelectEntity):
     async def async_select_option(self, option: str) -> None:
         """Change the selected output."""
         await self.coordinator.data.audio.select_output(option)
-        await self.coordinator.async_request_refresh()
+        # State updates automatically via callback - no manual refresh needed
 ```
 

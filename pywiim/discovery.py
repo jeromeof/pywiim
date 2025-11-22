@@ -242,9 +242,11 @@ async def validate_device(device: DiscoveredDevice) -> DiscoveredDevice:
 
         # Device port should already be 80 (set during discovery)
         # Port 49152 is only for UPnP description.xml, not for HTTP API
+        # Pass both port and protocol from discovery to avoid unnecessary probing
         client = WiiMClient(
             device.ip,
             port=device.port,  # Should be 80 for HTTP API
+            protocol=device.protocol,  # Pass discovered protocol to avoid probing
             timeout=5.0,
             capabilities=capabilities,
         )

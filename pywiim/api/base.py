@@ -709,13 +709,40 @@ class BaseWiiMClient:
             )
             return [(self._user_specified_protocol, self._user_specified_port)]
 
-        # Case 2: User specified port only (try both protocols on that port)
+        # Case 2: User specified port only
+        # Try user's port first (respect intent), but fall back to standard probe list if it fails
         if self._user_specified_port:
-            _LOGGER.debug("Using user-specified port=%d, trying both protocols", self._user_specified_port)
-            return [
-                ("https", self._user_specified_port),
-                ("http", self._user_specified_port),
-            ]
+            # Build list starting with user's port, then standard combinations
+            probe_list = []
+
+            if self._user_specified_port == 443:
+                # Port 443 implies HTTPS - try that first
+                probe_list.append(("https", 443))
+            elif self._user_specified_port == 80:
+                # Port 80 implies HTTP - try that first
+                probe_list.append(("http", 80))
+            else:
+                # Non-standard port - try both protocols on that port
+                probe_list.extend(
+                    [
+                        ("https", self._user_specified_port),
+                        ("http", self._user_specified_port),
+                    ]
+                )
+
+            # After trying user's port, fall back to standard probe combinations
+            # This ensures we figure it out even if user specified wrong port
+            standard_list = self._build_standard_probe_list()
+            for protocol, port in standard_list:
+                if (protocol, port) not in probe_list:  # Avoid duplicates
+                    probe_list.append((protocol, port))
+
+            _LOGGER.debug(
+                "User specified port=%d, trying user port first, then standard combinations: %s",
+                self._user_specified_port,
+                probe_list,
+            )
+            return probe_list
 
         # Case 3: User specified protocol only (try standard ports for that protocol)
         if self._user_specified_protocol:
@@ -733,6 +760,17 @@ class BaseWiiMClient:
                 ]
 
         # Case 4: User specified nothing - probe standard combinations
+        return self._build_standard_probe_list()
+
+    def _build_standard_probe_list(self) -> list[tuple[str, int]]:
+        """Build standard protocol/port combinations to probe.
+
+        This is used both when no port is specified and as a fallback
+        when a user-specified port fails.
+
+        Returns:
+            List of (protocol, port) tuples to try in order
+        """
         # Use preferred ports from capabilities if specified (Audio Pro MkII)
         preferred_ports = self._capabilities.get("preferred_ports", [])
 
