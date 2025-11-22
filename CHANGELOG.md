@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.9] - 2025-11-22
+
+### Added
+- **Monitor CLI now displays current and available audio outputs**
+  - Shows current output mode with "(current)" indicator
+  - Lists all available outputs (hardware modes + paired BT devices)
+  - Automatically fetches audio output status every 60 seconds when supported
+  - Display format: `Output: Line Out (current), Optical Out, Coax Out, Bluetooth Out`
+
+### Fixed
+- **Fixed HA integration guide `should_fetch_audio_output()` calls**
+  - Added missing `source_changed` parameter to method calls
+  - Updated interval documentation from 15s to 60s to match actual strategy
+
 ## [2.1.8] - 2025-11-22
 
 ### Fixed

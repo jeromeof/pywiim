@@ -63,6 +63,7 @@ class PlayerMonitor:
         self.last_group_info: Any | None = None  # Cached DeviceGroupInfo for display
         self.last_preset_count: int | None = None
         self.last_preset_check = 0.0
+        self.last_audio_output_check = 0.0  # Track when to fetch audio output status
 
     def _format_source_name(self, source: str) -> str:
         """Format source name for display, handling acronyms correctly.
@@ -462,6 +463,23 @@ class PlayerMonitor:
                             pass  # Don't fail if EQ fetch fails
                     self.last_eq_check = now
 
+                # Audio output status (every 60s, if supported)
+                # This updates player's internal cache so audio_output_mode property works
+                source_changed = False  # Monitor doesn't track source changes, use interval-based fetching
+                if self.strategy and self.strategy.should_fetch_audio_output(
+                    self.last_audio_output_check,
+                    source_changed,
+                    self.player.client.capabilities.get("supports_audio_output", False),
+                    now,
+                ):
+                    if self.player.client.capabilities.get("supports_audio_output", False):
+                        try:
+                            await self.player.get_audio_output_status()
+                            # Method automatically updates player's internal cache
+                        except Exception:
+                            pass  # Don't fail if audio output fetch fails
+                    self.last_audio_output_check = now
+
                 # Check for role changes (player.role is updated by refresh() via _synchronize_group_state())
                 role_changed = current_role != old_role
 
@@ -855,10 +873,33 @@ class PlayerMonitor:
                 eq_str = " ".join(f"{b:+2d}" for b in eq_bands[:5])  # First 5 bands
                 audio_settings.append(f"EQ Bands: [{eq_str} ...]")
 
-        # Audio Output Mode
+        # Audio Output Mode - show current and available
         output_mode = self.player.audio_output_mode
-        if output_mode:
-            audio_settings.append(f"Output: {output_mode}")
+        available_outputs = self.player.available_outputs
+        if output_mode or available_outputs:
+            if output_mode:
+                # Show current output, mark it in available list if present
+                if available_outputs and output_mode in available_outputs:
+                    # Format available outputs, marking current one
+                    formatted_outputs = []
+                    for out in available_outputs[:4]:  # Limit to first 4 for display
+                        formatted = out.replace("_", " ").title()
+                        if out == output_mode:
+                            formatted += " (current)"
+                        formatted_outputs.append(formatted)
+                    outputs_str = ", ".join(formatted_outputs)
+                    if len(available_outputs) > 4:
+                        outputs_str += f" (+{len(available_outputs) - 4} more)"
+                    audio_settings.append(f"Output: {outputs_str}")
+                else:
+                    # Current output not in available list (shouldn't happen, but handle gracefully)
+                    audio_settings.append(f"Output: {output_mode}")
+            elif available_outputs:
+                # No current output but have available outputs
+                outputs_str = ", ".join(out.replace("_", " ").title() for out in available_outputs[:4])
+                if len(available_outputs) > 4:
+                    outputs_str += f" (+{len(available_outputs) - 4} more)"
+                audio_settings.append(f"Outputs: {outputs_str}")
 
         # Available Input Sources
         available_sources = self.player.available_sources

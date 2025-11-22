@@ -617,10 +617,11 @@ async def _async_update_data(self):
         fetch_tasks.append(self.player.get_eq_presets())
         self._last_eq_info_check = now
 
-    # Audio output (every 15s, if supported)
+    # Audio output (every 60s, if supported)
     audio_output_supported = self._capabilities.get("supports_audio_output", None)
+    source_changed = False  # Coordinator doesn't track source changes, use interval-based fetching
     if self._polling_strategy.should_fetch_audio_output(
-        self._last_audio_output_check, audio_output_supported, now
+        self._last_audio_output_check, source_changed, audio_output_supported, now
     ):
         fetch_tasks.append(self.player.get_audio_output_status())
         self._last_audio_output_check = now
@@ -656,7 +657,8 @@ async def _async_update_data(self):
             result_idx += 2
 
         # Audio output (if fetched)
-        if self._polling_strategy.should_fetch_audio_output(self._last_audio_output_check - 15, audio_output_supported, now):
+        source_changed = False  # Coordinator doesn't track source changes
+        if self._polling_strategy.should_fetch_audio_output(self._last_audio_output_check - 60, source_changed, audio_output_supported, now):
             audio_output = results[result_idx] if not isinstance(results[result_idx], Exception) else None
             if audio_output:
                 # Note: get_audio_output_status() automatically updates player's internal cache
