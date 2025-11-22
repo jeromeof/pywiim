@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.3] - 2025-11-22
+
+### Fixed
+- **Fixed master device role detection after polling optimization**
+  - Root cause: Code assumed `mode != "99"` meant device was solo, but master devices can have slaves with `mode != "99"` (mode reflects source, not group status)
+  - Previous optimization skipped `get_device_group_info()` when `mode != "99"`, causing masters to be incorrectly detected as solo
+  - **Solution**: Always call `get_device_group_info()` when potential slave indicators are present OR when device_info is cached (full refresh)
+  - Fast path optimization: Only skip expensive `getDeviceInfo` calls when no slave indicators AND no group object AND no cached device_info
+  - **Impact**: Master devices are now correctly detected even when they have `mode != "99"`
+
+- **Enhanced slave detection with dual indicators**
+  - Added support for two slave indicators (either/or, not both required):
+    - `mode == "99"` (follower mode)
+    - `source == "multiroom"` (multiroom source)
+  - These indicators may not both be present, so we check for either
+  - When fast indicators suggest slave but `get_device_group_info()` returns solo (due to missing master info), we trust the fast indicators
+  - Slaves often don't have master info in their status, so this override ensures correct detection
+  - **Impact**: Slave devices are now correctly detected even when they lack master info in device status
+
+### Changed
+- **Optimized role detection to reduce expensive API calls**
+  - Only call `get_device_group_info()` (which uses expensive `getDeviceInfo`) when:
+    - Potential slave detected via fast indicators (`mode=99` OR `source=multiroom`)
+    - Group object exists (might be master, need to verify)
+    - Device info is cached (full refresh happened, safe to check)
+  - Fast path: Skip expensive calls when no indicators and device is solo with no group
+  - **Impact**: Reduces unnecessary `getDeviceInfo` calls during normal polling, improving performance
+
 ## [2.1.2] - 2025-11-22
 
 ### Changed
