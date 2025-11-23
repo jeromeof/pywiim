@@ -7,6 +7,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
+from ..polling import PollingStrategy
 from ..state import PLAYING_STATES, normalize_play_state
 from .stream import StreamMetadata, get_stream_metadata
 
@@ -58,6 +59,15 @@ class StateManager:
 
         # Track pending pause/stop/buffering state to debounce track changes
         self._pending_state_task: asyncio.Task | None = None
+
+        # Track last EQ preset to detect changes (trigger full EQ info fetch)
+        self._last_eq_preset: str | None = None
+
+        # Track last source to detect source changes (for audio output fetching)
+        self._last_source: str | None = None
+
+        # Polling strategy for periodic fetching decisions
+        self._polling_strategy: PollingStrategy | None = None
 
     def apply_diff(self, changes: dict[str, Any]) -> bool:
         """Apply state changes from UPnP events.
@@ -555,11 +565,36 @@ class StateManager:
             self.player._last_refresh = time.time()
             self.player._available = True
 
+            # Initialize polling strategy if needed (uses device capabilities)
+            if self._polling_strategy is None:
+                self._polling_strategy = PollingStrategy(self.player.client.capabilities)
+
+            # Get current time for periodic checks
+            now = time.time()
+
             # === Tier 2: Trigger-Based Fetching ===
 
             # 1. Metadata (Bitrate/Sample Rate) - Only if track changed
             current_signature = f"{status.title}|{status.artist}|{status.album}"
             track_changed = current_signature != self._last_track_signature
+
+            # Detect EQ preset change (trigger full EQ info fetch)
+            current_eq_preset = status.eq_preset if status else None
+            eq_preset_changed = self._last_eq_preset is not None and current_eq_preset != self._last_eq_preset
+            # Initialize on first run (don't trigger fetch on first detection)
+            if self._last_eq_preset is None:
+                self._last_eq_preset = current_eq_preset
+            elif eq_preset_changed:
+                self._last_eq_preset = current_eq_preset
+
+            # Detect source change (trigger audio output fetch)
+            current_source = status.source if status else None
+            source_changed = self._last_source is not None and current_source != self._last_source
+            # Initialize on first run
+            if self._last_source is None:
+                self._last_source = current_source
+            elif source_changed:
+                self._last_source = current_source
             if track_changed:
                 # Track changed (or first run)
                 if self.player.client.capabilities.get("supports_metadata", False):
@@ -572,45 +607,107 @@ class StateManager:
                 # Update track signature after processing track change
                 self._last_track_signature = current_signature
 
-            # 2. Audio Output Status - Fetch on first refresh or full refresh
+            # 2. Audio Output Status - Fetch on first refresh, full refresh, source change, or periodically (every 60s)
             # CRITICAL: Fetch on startup (when None) so audio_output_mode property works immediately
-            # This ensures the player is "ready for use" with all basic properties populated
-            if self.player.client.capabilities.get("supports_audio_output", False):
-                should_fetch = full or self.player._audio_output_status is None
-                if should_fetch:
-                    try:
-                        audio_output_status = await self.player.client.get_audio_output_status()
-                        self.player._audio_output_status = audio_output_status
-                    except Exception as err:
-                        _LOGGER.debug("Failed to fetch audio output status for %s: %s", self.player.host, err)
-                        self.player._audio_output_status = None
+            # Source changes may indicate output mode changes (e.g., Bluetooth -> WiFi)
+            # Periodic fetch ensures output mode stays current even without activity
+            audio_output_supported = self.player.client.capabilities.get("supports_audio_output", False)
+            should_fetch_audio_output = (
+                full
+                or self.player._audio_output_status is None
+                or source_changed
+                or (
+                    self._polling_strategy
+                    and self._polling_strategy.should_fetch_audio_output(
+                        self.player._last_audio_output_check,
+                        source_changed,
+                        audio_output_supported,
+                        now=now,
+                    )
+                )
+            )
+            if should_fetch_audio_output and audio_output_supported:
+                try:
+                    audio_output_status = await self.player.client.get_audio_output_status()
+                    self.player._audio_output_status = audio_output_status
+                    self.player._last_audio_output_check = now
+                except Exception as err:
+                    _LOGGER.debug("Failed to fetch audio output status for %s: %s", self.player.host, err)
+                    self.player._audio_output_status = None
 
-            # 3. EQ Presets - Fetch on full refresh or track change
+            # 3. EQ Info - Fetch full EQ state when preset changes
+            # When EQ preset changes in status, fetch full EQ info (band values, enabled status)
+            if eq_preset_changed and self.player.client.capabilities.get("supports_eq", False):
+                try:
+                    _ = (
+                        await self.player.client.get_eq()
+                    )  # Fetch EQ data (currently not cached, but available for callbacks)
+                    _LOGGER.debug("EQ preset changed to %s, fetched full EQ info", current_eq_preset)
+                except Exception as err:
+                    _LOGGER.debug("Failed to fetch EQ info after preset change for %s: %s", self.player.host, err)
+
+            # 4. EQ Preset List - Fetch on full refresh, track change, or periodically (every 60s)
             # Track changes may indicate preset changes (user switched to different preset/station)
-            if (full or track_changed) and self.player.client.capabilities.get("supports_eq", False):
+            # Periodic fetch ensures list stays current even without activity
+            eq_supported = self.player.client.capabilities.get("supports_eq", False)
+            should_fetch_eq_presets = (
+                full
+                or track_changed
+                or (
+                    self._polling_strategy
+                    and self._polling_strategy.should_fetch_eq_info(
+                        self.player._last_eq_presets_check, eq_supported, now=now
+                    )
+                )
+            )
+            if should_fetch_eq_presets and eq_supported:
                 try:
                     eq_presets = await self.player.client.get_eq_presets()
                     self.player._eq_presets = eq_presets if eq_presets else None
+                    self.player._last_eq_presets_check = now
                 except Exception as err:
                     _LOGGER.debug("Failed to fetch EQ presets for %s: %s", self.player.host, err)
                     self.player._eq_presets = None
 
-            # 4. Preset Stations (playback presets) - Fetch on full refresh or track change
+            # 5. Preset Stations (playback presets) - Fetch on full refresh, track change, or periodically (every 60s)
             # Track changes may indicate preset changes (user switched to different preset/station)
-            if (full or track_changed) and self.player.client.capabilities.get("supports_presets", False):
+            # Periodic fetch ensures preset names stay current even without activity (fixes issue #118)
+            presets_supported = self.player.client.capabilities.get("supports_presets", False)
+            should_fetch_presets = (
+                full
+                or track_changed
+                or (
+                    self._polling_strategy
+                    and self._polling_strategy.should_fetch_presets(
+                        self.player._last_presets_check, presets_supported, now=now
+                    )
+                )
+            )
+            if should_fetch_presets and presets_supported:
                 try:
                     presets = await self.player.client.get_presets()
                     self.player._presets = presets if presets else []
+                    self.player._last_presets_check = now
                 except Exception as err:
                     _LOGGER.debug("Failed to fetch presets for %s: %s", self.player.host, err)
                     self.player._presets = []
 
-            # 5. Bluetooth History (paired devices) - Fetch on full refresh or track change
+            # 6. Bluetooth History (paired devices) - Fetch on full refresh, track change, or periodically (every 60s)
             # Track changes may indicate BT device changes (user connected/disconnected device)
-            if full or track_changed:
+            # Periodic fetch ensures BT device list stays current even without activity
+            should_fetch_bt = (
+                full
+                or track_changed
+                or (
+                    self._polling_strategy
+                    and self._polling_strategy.should_fetch_configuration(self.player._last_bt_history_check, now=now)
+                )
+            )
+            if should_fetch_bt:
                 try:
                     bluetooth_history = await self.player.client.get_bluetooth_history()
                     self.player._bluetooth_history = bluetooth_history if bluetooth_history else []
+                    self.player._last_bt_history_check = now
                 except Exception as err:
                     _LOGGER.debug("Failed to fetch Bluetooth history for %s: %s", self.player.host, err)
                     self.player._bluetooth_history = []
@@ -654,13 +751,17 @@ class StateManager:
         status = await self.get_status()
         return status.play_state or "stop"
 
-    async def _enrich_stream_metadata(self, status: PlayerStatus) -> None:
+    async def _enrich_stream_metadata(self, status: PlayerStatus | None) -> None:
         """Enrich status with stream metadata if playing a raw stream.
 
         Handles cases where the device plays a direct URL (Icecast, M3U, PLS)
         but returns the URL as the title instead of parsed metadata.
         """
         if not self.stream_enrichment_enabled:
+            return
+
+        # Early return if status is None
+        if status is None:
             return
 
         # Check if we are playing

@@ -77,25 +77,32 @@ class TestDetectRoleEnhanced:
         assert result.master_host is None
         assert result.slave_count == 0
 
-    def test_detect_follower_mode_99_playing(self):
-        """Test detecting follower mode (mode=99) while playing."""
+    def test_detect_slave_with_group_and_master(self):
+        """Test detecting slave when in group with master info."""
+        # Device in group (group="1") with master info - should be detected as slave
+        # Note: mode=99 is no longer checked (can get stuck after leaving group)
         status = PlayerStatus(play_state="play", mode="99")
         multiroom = {"slaves": 0}
-        device_info = DeviceInfo(uuid="device-uuid", group="0")
+        device_info = DeviceInfo(
+            uuid="device-uuid", group="1", master_uuid="master-uuid", master_ip="192.168.1.100"
+        )  # In group with master info
 
         result = detect_role(status, multiroom, device_info, capabilities={"is_legacy_device": False})
 
-        assert result.role == "slave"  # Follower treated as slave while playing
+        assert result.role == "slave"  # In group with master info = slave
+        assert result.master_uuid == "master-uuid"
 
-    def test_detect_follower_mode_99_not_playing(self):
-        """Test detecting follower mode (mode=99) when not playing."""
+    def test_detect_solo_with_stuck_mode_99(self):
+        """Test that mode=99 doesn't affect detection when group=0 (firmware bug workaround)."""
+        # Device left group but mode stuck at 99 (firmware bug) - should be solo, not slave
+        # This verifies we ignore mode=99 and rely on group field
         status = PlayerStatus(play_state="stop", mode="99")
         multiroom = {"slaves": 0}
-        device_info = DeviceInfo(uuid="device-uuid", group="0")
+        device_info = DeviceInfo(uuid="device-uuid", group="0")  # Left group
 
         result = detect_role(status, multiroom, device_info, capabilities={"is_legacy_device": False})
 
-        assert result.role == "solo"  # Follower treated as solo when not playing
+        assert result.role == "solo"  # group=0 means solo, regardless of mode value
 
     def test_detect_slave_missing_master_info(self):
         """Test detecting slave when master info is missing."""

@@ -48,6 +48,10 @@ class AudioConfiguration:
         # Call API (raises on failure)
         await self.player.client.set_audio_output_mode(mode)
 
+        # Refresh to update audio output status cache
+        # Use full=True to ensure audio output status is fetched
+        await self.player.refresh(full=True)
+
         # Call callback to notify state change (audio output status changed)
         if self.player._on_state_changed:
             self.player._on_state_changed()
@@ -110,6 +114,15 @@ class AudioConfiguration:
 
         else:
             # It's a hardware output mode (Line Out, Optical Out, Coax Out, Headphone Out, etc.)
+            # If Bluetooth is currently active, disconnect it first
+            if self.player.is_bluetooth_output_active:
+                try:
+                    await self.player.disconnect_bluetooth_device()
+                except Exception:
+                    # If disconnect fails, continue anyway - the hardware mode change might still work
+                    pass
+
+            # Set the hardware output mode
             await self.set_audio_output_mode(output)
 
     async def set_led(self, enabled: bool) -> None:

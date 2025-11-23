@@ -2911,17 +2911,20 @@ class TestPlayerBluetoothOutputs:
         assert "Line Out" in outputs
         assert "Optical Out" in outputs
         assert "Coax Out" in outputs
-        assert "Bluetooth Out" in outputs
+        # When specific BT devices are available, generic "Bluetooth Out" is removed
+        assert "Bluetooth Out" not in outputs
         assert "BT: Sony Speaker" in outputs
         assert "BT: JBL Headphones" in outputs
 
     @pytest.mark.asyncio
     async def test_select_output_hardware_mode(self, mock_client):
         """Test selecting a hardware output mode."""
+        from pywiim.models import PlayerStatus
         from pywiim.player import Player
 
         mock_client.set_audio_output_mode = AsyncMock()
-        mock_client.get_player_status_model = AsyncMock(return_value=None)
+        mock_status = PlayerStatus(play_state="stop")
+        mock_client.get_player_status_model = AsyncMock(return_value=mock_status)
         mock_client.get_device_info_model = AsyncMock(return_value=None)
         mock_client.get_bluetooth_history = AsyncMock(return_value=[])
 
@@ -2934,10 +2937,12 @@ class TestPlayerBluetoothOutputs:
     @pytest.mark.asyncio
     async def test_select_output_bluetooth_device(self, mock_client):
         """Test selecting a specific Bluetooth device."""
+        from pywiim.models import PlayerStatus
         from pywiim.player import Player
 
         mock_client.connect_bluetooth_device = AsyncMock()
-        mock_client.get_player_status_model = AsyncMock(return_value=None)
+        mock_status = PlayerStatus(play_state="stop")
+        mock_client.get_player_status_model = AsyncMock(return_value=mock_status)
         mock_client.get_device_info_model = AsyncMock(return_value=None)
         mock_client.get_bluetooth_history = AsyncMock(return_value=[])
 

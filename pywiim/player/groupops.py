@@ -49,16 +49,18 @@ class GroupOperations:
         1. Slaves often don't know who their master is.
         2. Only Masters reliably know their slave list.
         3. We use fast status-based detection to avoid expensive getDeviceInfo calls.
-        4. Two indicators that a device might be a slave (either/or, not both required):
-           - mode == "99" (follower mode)
-           - source == "multiroom" (multiroom source)
-           These may not both be present, so we check for either.
+        4. The 'group' field is authoritative for slave detection:
+           - group == "1" means device is a slave
+           - group == "0" means device is solo or master (check slave list to determine)
         5. We only call get_device_group_info() (which uses getDeviceInfo) when:
-           - Potential slave detected (mode=99 OR source=multiroom)
+           - Potential slave detected (group="1")
            - We have a group object (might be master, need to verify)
            - Device info is cached (full refresh happened, safe to check)
         6. When a slave is detected, the coordinator should trigger master detection
            on all players to find which one became the master.
+
+        Note: We previously used mode=="99" to detect slaves, but this can get stuck
+        after leaving a group (firmware bug). The 'group' field is always reliable.
         """
         if self.player._status_model is None:
             return
@@ -66,17 +68,13 @@ class GroupOperations:
         status = self.player._status_model
         old_role = self.player._detected_role
 
-        # Fast path: Use status to detect potential slaves without expensive getDeviceInfo call
-        # Two indicators that a device might be a slave (either/or, not both required):
-        # 1. mode == "99" (follower mode)
-        # 2. source == "multiroom" (multiroom source)
-        # These may not both be present, so we check for either
-        is_multiroom_mode = str(status.mode) == "99"
-        is_multiroom_source = status.source and str(status.source).lower() == "multiroom"
-        is_potential_slave = is_multiroom_mode or is_multiroom_source
+        # Fast path: Use group field to detect potential slaves
+        # group == "1" is the authoritative indicator that device is a slave
+        # Note: mode=="99" can get stuck after leaving group (firmware bug), so we don't use it
+        is_potential_slave = status.group == "1"
 
         # We only call get_device_group_info() (which uses getDeviceInfo) when:
-        # 1. Potential slave detected (mode=99 OR source=multiroom)
+        # 1. Potential slave detected (group="1")
         # 2. We have a group object (might be master, need to verify)
         # 3. We have device_info cached (full refresh happened, safe to check)
         should_check_role = False
@@ -84,15 +82,9 @@ class GroupOperations:
         if is_potential_slave:
             # Potential slave detected via fast path - we need to check role
             should_check_role = True
-            indicators = []
-            if is_multiroom_mode:
-                indicators.append("mode=99")
-            if is_multiroom_source:
-                indicators.append("source=multiroom")
             _LOGGER.debug(
-                "Potential slave detected for %s (%s) - checking role via get_device_group_info()",
+                "Potential slave detected for %s (group=1) - checking role via get_device_group_info()",
                 self.player.host,
-                ", ".join(indicators),
             )
         elif self.player._group is not None:
             # We think we're in a group - need to verify (might be master)
@@ -100,27 +92,19 @@ class GroupOperations:
             _LOGGER.debug("Group object exists for %s - checking role via get_device_group_info()", self.player.host)
         elif self.player._device_info is not None:
             # Device info is cached (full refresh happened) - safe to check role
-            # This handles the case where a master might have mode != "99"
+            # This handles the case where a master might also have group="0"
             should_check_role = True
             _LOGGER.debug("Device info cached for %s - checking role via get_device_group_info()", self.player.host)
 
         if should_check_role:
-            # Call expensive get_device_group_info() to determine role accurately
+            # Call get_device_group_info() to determine role accurately
             try:
                 group_info = await self.player.client.get_device_group_info()
                 detected_role = group_info.role
                 slave_hosts = group_info.slave_hosts
 
-                # Override: If fast indicators suggest slave but get_device_group_info() returns solo,
-                # trust the fast indicators. Slaves often don't have master info, so get_device_group_info()
-                # can't detect them, but mode=99 or source=multiroom are reliable indicators.
-                if is_potential_slave and detected_role == "solo":
-                    _LOGGER.debug(
-                        "Fast indicators suggest slave (mode=99 or source=multiroom) but get_device_group_info() "
-                        "returned solo (likely missing master info) - trusting fast indicators and treating as slave"
-                    )
-                    detected_role = "slave"
-                    slave_hosts = []
+                # Trust get_device_group_info() result - it checks group field and master info
+                # No override needed - the group field is always correct
             except Exception as err:
                 _LOGGER.warning(
                     "Failed to get device group info for %s: %s - keeping current role",
@@ -129,9 +113,8 @@ class GroupOperations:
                 )
                 return
         else:
-            # Fast path: No multiroom indicators (mode != "99" and source != "multiroom")
-            # and we're solo with no group - skip expensive call
-            # Note: If we had potential_slave indicators, we would have called get_device_group_info() above
+            # Fast path: No slave indicator (group != "1") and we're solo with no group
+            # Skip expensive call - device is definitely solo
             detected_role = "solo"
             slave_hosts = []
 
@@ -140,6 +123,21 @@ class GroupOperations:
 
         # Update _detected_role - this is the single source of truth for player.role
         self.player._detected_role = detected_role
+
+        # Clear source if not a slave but source is still "multiroom" (for UI clarity)
+        if detected_role != "slave" and self.player._status_model:
+            current_source = self.player._status_model.source
+            if current_source == "multiroom":
+                _LOGGER.debug(
+                    "Clearing multiroom source for %s (role=%s, was=%s)",
+                    self.player.host,
+                    detected_role,
+                    old_role,
+                )
+                self.player._status_model.source = None
+                self.player._status_model._multiroom_mode = None
+                # Also clear from state synchronizer to prevent refresh() from restoring it
+                self.player._state_synchronizer.update_from_http({"source": None})
 
         # If we became a slave, log it (coordinator should trigger master detection on all players)
         if became_slave:

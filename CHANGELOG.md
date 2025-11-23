@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.11] - 2025-11-23
+
+### Fixed
+- **Headphone output now appears in available_output_modes for WiiM Ultra (GitHub issues #86, #117)**
+  - Fixed lenient model check: now checks for "ultra" in model name (not just "wiim ultra")
+  - Restores behavior from integration v0.2.14 where headphone output was working
+  - "Headphone Out" now correctly appears in dropdown selector for Ultra devices
+- **Preset names now populate automatically (GitHub issue #118)**
+  - Presets are now fetched periodically every 60 seconds, not just on full refresh or track change
+  - Fixes Home Assistant showing generic "Preset 1" to "Preset 20" instead of actual preset names
+  - Presets refresh on: full refresh, track change, and every 60s (periodic background refresh)
+- **EQ preset change detection**
+  - Automatically fetches full EQ info (band values, enabled status) when EQ preset changes in status
+- **Monitor CLI debug info now shows for all roles**
+  - Debug info now displays for master/slave roles, not just solo
+  - Removed redundant `slave_count` field from debug output
+
+### Added
+- **Monitor CLI now displays preset stations**
+  - Shows preset list with names (up to 10 presets)
+  - Displays "None configured" if device supports presets but none are set
+
+### Changed
+- **Simplified role detection logic**
+  - Removed mode=99 (follower mode) check from role detection
+  - Now uses `group` field exclusively for slave detection (per design guide)
+  - The `group` field is always reliable, while `mode=99` can get stuck after leaving a group (firmware bug)
+  - Role detection now follows design guide pattern: Slave = `group != "0"` and has `master_uuid`/`master_ip` pointing to another device
+  - This simplifies the code and makes it more reliable
+- **Improved audio output selection behavior**
+  - `available_outputs` now removes generic "Bluetooth Out" option when specific BT devices are available from history
+  - Only shows specific paired Bluetooth output devices (Audio Sinks) instead of generic option
+  - Provides cleaner UI for output selection in Home Assistant and other integrations
+  - Output selection methods now use full refresh to ensure cache is updated immediately
+
+### Fixed
+- **Clear multiroom source when device is not a slave**
+  - When role detection determines device is not a slave (solo or master) but source is still "multiroom", the source is now automatically cleared
+  - Prevents UI confusion where devices show "multiroom" as source when they're actually solo or master
+  - Handles stale state from firmware bugs (mode=99 getting stuck) or parser setting multiroom source incorrectly
+  - Source is cleared from both status model and state synchronizer to prevent refresh from restoring it
+
 ## [2.1.10] - 2025-11-22
 
 ### Changed
@@ -16,6 +58,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Subsequent refreshes use lightweight polling (Tier 1 only)
 
 ### Fixed
+- **Fixed devices stuck as "slave" after leaving multiroom group (GitHub issue #119)**
+  - **Problem**: Devices that left a multiroom group would be stuck in slave mode, rejecting all playback commands
+  - **Root cause**: Firmware bug - when device leaves group, it clears `group` field but forgets to clear `mode` field from "99" (follower mode)
+  - **Previous behavior**: Library used `mode=="99"` to detect slaves, which would incorrectly treat solo devices as slaves if mode stuck
+  - **Fix**: Now uses `group` field exclusively for slave detection (`group=="1"` = slave, `group=="0"` = solo/master)
+  - **Impact**: Devices work correctly after leaving groups - playback commands are accepted, media player entity is selectable in Home Assistant
+  - The `group` field is always correct (firmware clears it properly), while `mode` field can get stuck
+  - Removed override logic that trusted `mode` over authoritative `group` field
 - **EQ presets and preset stations now refresh on track change**
   - Previously only fetched on full refresh, now also fetched when track changes
   - Track changes may indicate user switched presets/stations, so refreshing keeps data current

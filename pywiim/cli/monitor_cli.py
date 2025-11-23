@@ -946,6 +946,24 @@ class PlayerMonitor:
             print("🎛️  " + "  |  ".join(playback_settings))
             print()
 
+        # ===== PRESET STATIONS =====
+        presets = self.player.presets
+        if presets:
+            print("📻 Preset Stations:")
+            # Show up to 10 presets, with names if available
+            for preset in presets[:10]:
+                preset_num = preset.get("number", "?")
+                preset_name = preset.get("name", "Unnamed")
+                # Show preset number and name
+                print(f"   Preset {preset_num}: {preset_name}")
+            if len(presets) > 10:
+                print(f"   ... and {len(presets) - 10} more presets")
+            print()
+        elif self.player.client.capabilities.get("supports_presets", False):
+            # Device supports presets but none are configured
+            print("📻 Preset Stations: None configured")
+            print()
+
         # ===== GROUPING INFO =====
         if role != "solo":
             group_lines = []
@@ -1022,17 +1040,15 @@ class PlayerMonitor:
         else:
             # Show debug info when detected as solo (for troubleshooting)
             debug_lines = []
-            debug_lines.append("🔍 Debug (solo detected):")
+            debug_lines.append(f"🔍 Debug ({role} detected):")
 
             # Always show multiroom data (even if None/empty)
             if self.last_multiroom:
                 slaves_data = self.last_multiroom.get("slaves", "N/A")
                 slave_list = self.last_multiroom.get("slave_list", "N/A")
-                slave_count_field = self.last_multiroom.get("slave_count", "N/A")
                 master_field = self.last_multiroom.get("master", "N/A")
                 debug_lines.append(f"   multiroom.slaves: {slaves_data} (type: {type(slaves_data).__name__})")
                 debug_lines.append(f"   multiroom.slave_list: {slave_list}")
-                debug_lines.append(f"   multiroom.slave_count: {slave_count_field}")
                 debug_lines.append(f"   multiroom.master: {master_field}")
                 debug_lines.append(f"   multiroom (full): {self.last_multiroom}")
             else:
@@ -1056,6 +1072,46 @@ class PlayerMonitor:
                 debug_lines.append(f"   group.slaves: {[s.host for s in self.player.group.slaves]}")
             else:
                 debug_lines.append("   group: None (solo)")
+
+            for line in debug_lines:
+                print(line)
+            print()
+
+        # Show debug info for master/slave roles (for troubleshooting)
+        if role != "solo":
+            debug_lines = []
+            debug_lines.append(f"🔍 Debug ({role} detected):")
+
+            # Always show multiroom data (even if None/empty)
+            if self.last_multiroom:
+                slaves_data = self.last_multiroom.get("slaves", "N/A")
+                slave_list = self.last_multiroom.get("slave_list", "N/A")
+                master_field = self.last_multiroom.get("master", "N/A")
+                debug_lines.append(f"   multiroom.slaves: {slaves_data} (type: {type(slaves_data).__name__})")
+                debug_lines.append(f"   multiroom.slave_list: {slave_list}")
+                debug_lines.append(f"   multiroom.master: {master_field}")
+                debug_lines.append(f"   multiroom (full): {self.last_multiroom}")
+            else:
+                debug_lines.append("   multiroom: None (not fetched or empty)")
+
+            # Show device_info
+            if self.player.device_info:
+                group_field = self.player.device_info.group or "N/A"
+                master_uuid = self.player.device_info.master_uuid or "N/A"
+                master_ip = self.player.device_info.master_ip or "N/A"
+                debug_lines.append(f"   device_info.group: {group_field}")
+                debug_lines.append(f"   device_info.master_uuid: {master_uuid}")
+                debug_lines.append(f"   device_info.master_ip: {master_ip}")
+            else:
+                debug_lines.append("   device_info: None")
+
+            # Show group object info (Player manages this)
+            if self.player.group:
+                debug_lines.append(f"   group.size: {self.player.group.size}")
+                debug_lines.append(f"   group.master: {self.player.group.master.host}")
+                debug_lines.append(f"   group.slaves: {[s.host for s in self.player.group.slaves]}")
+            else:
+                debug_lines.append("   group: None")
 
             for line in debug_lines:
                 print(line)

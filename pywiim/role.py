@@ -6,12 +6,9 @@ firmware-aware and handles both legacy Audio Pro devices and modern WiiM devices
 
 Role Detection Rules:
 - **Master**: Device has at least one slave attached (slave_count > 0)
-- **Slave**: Part of a group (group_field != "0") and knows master
+- **Slave**: Part of a group (group_field != "0") and knows master (master_uuid/master_ip)
 - **Solo**: Not in a group (group_field == "0") and no slaves
-- **Follower (mode=99)**: Special case for WiiM devices - treated as slave while playing
 
-The detection logic is based on the proven approach from the Home Assistant
-integration, but abstracted to be framework-agnostic.
 """
 
 from __future__ import annotations
@@ -233,8 +230,8 @@ def _detect_role_enhanced_firmware(
 ) -> RoleDetectionResult:
     """Enhanced role detection for WiiM devices.
 
-    This detection handles modern WiiM devices with enhanced multiroom features,
-    including special handling for mode=99 (follower mode).
+    This detection handles modern WiiM devices with enhanced multiroom features.
+    Uses group field as authoritative source (mode=99 can get stuck after leaving group).
 
     Args:
         status: Player status
@@ -300,6 +297,8 @@ def _detect_role_enhanced_firmware(
 
     # SLAVE – part of a group (group_field != "0") and knows master (pointing to another device)
     # Check slave FIRST (before master) to match design guide logic
+    # Design guide: Slave = group == "1" and has master_uuid
+    # Note: We use group_field != "0" to handle any non-zero group value
     if group_field != "0":
         if master_uuid or master_ip:
             # Check if master info points to this device (then it's the master, not a slave)
@@ -323,20 +322,6 @@ def _detect_role_enhanced_firmware(
                 )
             # else: master info points to self, continue to check if we have slaves
         # else: no master info, continue to check if we have slaves (might be master)
-
-    # FOLLOWER (mode=99) – treat as SLAVE while playing
-    if status.mode == "99":
-        play_state = (status.play_state or "").lower()
-        if play_state == "play":
-            if device_host:
-                _LOGGER.debug(
-                    "ROLE DETECTION: %s (%s) acting as FOLLOWER (mode=99) – SLAVE",
-                    device_host,
-                    device_name,
-                )
-            return RoleDetectionResult(role="slave", slave_count=0)
-        else:
-            return RoleDetectionResult(role="solo")
 
     # MASTER – device has at least one slave attached
     # Check master AFTER slave (only if not a slave)

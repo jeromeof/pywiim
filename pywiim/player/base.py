@@ -62,6 +62,7 @@ class PlayerBase:
 
         # Cached audio output status (updated via refresh())
         self._audio_output_status: dict[str, Any] | None = None
+        self._last_audio_output_check: float = 0  # Track when audio output status was last fetched
 
         # Cached EQ presets (updated via refresh())
         self._eq_presets: list[str] | None = None

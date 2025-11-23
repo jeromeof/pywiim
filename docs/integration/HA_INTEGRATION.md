@@ -1503,8 +1503,9 @@ The `available_outputs` property provides a unified list of all available output
 # Access as a property on player (not a method)
 outputs = player.available_outputs  # Returns list[str]
 
-# Example output:
-# ["Line Out", "Optical Out", "Coax Out", "Bluetooth Out", "BT: Sony Speaker", "BT: JBL Headphones"]
+# Example output (when BT devices are paired):
+# ["Line Out", "Optical Out", "Coax Out", "BT: Sony Speaker", "BT: JBL Headphones"]
+# Note: Generic "Bluetooth Out" is removed when specific BT devices are available
 ```
 
 **Important Notes:**
@@ -1582,15 +1583,14 @@ class WiiMOutputSelectEntity(SelectEntity):
         
         # Check if BT output is active and which device is connected
         if player.is_bluetooth_output_active:
+            # Find the specific connected BT device from history
+            # Note: We only show specific BT devices, not generic "Bluetooth Out"
             for device in player.bluetooth_output_devices:
                 if device["connected"]:
                     bt_option = f"BT: {device['name']}"
                     # Ensure this option exists in available_outputs
                     if bt_option in available:
                         return bt_option
-            # Fall back to generic "Bluetooth Out" if no specific device found
-            if "Bluetooth Out" in available:
-                return "Bluetooth Out"
         
         # Get current hardware output mode
         current_mode = player.audio_output_mode

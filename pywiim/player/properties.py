@@ -696,20 +696,57 @@ class PlayerProperties:
         # For Ultra: hardware=4 with source=0 = Headphone Out, source=1 = Bluetooth Out
         try:
             mode_int = int(hardware_mode) if isinstance(hardware_mode, str) else hardware_mode
+
+            # Bluetooth Out via source field (takes precedence over hardware mode)
+            if source == 1 or source == "1":
+                return "Bluetooth Out"
+
+            # Special handling for mode 4 on WiiM Ultra (headphone output is ONLY on Ultra)
             if mode_int == 4:
-                model = self.player._device_info.model if self.player._device_info else None
-                if model and "ultra" in model.lower():
+                # Check if device is Ultra - headphone output is only available on Ultra
+                # Use lenient check: "ultra" in model name (matches available_output_modes logic)
+                model = None
+                if self.player._device_info:
+                    model = self.player._device_info.model
+
+                # Check if it's an Ultra device (lenient check - just "ultra" in model name)
+                is_ultra = False
+                if model:
+                    model_lower = model.lower()
+                    is_ultra = "ultra" in model_lower
+
+                if is_ultra:
+                    # On Ultra: hardware=4 with source=0 = Headphone Out
                     if source == 0 or source == "0":
                         return "Headphone Out"
-                    elif source == 1 or source == "1":
-                        return "Bluetooth Out"
-            # Bluetooth Out via source field (non-Ultra or when source=1)
-            elif source == 1 or source == "1":
-                return "Bluetooth Out"
-        except (ValueError, TypeError):
-            return None
+                    # If source != 0, fall through to default "Bluetooth Out"
+                # If not Ultra, mode 4 is just Bluetooth Out (fall through to mapping)
 
-        return self.player.client.audio_output_mode_to_name(mode_int)
+            # Map hardware mode to friendly name
+            mode_name = self.player.client.audio_output_mode_to_name(mode_int)
+            if mode_name is not None:
+                return mode_name
+
+            # If mode is not in map, log warning and return None
+            model = self.player._device_info.model if self.player._device_info else None
+            _LOGGER.warning(
+                "Unknown audio output mode %s (hardware=%s, source=%s) for device %s (model=%s)",
+                mode_int,
+                hardware_mode,
+                source,
+                self.player.host,
+                model or "unknown",
+            )
+            return None
+        except (ValueError, TypeError) as e:
+            _LOGGER.warning(
+                "Failed to parse audio output mode (hardware=%s, source=%s) for device %s: %s",
+                hardware_mode,
+                source,
+                self.player.host,
+                e,
+            )
+            return None
 
     @property
     def audio_output_mode_int(self) -> int | None:
@@ -745,13 +782,18 @@ class PlayerProperties:
 
         model_lower = model.lower()
 
-        if "wiim amp" in model_lower:
+        # Check for specific models (order matters - check more specific first)
+        if "wiim amp" in model_lower or ("amp" in model_lower and "wiim" in model_lower):
             return ["Line Out"]
-        elif "wiim mini" in model_lower:
+        elif "wiim mini" in model_lower or ("mini" in model_lower and "wiim" in model_lower):
             return ["Line Out", "Optical Out"]
-        elif "wiim ultra" in model_lower:
+        elif "wiim ultra" in model_lower or "ultra" in model_lower:
+            # Ultra has headphone output - check for "ultra" in model name (more lenient)
             return ["Line Out", "Optical Out", "Coax Out", "Bluetooth Out", "Headphone Out", "HDMI Out"]
-        elif "wiim pro" in model_lower or "wiim" in model_lower:
+        elif "wiim pro" in model_lower or ("pro" in model_lower and "wiim" in model_lower):
+            return ["Line Out", "Optical Out", "Coax Out", "Bluetooth Out"]
+        elif "wiim" in model_lower:
+            # Generic WiiM device (fallback)
             return ["Line Out", "Optical Out", "Coax Out", "Bluetooth Out"]
         else:
             return ["Line Out", "Optical Out", "Coax Out", "Bluetooth Out"]
@@ -808,6 +850,9 @@ class PlayerProperties:
         This combines hardware output modes (Line Out, Optical, etc.) with
         already paired Bluetooth output devices for a unified selection list.
 
+        When specific Bluetooth devices are available from history, the generic
+        "Bluetooth Out" option is removed and only the specific devices are shown.
+
         Returns:
             List of output names. Bluetooth devices are prefixed with "BT: "
 
@@ -816,18 +861,28 @@ class PlayerProperties:
                 "Line Out",
                 "Optical Out",
                 "Coax Out",
-                "Bluetooth Out",
                 "BT: Sony SRS-XB43",
                 "BT: JBL Tune 750"
             ]
         """
         outputs = []
 
-        # Add hardware output modes
-        outputs.extend(self.available_output_modes)
+        # Get hardware output modes
+        hardware_modes = self.available_output_modes.copy()
+
+        # Get paired Bluetooth output devices
+        bt_devices = self.bluetooth_output_devices
+
+        # If we have specific BT devices, remove the generic "Bluetooth Out" option
+        if bt_devices:
+            # Remove "Bluetooth Out" from hardware modes if present
+            if "Bluetooth Out" in hardware_modes:
+                hardware_modes.remove("Bluetooth Out")
+
+        # Add hardware output modes (without generic BT if specific devices exist)
+        outputs.extend(hardware_modes)
 
         # Add paired Bluetooth output devices
-        bt_devices = self.bluetooth_output_devices
         for device in bt_devices:
             outputs.append(f"BT: {device['name']}")
 
