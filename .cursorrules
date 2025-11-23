@@ -57,3 +57,13 @@
 - **Check project structure** - Look at existing files to understand where things belong
 - **Don't create files in root** - Unless explicitly requested, files belong in appropriate subdirectories
 
+## Player vs Client Methods
+
+- **Player code MUST use player-level methods, not client methods directly**
+  - Player code (in `pywiim/player/`) should call `player.get_audio_output_status()`, not `player.client.get_audio_output_status()`
+  - Player-level methods automatically update the player's internal cache
+  - Client methods are low-level and do NOT update the cache
+  - **Exception**: The player method implementation itself (e.g., `player.audio.get_audio_output_status()`) may call client methods as part of its implementation
+  - **Exception**: Scripts, CLI tools, and test code may call client methods directly when appropriate
+  - **Why**: This ensures the player's cached state stays synchronized and properties work correctly
+

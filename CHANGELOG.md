@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.14] - 2025-11-23
+
+### Fixed
+- **Audio output status refresh after Bluetooth connection failure**
+  - When Bluetooth connection fails, audio output status is now refreshed to show current hardware output mode
+  - Prevents showing stale Bluetooth output state when device is unavailable
+  - Ensures UI reflects correct current output after failed BT connection attempts
+- **Player code now consistently uses player-level methods**
+  - Fixed `statemgr.py` and `diagnostics.py` to use `player.get_audio_output_status()` instead of calling client methods directly
+  - Player-level methods automatically update internal cache, ensuring properties work correctly
+  - Added rule to `.cursorrules` documenting this pattern
+
 ## [2.1.13] - 2025-11-23
 
 ### Changed

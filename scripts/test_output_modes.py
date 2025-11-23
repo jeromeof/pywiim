@@ -101,6 +101,24 @@ async def test_output_modes(host: str):
                 print(f"  ✓ Success - Current mode: {current_mode}")
             except Exception as e:
                 print(f"  ✗ Error: {e}")
+                # After error, check what the current state is
+                try:
+                    await player.refresh(full=True)
+                    status_after_error = await player.client.get_audio_output_status()
+                    cached_after_error = player._audio_output_status
+                    current_mode_after_error = player.audio_output_mode
+                    print(
+                        f"  After error - Status: hardware={status_after_error.get('hardware') if status_after_error else None}, source={status_after_error.get('source') if status_after_error else None}"
+                    )
+                    if cached_after_error:
+                        print(
+                            f"  After error - Cached: hardware={cached_after_error.get('hardware')}, source={cached_after_error.get('source')}"
+                        )
+                    else:
+                        print(f"  After error - Cached: None (cleared)")
+                    print(f"  After error - Current mode: {current_mode_after_error}")
+                except Exception as refresh_err:
+                    print(f"  Failed to refresh after error: {refresh_err}")
                 import traceback
 
                 traceback.print_exc()

@@ -154,7 +154,8 @@ class DiagnosticsCollector:
                 diagnostics["audio_output"] = self.player._audio_output_status
             else:
                 if self.player.client.capabilities.get("supports_audio_output", False):
-                    audio_output = await self.player.client.get_audio_output_status()
+                    # Use player-level method which automatically updates the cache
+                    audio_output = await self.player.get_audio_output_status()
                     diagnostics["audio_output"] = audio_output
                 else:
                     diagnostics["audio_output"] = None

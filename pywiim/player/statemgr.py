@@ -628,11 +628,15 @@ class StateManager:
             )
             if should_fetch_audio_output and audio_output_supported:
                 try:
-                    audio_output_status = await self.player.client.get_audio_output_status()
-                    self.player._audio_output_status = audio_output_status
+                    # Use player-level method which automatically updates the cache
+                    audio_output_status = await self.player.get_audio_output_status()
+                    if audio_output_status is None:
+                        # API call failed - clear cached state to avoid showing stale information
+                        self.player._audio_output_status = None
                     self.player._last_audio_output_check = now
                 except Exception as err:
                     _LOGGER.debug("Failed to fetch audio output status for %s: %s", self.player.host, err)
+                    # Clear cached state on exception to avoid showing stale information
                     self.player._audio_output_status = None
 
             # 3. EQ Info - Fetch full EQ state when preset changes
