@@ -61,6 +61,11 @@ class BluetoothControl:
                 # If refresh fails, clear cache to avoid showing stale state
                 self.player._audio_output_status = None
 
+            # Notify integrations that state changed (audio output status was refreshed)
+            # Even though BT connection failed, the output mode may have changed
+            if self.player._on_state_changed:
+                self.player._on_state_changed()
+
             # Provide clearer error message for connection failures
             # This often happens when the BT device is powered off, out of range, or unavailable
             error_msg = str(err)

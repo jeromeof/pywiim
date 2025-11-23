@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.15] - 2025-11-23
+
+### Fixed
+- **State change callback now triggered after Bluetooth connection failure**
+  - When Bluetooth connection fails, the state change callback is now triggered after refreshing audio output status
+  - Ensures integrations are notified to update when output mode changes after failed BT connection attempts
+  - Integrations will now receive state change events even when BT connection fails
+
 ## [2.1.14] - 2025-11-23
 
 ### Fixed
