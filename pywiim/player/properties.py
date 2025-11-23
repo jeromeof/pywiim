@@ -769,7 +769,12 @@ class PlayerProperties:
 
     @property
     def available_output_modes(self) -> list[str]:
-        """Available audio output modes for this device."""
+        """Available audio output modes for this device.
+
+        Note: This returns hardware output modes only. Bluetooth output is handled
+        separately via specific BT devices from history - "Bluetooth Out" is never
+        included as it's not a hardware mode the device provides.
+        """
         if not self.player.client.capabilities.get("supports_audio_output", False):
             return []
 
@@ -778,7 +783,7 @@ class PlayerProperties:
             model = self.player._device_info.model
 
         if not model:
-            return ["Line Out", "Optical Out", "Coax Out", "Bluetooth Out"]
+            return ["Line Out", "Optical Out", "Coax Out"]
 
         model_lower = model.lower()
 
@@ -789,14 +794,14 @@ class PlayerProperties:
             return ["Line Out", "Optical Out"]
         elif "wiim ultra" in model_lower or "ultra" in model_lower:
             # Ultra has headphone output - check for "ultra" in model name (more lenient)
-            return ["Line Out", "Optical Out", "Coax Out", "Bluetooth Out", "Headphone Out", "HDMI Out"]
+            return ["Line Out", "Optical Out", "Coax Out", "Headphone Out", "HDMI Out"]
         elif "wiim pro" in model_lower or ("pro" in model_lower and "wiim" in model_lower):
-            return ["Line Out", "Optical Out", "Coax Out", "Bluetooth Out"]
+            return ["Line Out", "Optical Out", "Coax Out"]
         elif "wiim" in model_lower:
             # Generic WiiM device (fallback)
-            return ["Line Out", "Optical Out", "Coax Out", "Bluetooth Out"]
+            return ["Line Out", "Optical Out", "Coax Out"]
         else:
-            return ["Line Out", "Optical Out", "Coax Out", "Bluetooth Out"]
+            return ["Line Out", "Optical Out", "Coax Out"]
 
     @property
     def is_bluetooth_output_active(self) -> bool:
@@ -850,8 +855,8 @@ class PlayerProperties:
         This combines hardware output modes (Line Out, Optical, etc.) with
         already paired Bluetooth output devices for a unified selection list.
 
-        When specific Bluetooth devices are available from history, the generic
-        "Bluetooth Out" option is removed and only the specific devices are shown.
+        The generic "Bluetooth Out" option is never shown - only specific
+        paired Bluetooth devices from history are included.
 
         Returns:
             List of output names. Bluetooth devices are prefixed with "BT: "
@@ -867,19 +872,13 @@ class PlayerProperties:
         """
         outputs = []
 
-        # Get hardware output modes
+        # Get hardware output modes (doesn't include "Bluetooth Out" - only specific BT devices shown)
         hardware_modes = self.available_output_modes.copy()
 
         # Get paired Bluetooth output devices
         bt_devices = self.bluetooth_output_devices
 
-        # If we have specific BT devices, remove the generic "Bluetooth Out" option
-        if bt_devices:
-            # Remove "Bluetooth Out" from hardware modes if present
-            if "Bluetooth Out" in hardware_modes:
-                hardware_modes.remove("Bluetooth Out")
-
-        # Add hardware output modes (without generic BT if specific devices exist)
+        # Add hardware output modes
         outputs.extend(hardware_modes)
 
         # Add paired Bluetooth output devices

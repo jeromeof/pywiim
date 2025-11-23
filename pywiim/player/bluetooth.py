@@ -32,12 +32,40 @@ class BluetoothControl:
 
         Args:
             mac_address: MAC address of the Bluetooth output device.
-        """
-        # Call API (raises on failure)
-        await self.player.client.connect_bluetooth_device(mac_address)
 
-        # Refresh to update audio output status cache
-        # Use full=True to ensure audio output status is fetched
+        Raises:
+            ValueError: If the Bluetooth device is unavailable (powered off, out of range, etc.)
+            WiiMRequestError: If the connection request fails for other reasons
+        """
+        from ..exceptions import WiiMRequestError
+
+        try:
+            # Call API (raises on failure)
+            await self.player.client.connect_bluetooth_device(mac_address)
+        except WiiMRequestError as err:
+            # Refresh BT history to get latest device status
+            # The device may have been removed or connection status changed
+            try:
+                bluetooth_history = await self.player.client.get_bluetooth_history()
+                self.player._bluetooth_history = bluetooth_history if bluetooth_history else []
+            except Exception:
+                # If refresh fails, continue with error handling
+                pass
+
+            # Provide clearer error message for connection failures
+            # This often happens when the BT device is powered off, out of range, or unavailable
+            error_msg = str(err)
+            if "connectbta2dpsynk" in error_msg.lower():
+                raise ValueError(
+                    f"Bluetooth device {mac_address} is unavailable. "
+                    "The device may be powered off, out of range, or not responding. "
+                    "Please ensure the device is on and in range, then try again."
+                ) from err
+            # Re-raise other request errors as-is
+            raise
+
+        # Refresh to update audio output status cache and BT history
+        # Use full=True to ensure audio output status and BT history are fetched
         await self.player.refresh(full=True)
 
         # Call callback to notify state change (bluetooth output changed)

@@ -1844,7 +1844,8 @@ class TestPlayerMediaMetadata:
         assert "Line Out" in modes
         assert "Optical Out" in modes
         assert "Coax Out" in modes
-        assert "Bluetooth Out" in modes
+        # "Bluetooth Out" is not in available_output_modes - only specific BT devices shown
+        assert "Bluetooth Out" not in modes
 
     @pytest.mark.asyncio
     async def test_available_output_modes_wiim_mini(self, mock_client):
@@ -2107,6 +2108,8 @@ class TestPlayerMediaMetadata:
         assert "HDMI Out" in modes
         assert "Headphone Out" in modes
         assert "Line Out" in modes
+        # "Bluetooth Out" is not in available_output_modes - only specific BT devices shown
+        assert "Bluetooth Out" not in modes
 
     @pytest.mark.asyncio
     async def test_available_output_modes_unknown_model(self, mock_client):
@@ -2888,7 +2891,6 @@ class TestPlayerBluetoothOutputs:
         assert "Line Out" in outputs
         assert "Optical Out" in outputs
         assert "Coax Out" in outputs
-        assert "Bluetooth Out" in outputs
         assert len([o for o in outputs if o.startswith("BT: ")]) == 0
 
     @pytest.mark.asyncio
@@ -2911,10 +2913,55 @@ class TestPlayerBluetoothOutputs:
         assert "Line Out" in outputs
         assert "Optical Out" in outputs
         assert "Coax Out" in outputs
-        # When specific BT devices are available, generic "Bluetooth Out" is removed
-        assert "Bluetooth Out" not in outputs
         assert "BT: Sony Speaker" in outputs
         assert "BT: JBL Headphones" in outputs
+
+    @pytest.mark.asyncio
+    async def test_available_outputs_wiim_ultra(self, mock_client):
+        """Test available_outputs for WiiM Ultra with all outputs including HDMI and Headphone."""
+        from pywiim.models import DeviceInfo
+        from pywiim.player import Player
+
+        type(mock_client).capabilities = PropertyMock(return_value={"supports_audio_output": True})
+        player = Player(mock_client)
+        player._device_info = DeviceInfo(
+            uuid="test", name="Test", model="WiiM Ultra", firmware="1.0", ip="192.168.1.100", mac="AA:BB:CC:DD:EE:FF"
+        )
+        player._bluetooth_history = []
+
+        outputs = player.available_outputs
+        # Ultra has all standard outputs plus HDMI and Headphone
+        assert "Line Out" in outputs
+        assert "Optical Out" in outputs
+        assert "Coax Out" in outputs
+        assert "Headphone Out" in outputs
+        assert "HDMI Out" in outputs
+        assert len([o for o in outputs if o.startswith("BT: ")]) == 0
+
+    @pytest.mark.asyncio
+    async def test_available_outputs_wiim_ultra_with_bt(self, mock_client):
+        """Test available_outputs for WiiM Ultra with BT devices (removes generic BT Out)."""
+        from pywiim.models import DeviceInfo
+        from pywiim.player import Player
+
+        type(mock_client).capabilities = PropertyMock(return_value={"supports_audio_output": True})
+        player = Player(mock_client)
+        player._device_info = DeviceInfo(
+            uuid="test", name="Test", model="WiiM Ultra", firmware="1.0", ip="192.168.1.100", mac="AA:BB:CC:DD:EE:FF"
+        )
+        player._bluetooth_history = [
+            {"name": "BT Speaker", "ad": "AA:BB:CC:DD:EE:FF", "ct": 0, "role": "Audio Sink"},
+        ]
+
+        outputs = player.available_outputs
+        # Ultra-specific outputs
+        assert "Headphone Out" in outputs
+        assert "HDMI Out" in outputs
+        # Standard outputs
+        assert "Line Out" in outputs
+        assert "Optical Out" in outputs
+        assert "Coax Out" in outputs
+        assert "BT: BT Speaker" in outputs
 
     @pytest.mark.asyncio
     async def test_select_output_hardware_mode(self, mock_client):

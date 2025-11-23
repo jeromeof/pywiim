@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.13] - 2025-11-23
+
+### Changed
+- **Completely removed generic "Bluetooth Out" from available_output_modes**
+  - Generic "Bluetooth Out" is no longer included in `available_output_modes` property
+  - Only specific paired Bluetooth output devices from history are shown in `available_outputs`
+  - Simplified logic: no need to conditionally remove "Bluetooth Out" since it never exists
+  - Updated diagnostics tool to match Player logic
+
+## [2.1.12] - 2025-11-23
+
+### Changed
+- **Improved audio output selection behavior**
+  - `available_outputs` now removes generic "Bluetooth Out" option when specific BT devices are available from history
+  - Only shows specific paired Bluetooth output devices (Audio Sinks) instead of generic option
+  - Provides cleaner UI for output selection in Home Assistant and other integrations
+  - Output selection methods now use full refresh to ensure cache is updated immediately
+  - Bluetooth connection failures now refresh BT history to update available devices list
+  - Improved error messages for unavailable Bluetooth devices (powered off, out of range, etc.)
+
 ## [2.1.11] - 2025-11-23
 
 ### Fixed
@@ -41,6 +61,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Only shows specific paired Bluetooth output devices (Audio Sinks) instead of generic option
   - Provides cleaner UI for output selection in Home Assistant and other integrations
   - Output selection methods now use full refresh to ensure cache is updated immediately
+  - Bluetooth connection failures now refresh BT history to update available devices list
+  - Improved error messages for unavailable Bluetooth devices (powered off, out of range, etc.)
 
 ### Fixed
 - **Clear multiroom source when device is not a slave**
