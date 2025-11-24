@@ -9,7 +9,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pywiim.discovery import DiscoveredDevice, discover_devices, discover_via_ssdp, validate_device
+from pywiim.discovery import (
+    DiscoveredDevice,
+    discover_devices,
+    discover_via_ssdp,
+    is_likely_non_linkplay,
+    validate_device,
+)
 from pywiim.exceptions import WiiMError
 from pywiim.models import DeviceInfo
 
@@ -288,3 +294,113 @@ class TestDiscoverDevices:
                 devices = await discover_devices()
 
                 assert len(devices) == 1
+
+    @pytest.mark.asyncio
+    async def test_discover_devices_filter_sonos(self):
+        """Test filtering out Sonos devices before validation."""
+        sonos_device = DiscoveredDevice(
+            ip="192.168.1.100",
+            name="Sonos Device",
+            discovery_method="ssdp",
+            ssdp_response={
+                "SERVER": "Linux UPnP/1.0 Sonos/70.1-82030",
+                "st": "urn:schemas-upnp-org:device:ZonePlayer:1",
+            },
+        )
+        wiim_device = DiscoveredDevice(
+            ip="192.168.1.101",
+            name="WiiM Device",
+            discovery_method="ssdp",
+            ssdp_response={"SERVER": "Linux/5.15.0", "st": "upnp:rootdevice"},
+            validated=True,
+        )
+
+        async def mock_validate(device):
+            device.validated = True
+            return device
+
+        with patch("pywiim.discovery.discover_via_ssdp", return_value=[sonos_device, wiim_device]):
+            with patch("pywiim.discovery.validate_device", side_effect=mock_validate):
+                devices = await discover_devices(methods=["ssdp"], validate=True)
+
+                # Should only include WiiM device, Sonos should be filtered
+                assert len(devices) == 1
+                assert devices[0].ip == "192.168.1.101"
+
+
+class TestIsLikelyNonLinkplay:
+    """Test is_likely_non_linkplay filtering function."""
+
+    def test_sonos_server_header(self):
+        """Test Sonos device identified by SERVER header."""
+        ssdp_response = {"SERVER": "Linux UPnP/1.0 Sonos/70.1-82030"}
+        assert is_likely_non_linkplay(ssdp_response) is True
+
+    def test_sonos_st_header(self):
+        """Test Sonos device identified by ST header."""
+        ssdp_response = {"st": "urn:schemas-upnp-org:device:ZonePlayer:1"}
+        assert is_likely_non_linkplay(ssdp_response) is True
+
+    def test_chromecast_server_header(self):
+        """Test Chromecast device identified by SERVER header."""
+        ssdp_response = {"SERVER": "Linux/4.19.260, UPnP/1.0, Chromecast/1.6.18"}
+        assert is_likely_non_linkplay(ssdp_response) is True
+
+    def test_chromecast_dial_st_header(self):
+        """Test Chromecast device identified by DIAL ST header."""
+        ssdp_response = {"st": "urn:dial-multiscreen-org:device:dial:1"}
+        assert is_likely_non_linkplay(ssdp_response) is True
+
+    def test_roku_st_header(self):
+        """Test Roku device identified by ST header."""
+        ssdp_response = {"st": "urn:roku-com:device:player:1-0"}
+        assert is_likely_non_linkplay(ssdp_response) is True
+
+    def test_denon_heos_server_header(self):
+        """Test Denon Heos device identified by SERVER header."""
+        ssdp_response = {"SERVER": "LINUX UPnP/1.0 Denon-Heos/1.2.3"}
+        assert is_likely_non_linkplay(ssdp_response) is True
+
+    def test_sony_server_header(self):
+        """Test Sony device identified by SERVER header."""
+        ssdp_response = {"SERVER": "FedoraCore/2 UPnP/1.0 MINT-X/1.8.1"}
+        assert is_likely_non_linkplay(ssdp_response) is True
+
+    def test_kodi_server_header(self):
+        """Test Kodi device identified by SERVER header."""
+        ssdp_response = {"SERVER": "KnOS/3.2 UPnP/1.0 DMP/3.5"}
+        assert is_likely_non_linkplay(ssdp_response) is True
+
+    def test_generic_linux_not_filtered(self):
+        """Test generic Linux device is not filtered (might be LinkPlay)."""
+        ssdp_response = {"SERVER": "Linux/5.15.0 UPnP/1.0"}
+        assert is_likely_non_linkplay(ssdp_response) is False
+
+    def test_wiim_device_not_filtered(self):
+        """Test WiiM device is not filtered."""
+        ssdp_response = {"SERVER": "Linux UPnP/1.0 WiiM/4.8.5", "st": "upnp:rootdevice"}
+        assert is_likely_non_linkplay(ssdp_response) is False
+
+    def test_audio_pro_device_not_filtered(self):
+        """Test Audio Pro device is not filtered (uses generic Linux header)."""
+        ssdp_response = {"SERVER": "Linux", "st": "upnp:rootdevice"}
+        assert is_likely_non_linkplay(ssdp_response) is False
+
+    def test_empty_headers_not_filtered(self):
+        """Test device with no SERVER or ST headers is not filtered."""
+        ssdp_response = {}
+        assert is_likely_non_linkplay(ssdp_response) is False
+
+    def test_case_insensitive_matching(self):
+        """Test pattern matching is case insensitive."""
+        ssdp_response = {"SERVER": "linux upnp/1.0 sonos/70.1"}
+        assert is_likely_non_linkplay(ssdp_response) is True
+
+    def test_st_and_server_both_checked(self):
+        """Test both ST and SERVER headers are checked."""
+        # Sonos in SERVER
+        assert is_likely_non_linkplay({"SERVER": "Sonos/70.1"}) is True
+        # Sonos in ST
+        assert is_likely_non_linkplay({"st": "urn:schemas-upnp-org:device:ZonePlayer:1"}) is True
+        # Neither
+        assert is_likely_non_linkplay({"SERVER": "Linux", "st": "upnp:rootdevice"}) is False

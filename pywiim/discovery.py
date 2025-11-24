@@ -38,8 +38,21 @@ NON_LINKPLAY_SERVER_PATTERNS = [
     "Denon-Heos",  # Denon Heos - definitely not LinkPlay
     "MINT-X",  # Sony devices - definitely not LinkPlay
     "KnOS",  # Kodi/OSMC - definitely not LinkPlay
+    "Sonos",  # Sonos devices - definitely not LinkPlay
     # Add more ONLY if we're 100% certain they're not LinkPlay-compatible
     # DO NOT add generic patterns like "Linux" - Audio Pro uses this!
+]
+
+# Known non-LinkPlay ST (service type) patterns (ONLY devices we're CERTAIN are not LinkPlay)
+# These are UPnP device/service types that are definitely not LinkPlay-compatible
+# ⚠️ CONSERVATIVE: Only filter devices we're 100% certain are not LinkPlay.
+NON_LINKPLAY_ST_PATTERNS = [
+    "urn:schemas-upnp-org:device:ZonePlayer",  # Sonos ZonePlayer - definitely not LinkPlay
+    "urn:schemas-upnp-org:service:ZoneGroupTopology",  # Sonos service - definitely not LinkPlay
+    "urn:schemas-upnp-org:service:GroupRenderingControl",  # Sonos service - definitely not LinkPlay
+    "urn:roku-com:device",  # Roku devices - definitely not LinkPlay
+    "urn:dial-multiscreen-org:device:dial",  # DIAL protocol (Chromecast, etc.) - definitely not LinkPlay
+    # Add more ONLY if we're 100% certain they're not LinkPlay-compatible
 ]
 
 
@@ -332,10 +345,14 @@ async def discover_devices(
 
             # Apply quick filter if SSDP response is available
             if device.ssdp_response and is_likely_non_linkplay(device.ssdp_response):
+                # Log which pattern matched for debugging
+                st = device.ssdp_response.get("st", "") or device.ssdp_response.get("ST", "")
+                server = device.ssdp_response.get("SERVER", "") or device.ssdp_response.get("server", "")
                 _LOGGER.debug(
-                    "Skipping known non-LinkPlay device: %s (SERVER: %s)",
+                    "Skipping known non-LinkPlay device: %s (ST: %s, SERVER: %s)",
                     device.ip,
-                    device.ssdp_response.get("SERVER", device.ssdp_response.get("server", "unknown")),
+                    st or "none",
+                    server or "none",
                 )
                 continue
 
@@ -425,15 +442,30 @@ def is_likely_non_linkplay(ssdp_response: dict[str, Any]) -> bool:
     Audio Pro, Arylic, and other LinkPlay devices use generic "Linux" headers
     and will pass through this filter (which is correct - they need validation).
 
+    Checks both SERVER header patterns and ST (service type) patterns for more
+    reliable filtering. For example, Sonos devices can be identified by both
+    their SERVER header containing "Sonos" and their ST header containing
+    "urn:schemas-upnp-org:device:ZonePlayer".
+
     Args:
         ssdp_response: SSDP response dictionary containing headers
 
     Returns:
         True if device is CERTAINLY not a LinkPlay device, False otherwise
     """
-    server = ssdp_response.get("SERVER", "") or ssdp_response.get("server", "")
-    if not server:
-        return False  # No SERVER header - can't filter, must validate
+    # Check ST (service type) header first - more reliable for some devices
+    st = ssdp_response.get("st", "") or ssdp_response.get("ST", "")
+    if st:
+        st_lower = st.lower()
+        if any(pattern.lower() in st_lower for pattern in NON_LINKPLAY_ST_PATTERNS):
+            return True
 
-    server_upper = server.upper()
-    return any(pattern.upper() in server_upper for pattern in NON_LINKPLAY_SERVER_PATTERNS)
+    # Check SERVER header
+    server = ssdp_response.get("SERVER", "") or ssdp_response.get("server", "")
+    if server:
+        server_upper = server.upper()
+        if any(pattern.upper() in server_upper for pattern in NON_LINKPLAY_SERVER_PATTERNS):
+            return True
+
+    # No matching patterns - can't filter, must validate
+    return False

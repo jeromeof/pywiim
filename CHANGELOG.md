@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.16] - 2025-11-24
+
+### Fixed
+- **SSDP discovery now filters out Sonos and other non-LinkPlay devices (GitHub discussion #120)**
+  - Added Sonos to SERVER pattern filter to prevent Sonos devices from being auto-discovered by WiiM integration
+  - Enhanced filtering to check both ST (service type) and SERVER headers for more reliable device identification
+  - Added ST patterns for Sonos (ZonePlayer, ZoneGroupTopology), Roku, and DIAL protocol devices
+  - Filtering remains conservative - only excludes devices with specific vendor identifiers
+  - Improves discovery performance by skipping validation of known non-LinkPlay devices
+  - Logs filtered devices with both ST and SERVER values for debugging
+
 ## [2.1.15] - 2025-11-23
 
 ### Fixed
