@@ -63,6 +63,45 @@ python scripts/interactive-playback-test.py 192.168.1.100
 
 **Note**: Press Ctrl+C or enter 'q' to quit.
 
+### `test-shuffle-repeat-by-source.py`
+
+**NEW** - Comprehensive source-by-source shuffle/repeat testing tool to finally nail down this thorny issue!
+
+**Usage**:
+```bash
+python scripts/test-shuffle-repeat-by-source.py 192.168.1.100
+```
+
+**Features**:
+- Interactive testing across different sources and content types
+- Tests shuffle and repeat controls systematically
+- Compares library predictions vs actual behavior
+- Records detailed results including loop_mode values
+- Identifies prediction mismatches (where library is wrong)
+- Saves comprehensive JSON results for analysis
+- Helps understand content-type-specific behavior (e.g., Spotify album vs radio)
+
+**Why This Matters**:
+Shuffle and repeat support has been problematic (see CHANGELOG issues #111, v2.1.2, v2.1.1, v1.0.71). 
+Content type matters! Spotify albums may support controls while Spotify radio may not. This script 
+helps systematically test and document what actually works.
+
+**Workflow**:
+1. Start the script
+2. Use WiiM app to play content from a source
+3. Return to script and press `[t]` to test current source
+4. Describe what's playing: "Spotify Album - Rumors by Fleetwood Mac"
+5. Script tests shuffle/repeat and records results
+6. Repeat for different sources and content types
+7. Press `[q]` to save results and see summary
+
+**Results**: Saved to `tests/shuffle-repeat-results/` with detailed JSON data.
+
+**Documentation**:
+- Testing guide: `docs/testing/SHUFFLE_REPEAT_TESTING_GUIDE.md`
+- Design doc: `docs/design/SHUFFLE_REPEAT_SUPPORT.md`
+- Results README: `tests/shuffle-repeat-results/README.md`
+
 ### `release.sh`
 
 Automated release script that runs linting, formatting, version bumping, and git push in one command.

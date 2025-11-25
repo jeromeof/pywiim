@@ -1538,20 +1538,19 @@ class TestPlayerMediaMetadata:
 
         player = Player(mock_client)
         # Radio streams don't support repeat
-        status = PlayerStatus(source="tunein", play_state="play", loop_mode=2)  # loop_mode=2 is repeat_all
+        status = PlayerStatus(
+            source="tunein", play_state="play", loop_mode=2
+        )  # loop_mode=2 is shuffle+repeat_all for WiiM
         player._status_model = status
 
         # Should return None because TuneIn is a radio stream (blacklisted)
         assert player.repeat_mode is None
 
-        # AirPlay should now work (re-enabled after loop_mode fix)
+        # AirPlay is blacklisted - tested and confirmed iOS controls playback, not device
         status = PlayerStatus(source="airplay", play_state="play", loop_mode=2)
         player._status_model = status
-        # With vendor-specific loop_mode parsing, AirPlay may work
-        # For WiiM: loop_mode=2 is shuffle+repeat_all
-        # But need vendor info to parse correctly - without it, uses default WiiM mapping
-        # This test needs to be updated based on actual behavior
-        assert player.repeat_mode is not None  # Should work now
+        # Should return None because AirPlay is blacklisted (iOS device controls playback)
+        assert player.repeat_mode is None
 
         # Bluetooth should also work (permissive approach)
         status = PlayerStatus(source="bluetooth", play_state="play", loop_mode=2)
@@ -1564,7 +1563,8 @@ class TestPlayerMediaMetadata:
         from pywiim.player import Player
 
         player = Player(mock_client)
-        status = PlayerStatus(source="usb", play_state="play", loop_mode=4)  # loop_mode=4 is shuffle
+        # For WiiM: loop_mode=3 is shuffle (no repeat), loop_mode=4 is normal (no shuffle, no repeat)
+        status = PlayerStatus(source="usb", play_state="play", loop_mode=3)
         player._status_model = status
 
         # Should decode loop_mode normally for USB source
@@ -1576,7 +1576,8 @@ class TestPlayerMediaMetadata:
         from pywiim.player import Player
 
         player = Player(mock_client)
-        status = PlayerStatus(source="usb", play_state="play", loop_mode=2)  # loop_mode=2 is repeat_all
+        # For WiiM: loop_mode=0 is repeat_all, loop_mode=2 is shuffle+repeat_all
+        status = PlayerStatus(source="usb", play_state="play", loop_mode=0)
         player._status_model = status
 
         # Should decode loop_mode normally for USB source

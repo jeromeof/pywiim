@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.17] - 2025-11-25
+
+### Fixed
+- **CRITICAL: Fixed three shuffle/repeat bugs that have plagued the library since inception**
+  - **Bug 1 - Wrong API endpoint**: Changed from `setLoopMode:` (non-existent) to `setPlayerCmd:loopmode:` (correct)
+    - Root cause: Library was calling an API endpoint that doesn't exist - device returned "unknown command" silently
+    - **Impact**: Shuffle and repeat commands were completely non-functional across ALL sources
+    - Discovered via systematic curl testing comparing working WiiM app commands vs library commands
+  - **Bug 2 - Wrong parsing logic**: Fixed shuffle/repeat state reading to use vendor-specific loop_mode mappings instead of legacy bitfield logic
+    - Root cause: Reading state used bitfield logic (`loop_mode & 4` for shuffle) while writing used vendor mappings
+    - **Impact**: Shuffle showed as repeat, repeat showed as shuffle (values were swapped)
+    - WiiM loop_mode=3 interpreted as: shuffle=False, repeat=True (WRONG) instead of shuffle=True, repeat=False (CORRECT)
+  - **Bug 3 - Invalid validation**: Removed hardcoded loop_mode validation that rejected valid values
+    - Root cause: Validation hardcoded `(0,1,2,4,5,6)` from legacy bitfield mapping, rejecting loop_mode=3
+    - **Impact**: Library rejected loop_mode=3 (shuffle, no repeat) as "invalid" even though it's valid for WiiM devices
+    - Changed to accept all reasonable loop_mode values (0-10) since mappings are vendor-specific
+  - **Testing**: Shuffle and repeat now work correctly on Spotify albums, playlists, and all other controllable sources
+- **EQ preset normalization for integration calls**
+  - Fixed EQ preset setting failing when integrations pass preset names with spaces, hyphens, or underscores
+  - Now normalizes "bass reducer", "base reducer", "bass_reducer", "bass-reducer", "Bass Reducer" to "bassreducer" (the internal key)
+  - Handles common typos like "base" -> "bass" automatically
+  - Supports both internal keys (e.g., "bassreducer") and display names (e.g., "Bass Reducer") as input
+  - Integrations can now use any format and it will be normalized correctly before sending to device
+
+### Added
+- **Spotify content-type detection for shuffle/repeat support**
+  - Detects content type using Spotify URI in `vendor` field from device status
+  - `spotify:album:*` and `spotify:playlist:*` → shuffle_supported = True (music content)
+  - `spotify:show:*` and `spotify:episode:*` → shuffle_supported = False (episodic content like podcasts/audiobooks)
+  - Matches WiiM app behavior: hides shuffle/repeat controls for podcasts and audiobooks
+  - **Why**: Shuffling podcast episodes or audiobook chapters doesn't make sense
+  - **Impact**: Home Assistant will correctly show/hide shuffle controls based on Spotify content type
+- Added `loop_mode=5` handling to prevent "unknown loop_mode" warnings
+  - Some sources (like Spotify Connect) may use loop_mode=5 for external control state
+  - Now treated as valid and interpreted as normal/off state
+- **AirPlay blacklisted after testing confirmed iOS device controls playback**
+  - Tested: Device accepts loop_mode commands but they don't affect iOS-controlled queue
+  - Both WiiM app and Apple Music app hide shuffle/repeat controls for AirPlay
+  - Device is passive audio sink; iOS/macOS device owns the playback queue
+  - No vendor field metadata to distinguish content types (always empty)
+  - Matches behavior documented in CHANGELOG v1.0.71 technical background
+
 ## [2.1.16] - 2025-11-24
 
 ### Fixed

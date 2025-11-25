@@ -33,6 +33,66 @@ class TestEQAPIPresets:
             await mock_client.set_eq_preset("invalid_preset")
 
     @pytest.mark.asyncio
+    async def test_set_eq_preset_normalization_spaces(self, mock_client):
+        """Test setting EQ preset with spaces (e.g., 'bass reducer')."""
+        mock_client._request = AsyncMock(return_value={"raw": "OK"})
+
+        await mock_client.set_eq_preset("bass reducer")
+
+        mock_client._request.assert_called_once()
+        call_args = mock_client._request.call_args[0]
+        assert "/httpapi.asp?command=EQLoad:" in call_args[0]
+        assert "Bass Reducer" in call_args[0]
+
+    @pytest.mark.asyncio
+    async def test_set_eq_preset_normalization_typo(self, mock_client):
+        """Test setting EQ preset with typo (e.g., 'base reducer' -> 'bass reducer')."""
+        mock_client._request = AsyncMock(return_value={"raw": "OK"})
+
+        await mock_client.set_eq_preset("base reducer")
+
+        mock_client._request.assert_called_once()
+        call_args = mock_client._request.call_args[0]
+        assert "/httpapi.asp?command=EQLoad:" in call_args[0]
+        assert "Bass Reducer" in call_args[0]
+
+    @pytest.mark.asyncio
+    async def test_set_eq_preset_normalization_display_name(self, mock_client):
+        """Test setting EQ preset with display name (e.g., 'Bass Reducer')."""
+        mock_client._request = AsyncMock(return_value={"raw": "OK"})
+
+        await mock_client.set_eq_preset("Bass Reducer")
+
+        mock_client._request.assert_called_once()
+        call_args = mock_client._request.call_args[0]
+        assert "/httpapi.asp?command=EQLoad:" in call_args[0]
+        assert "Bass Reducer" in call_args[0]
+
+    @pytest.mark.asyncio
+    async def test_set_eq_preset_normalization_underscore(self, mock_client):
+        """Test setting EQ preset with underscore (e.g., 'bass_reducer')."""
+        mock_client._request = AsyncMock(return_value={"raw": "OK"})
+
+        await mock_client.set_eq_preset("bass_reducer")
+
+        mock_client._request.assert_called_once()
+        call_args = mock_client._request.call_args[0]
+        assert "/httpapi.asp?command=EQLoad:" in call_args[0]
+        assert "Bass Reducer" in call_args[0]
+
+    @pytest.mark.asyncio
+    async def test_set_eq_preset_normalization_hyphen(self, mock_client):
+        """Test setting EQ preset with hyphen (e.g., 'bass-reducer')."""
+        mock_client._request = AsyncMock(return_value={"raw": "OK"})
+
+        await mock_client.set_eq_preset("bass-reducer")
+
+        mock_client._request.assert_called_once()
+        call_args = mock_client._request.call_args[0]
+        assert "/httpapi.asp?command=EQLoad:" in call_args[0]
+        assert "Bass Reducer" in call_args[0]
+
+    @pytest.mark.asyncio
     async def test_get_eq_presets(self, mock_client):
         """Test getting EQ presets list."""
         mock_presets = ["flat", "rock", "pop", "jazz", "classical"]

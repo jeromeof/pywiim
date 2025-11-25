@@ -208,7 +208,7 @@ class TestPlaybackAPILoopMode:
         await mock_client.set_loop_mode(0)
 
         call_args = mock_client._request.call_args[0]
-        assert "setLoopMode:0" in call_args[0]
+        assert "setPlayerCmd:loopmode:0" in call_args[0]
 
     @pytest.mark.asyncio
     async def test_set_loop_mode_repeat_one(self, mock_client):
@@ -218,7 +218,7 @@ class TestPlaybackAPILoopMode:
         await mock_client.set_loop_mode(1)
 
         call_args = mock_client._request.call_args[0]
-        assert "setLoopMode:1" in call_args[0]
+        assert "setPlayerCmd:loopmode:1" in call_args[0]
 
     @pytest.mark.asyncio
     async def test_set_loop_mode_repeat_all(self, mock_client):
@@ -228,7 +228,7 @@ class TestPlaybackAPILoopMode:
         await mock_client.set_loop_mode(2)
 
         call_args = mock_client._request.call_args[0]
-        assert "setLoopMode:2" in call_args[0]
+        assert "setPlayerCmd:loopmode:2" in call_args[0]
 
     @pytest.mark.asyncio
     async def test_set_loop_mode_shuffle(self, mock_client):
@@ -238,16 +238,17 @@ class TestPlaybackAPILoopMode:
         await mock_client.set_loop_mode(4)
 
         call_args = mock_client._request.call_args[0]
-        assert "setLoopMode:4" in call_args[0]
+        assert "setPlayerCmd:loopmode:4" in call_args[0]
 
     @pytest.mark.asyncio
     async def test_set_loop_mode_invalid(self, mock_client):
         """Test setting invalid loop mode raises ValueError."""
+        # Only reject unreasonably large or negative values
         with pytest.raises(ValueError, match="Invalid loop mode"):
-            await mock_client.set_loop_mode(3)
+            await mock_client.set_loop_mode(11)
 
         with pytest.raises(ValueError, match="Invalid loop mode"):
-            await mock_client.set_loop_mode(7)
+            await mock_client.set_loop_mode(-1)
 
 
 class TestPlaybackAPISource:

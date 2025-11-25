@@ -245,6 +245,10 @@ class PlayerProperties:
         Uses a blacklist approach: most sources support device control, but some
         external sources don't (e.g., AirPlay, live radio streams).
 
+        For Spotify, performs content-type detection using the vendor field URI:
+        - spotify:album:* and spotify:playlist:* → controllable (music)
+        - spotify:show:* → not controllable (podcasts/audiobooks, episodic content)
+
         Returns:
             True if the WiiM device can control shuffle/repeat.
             False if an external device/app exclusively controls playback.
@@ -255,14 +259,26 @@ class PlayerProperties:
 
         source_lower = source.lower()
 
+        # Special handling for Spotify - check content type via vendor URI
+        if source_lower == "spotify":
+            vendor_uri = getattr(self.player._status_model, "vendor", None)
+            if vendor_uri and isinstance(vendor_uri, str):
+                # Podcasts and audiobooks (episodic content) - no shuffle/repeat
+                if vendor_uri.startswith("spotify:show:") or vendor_uri.startswith("spotify:episode:"):
+                    return False
+                # Albums and playlists (music) - shuffle/repeat supported
+                # Default to True for Spotify (permissive)
+            return True
+
         # Blacklist: Sources where device CANNOT control shuffle/repeat
         # These are sources where playback is controlled externally
         external_controlled = {
-            # Note: AirPlay was previously blacklisted, but with vendor-specific loop_mode
-            # mappings, it may work. Testing needed to confirm.
-            # "airplay",  # Re-enabled for testing after loop_mode fix
+            # AirPlay - iOS/macOS device controls playback (device is passive sink)
+            "airplay",  # Tested: Commands accepted but don't affect iOS-controlled queue
+            # Radio streams (live streams, no queue to shuffle)
             "tunein",  # Radio streams - no shuffle/repeat support
             "iheartradio",  # Radio streams - no shuffle/repeat support
+            # Multiroom
             "multiroom",  # Slave device in multiroom - can't control playback
         }
 
@@ -349,9 +365,14 @@ class PlayerProperties:
         loop_mode = getattr(self.player._status_model, "loop_mode", None)
         if loop_mode is not None:
             try:
+                from ..api.loop_mode import get_loop_mode_mapping
+
                 loop_val = int(loop_mode)
-                is_shuffle = bool(loop_val & 4)
-                return is_shuffle
+                # Use vendor-specific mapping to interpret loop_mode
+                vendor = self.player.client._capabilities.get("vendor")
+                mapping = get_loop_mode_mapping(vendor)
+                shuffle, _, _ = mapping.from_loop_mode(loop_val)
+                return shuffle
             except (TypeError, ValueError):
                 pass
 
@@ -388,24 +409,19 @@ class PlayerProperties:
         loop_mode = getattr(self.player._status_model, "loop_mode", None)
         if loop_mode is not None:
             try:
-                loop_val = int(loop_mode)
-                is_repeat_one = bool(loop_val & 1)
-                is_repeat_all = bool(loop_val & 2)
+                from ..api.loop_mode import get_loop_mode_mapping
 
-                # Validate: both bits should never be set simultaneously (invalid state)
-                if is_repeat_one and is_repeat_all:
-                    _LOGGER.warning(
-                        "Invalid loop_mode %d: both repeat_one and repeat_all bits set. " "Defaulting to 'one'",
-                        loop_val,
-                    )
-                    return "one"
+                loop_val = int(loop_mode)
+                # Use vendor-specific mapping to interpret loop_mode
+                vendor = self.player.client._capabilities.get("vendor")
+                mapping = get_loop_mode_mapping(vendor)
+                _, is_repeat_one, is_repeat_all = mapping.from_loop_mode(loop_val)
 
                 if is_repeat_one:
                     return "one"
                 elif is_repeat_all:
                     return "all"
                 else:
-                    # Neither bit set (normal mode) - explicitly return "off"
                     return "off"
             except (TypeError, ValueError):
                 pass

@@ -34,19 +34,85 @@ class EQAPI:
     # Preset handling
     # ------------------------------------------------------------------
 
-    async def set_eq_preset(self, preset: str) -> None:
-        """Apply a named EQ preset (e.g. "rock", "flat").
+    def _normalize_eq_preset_name(self, preset: str) -> str:
+        """Normalize EQ preset name to match EQ_PRESET_MAP keys.
+
+        Handles variations like:
+        - "base reducer" -> "bassreducer"
+        - "bass reducer" -> "bassreducer"
+        - "Bass Reducer" -> "bassreducer"
+        - "bass_reducer" -> "bassreducer"
+        - "bass-reducer" -> "bassreducer"
 
         Args:
-            preset: Preset name (must be a key in EQ_PRESET_MAP).
+            preset: Preset name (may contain spaces, hyphens, underscores, or typos).
+
+        Returns:
+            Normalized preset name matching a key in EQ_PRESET_MAP.
+
+        Raises:
+            ValueError: If preset name cannot be normalized to a valid preset.
+        """
+        # Try direct lookup first (fast path for already-normalized names)
+        if preset in EQ_PRESET_MAP:
+            return preset
+
+        # Create reverse lookup: display name -> key
+        # Also create normalized variations map
+        display_to_key: dict[str, str] = {}
+        normalized_variations: dict[str, str] = {}
+
+        for key, display_name in EQ_PRESET_MAP.items():
+            # Map display name to key
+            display_to_key[display_name.lower()] = key
+
+            # Create normalized variations (lowercase, no spaces/hyphens/underscores)
+            normalized = key.lower().replace(" ", "").replace("-", "").replace("_", "")
+            normalized_variations[normalized] = key
+
+            # Also normalize display name
+            display_normalized = display_name.lower().replace(" ", "").replace("-", "").replace("_", "")
+            normalized_variations[display_normalized] = key
+
+        # Try display name lookup (case-insensitive)
+        preset_lower = preset.lower().strip()
+        if preset_lower in display_to_key:
+            return display_to_key[preset_lower]
+
+        # Normalize input: lowercase, remove spaces/hyphens/underscores
+        normalized_input = preset_lower.replace(" ", "").replace("-", "").replace("_", "")
+
+        # Handle common typos
+        if normalized_input.startswith("base") and "reducer" in normalized_input:
+            normalized_input = normalized_input.replace("base", "bass", 1)
+
+        # Try normalized lookup
+        if normalized_input in normalized_variations:
+            return normalized_variations[normalized_input]
+
+        # Try direct normalized match against keys
+        for key in EQ_PRESET_MAP.keys():
+            if normalized_input == key.lower().replace(" ", "").replace("-", "").replace("_", ""):
+                return key
+
+        # If we get here, we couldn't normalize it
+        raise ValueError(f"Invalid EQ preset: {preset}. " f"Valid presets: {', '.join(sorted(EQ_PRESET_MAP.keys()))}")
+
+    async def set_eq_preset(self, preset: str) -> None:
+        """Apply a named EQ preset (e.g. "rock", "flat", "bass reducer").
+
+        Args:
+            preset: Preset name. Can be a key from EQ_PRESET_MAP (e.g., "bassreducer"),
+                   a display name (e.g., "Bass Reducer"), or a variation with spaces/hyphens
+                   (e.g., "bass reducer", "bass-reducer", "base reducer").
 
         Raises:
             ValueError: If preset name is invalid.
             WiiMError: If the request fails.
         """
-        if preset not in EQ_PRESET_MAP:
-            raise ValueError(f"Invalid EQ preset: {preset}")
-        api_value = EQ_PRESET_MAP[preset]  # convert key → label
+        # Normalize preset name to match EQ_PRESET_MAP key
+        normalized_preset = self._normalize_eq_preset_name(preset)
+        api_value = EQ_PRESET_MAP[normalized_preset]  # convert key → label
         await self._request(f"{API_ENDPOINT_EQ_PRESET}{api_value}")  # type: ignore[attr-defined]
 
     async def get_eq_presets(self) -> list[str]:

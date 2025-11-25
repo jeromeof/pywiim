@@ -152,19 +152,25 @@ class PlaybackAPI:
     # ------------------------------------------------------------------
 
     async def set_loop_mode(self, mode: int) -> None:
-        """Set loop mode using WiiM's loopmode command.
+        """Set loop mode using device's loopmode command.
 
-        Values: 0=normal, 1=repeat_one, 2=repeat_all, 4=shuffle, 5=shuffle+repeat_one, 6=shuffle+repeat_all
+        Loop mode values are vendor-specific:
+        - WiiM: 0=loop_all, 1=repeat_one, 2=shuffle_loop, 3=shuffle_no_loop, 4=normal
+        - Arylic: 0=repeat_all, 1=repeat_one, 2=shuffle_repeat_all, 3=shuffle, 4=normal, 5=shuffle_repeat_one
+
+        Use pywiim.api.loop_mode.get_loop_mode_mapping() for vendor-specific mappings.
 
         Args:
-            mode: Loop mode value (0, 1, 2, 4, 5, or 6).
+            mode: Loop mode value (vendor-specific, typically 0-6).
 
         Raises:
-            ValueError: If mode is invalid.
+            ValueError: If mode is negative or unreasonably large.
             WiiMError: If the request fails.
         """
-        if mode not in (0, 1, 2, 4, 5, 6):
-            raise ValueError(f"Invalid loop mode: {mode}. Valid values: 0,1,2,4,5,6")
+        # Accept all reasonable loop mode values (vendor-specific)
+        # WiiM uses 0-4, Arylic uses 0-5, legacy bitfield uses 0,1,2,4,5,6
+        if mode < 0 or mode > 10:
+            raise ValueError(f"Invalid loop mode: {mode}. Valid range: 0-10")
         await self._request(f"{API_ENDPOINT_LOOPMODE}{mode}")  # type: ignore[attr-defined]
 
     # ------------------------------------------------------------------

@@ -72,6 +72,11 @@ class LoopModeMapping(NamedTuple):
         if loop_mode == self.normal:
             return (False, False, False)
 
+        # Special case: loop_mode=5 is used by some sources (e.g., Spotify Connect)
+        # when they control playback externally. Treat as normal/unknown state.
+        if loop_mode == 5:
+            return (False, False, False)
+
         # Unknown value - log and return safe default
         import logging
 

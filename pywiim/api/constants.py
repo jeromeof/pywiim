@@ -324,7 +324,7 @@ API_ENDPOINT_PREV = "/httpapi.asp?command=setPlayerCmd:prev"
 API_ENDPOINT_VOLUME = "/httpapi.asp?command=setPlayerCmd:vol:"
 API_ENDPOINT_MUTE = "/httpapi.asp?command=setPlayerCmd:mute:"
 API_ENDPOINT_SEEK = "/httpapi.asp?command=setPlayerCmd:seek:"
-API_ENDPOINT_LOOPMODE = "/httpapi.asp?command=setLoopMode:"
+API_ENDPOINT_LOOPMODE = "/httpapi.asp?command=setPlayerCmd:loopmode:"
 API_ENDPOINT_SOURCE = "/httpapi.asp?command=switchmode:"
 
 # Device info endpoints
