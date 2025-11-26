@@ -228,10 +228,12 @@ class TestParsePlayerStatus:
 
     def test_parse_source_from_mode(self):
         """Test source mapping from mode field."""
-        # Mode 0 = idle (per MODE_MAP)
+        # Mode 0 maps to "idle" in MODE_MAP but should NOT be set as source
+        # "idle" is a play STATE, not a SOURCE (Issue #122)
         raw1 = {"mode": "0"}
         parsed1, _ = parse_player_status(raw1)
-        assert parsed1["source"] == "idle"
+        # source should not be set to "idle" - either None or not present
+        assert parsed1.get("source") != "idle"
 
         # Mode 1 = airplay
         raw2 = {"mode": "1"}
@@ -248,6 +250,22 @@ class TestParsePlayerStatus:
         parsed4, _ = parse_player_status(raw4)
         assert parsed4["source"] == "multiroom"
         assert parsed4.get("_multiroom_mode") is True
+
+    def test_parse_mode_0_preserves_existing_source(self):
+        """Test that mode=0 doesn't overwrite existing source (Issue #122 - Spotify idle bug)."""
+        # Simulate Spotify playing but device reports mode=0
+        # This was causing source="spotify" to be overwritten with source="idle"
+        raw = {
+            "mode": "0",  # Device incorrectly reports mode=0 when playing Spotify
+            "state": "play",  # But device IS playing
+            "vendor": "Spotify",  # Spotify app
+        }
+        parsed, _ = parse_player_status(raw, vendor="spotify")
+
+        # source should be set from vendor, NOT from mode=0
+        # Mode 0 maps to "idle" but that should be ignored (it's a play state, not a source)
+        assert parsed.get("source") == "spotify"  # From vendor field
+        assert parsed.get("play_status") == "play"  # Play state is separate (mapped to play_status)
 
     def test_parse_artwork_url(self):
         """Test artwork URL parsing and cache-busting."""

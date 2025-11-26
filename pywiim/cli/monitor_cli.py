@@ -636,7 +636,14 @@ class PlayerMonitor:
         if source != "none":
             source = " ".join(word.capitalize() for word in source.split())
 
-        print(f"{state_icon} {state_text}  |  Volume: {volume_str}{mute_str}  |  Source: {source}")
+        # Get mode from status model (for debugging mode=0 bug)
+        mode_str = ""
+        if self.player._status_model and hasattr(self.player._status_model, "mode"):
+            mode_value = self.player._status_model.mode
+            if mode_value is not None:
+                mode_str = f"  |  mode={mode_value}"
+
+        print(f"{state_icon} {state_text}  |  Volume: {volume_str}{mute_str}  |  Source: {source}{mode_str}")
         print()
 
         # ===== INPUT INFO =====

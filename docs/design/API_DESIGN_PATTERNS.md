@@ -610,18 +610,51 @@ curl -k https://DEVICE_IP/httpapi.asp?command=disconnectbta2dpsynk
 curl -k https://DEVICE_IP/httpapi.asp?command=connectbta2dpsynk:AA:BB:CC:DD:EE:FF
 ```
 
-### WiiM Ultra HDMI Output
+### WiiM Ultra / WiiM Amp Ultra HDMI Output
 
-- **HDMI eARC output**: Mode number still unknown (possibly 5 or 6+)
+- **HDMI eARC output**: **Mode 7** (confirmed on WiiM Amp Ultra)
   - Listed in `available_output_modes` as "HDMI Out"
-  - Mode number needs to be discovered via testing
+  - Supported on WiiM Amp Ultra and WiiM Ultra devices
+  - Full support in pywiim: `AUDIO_OUTPUT_MODE_HDMI_OUT = 7`
 
-### Mode 0 Mystery
+### Mode 0 Behavior (Defensive Fix for Legacy Devices)
 
-Mode 0 is accepted by WiiM devices but is not documented in the official API:
+Mode 0 has special handling in pywiim to prevent state bugs on legacy LinkPlay devices:
 
-- Works on tested WiiM Pro devices
-- May be legacy compatibility mode
+- Maps to "idle" in `MODE_MAP` but is **NOT** set as a source (Issues #122, #103)
+- **Why**: "idle" is a play STATE, not a SOURCE - conceptually wrong to use as source value
+- **Affected devices**:
+  - **Modern WiiM devices**: Correctly report proper mode values (e.g., mode=31 for Spotify) ✓
+  - **Legacy Audio Pro devices**: May report `mode=0` for DLNA/Spotify (Issue #103 confirmed)
+  - **WiiM Amp Ultra**: User reported issue but not verified on actual device (Issue #122)
+- **Solution**: Parser ignores `mode=0` when setting source, preserving valid source from `vendor` field
+- **Impact**: Defensive fix - prevents rare edge case where source could be set to "idle"
+
+**Testing Results**:
+- **WiiM Pro (firmware 4.8.731953)**: Reports `mode=31` for Spotify - no bug present ✓
+- **Audio Pro (older models)**: Suspected to report `mode=0` based on user reports (Issue #103)
+
+**Example from Issue #103** (Audio Pro device behavior):
+```json
+{"mode":"2", "status":"play", "vendor":"DLNA"}  // Expected: mode=2 → source="dlna"
+```
+
+But legacy Audio Pro devices may report:
+```json  
+{"mode":"0", "status":"play", "vendor":"DLNA"}  // Edge case: mode=0 ignored, vendor used instead
+```
+
+Parser now uses vendor field and ignores mode=0, keeping source="dlna" correct.
+
+### Related Spotify State Issues
+
+**Issue #83** - State desync when controlling from phone (WiiM Amp):
+- Shows "Playing" correctly, then immediately flips to "Paused"
+- Logs show: `is_playing=True` → `is_playing=False` within milliseconds
+- **Root cause**: Integration timing/synchronization issue (not pywiim library)
+- State updates arrive out of order when external control used
+- Likely related to debouncing logic in integration's state manager
+- **Not fixed by mode=0 parser change** - different issue requiring integration work
 - May be alternative line out configuration
 - Purpose and differences from mode 2 unclear
 

@@ -400,15 +400,17 @@ API_ENDPOINT_GET_SHUTDOWN = "/httpapi.asp?command=getShutdown"
 
 # Audio output mode constants
 # Based on official WiiM API documentation (Section 2.10 Audio Output Control):
-# hardware field values: 1=SPDIF, 2=AUX, 3=COAX, 4=varies by device
+# hardware field values: 1=SPDIF, 2=AUX, 3=COAX, 4=varies by device, 7=HDMI (WiiM Amp Ultra)
 # source field: 0=BT disabled, 1=BT active (Bluetooth output uses source field)
 # NOTE: Mode 0 exists in practice but not documented in official API
 # NOTE: WiiM Ultra mode 4: source=0 = Headphone Out, source=1 = Bluetooth Out (Issue #86)
+# NOTE: WiiM Amp Ultra mode 7: HDMI ARC output (Issue #122)
 AUDIO_OUTPUT_MODE_LINE_OUT = 0  # Undocumented but works on WiiM devices
 AUDIO_OUTPUT_MODE_SPDIF_OUT = 1  # AUDIO_OUTPUT_SPDIF_MODE (Optical/TOSLINK)
 AUDIO_OUTPUT_MODE_AUX_OUT = 2  # AUDIO_OUTPUT_AUX_MODE (Line Out/Auxiliary/RCA)
 AUDIO_OUTPUT_MODE_COAX_OUT = 3  # AUDIO_OUTPUT_COAX_MODE (Coaxial)
 AUDIO_OUTPUT_MODE_BLUETOOTH_OUT = 4  # Bluetooth Out (or Headphone Out on Ultra with source=0)
+AUDIO_OUTPUT_MODE_HDMI_OUT = 7  # HDMI ARC output (WiiM Amp Ultra)
 
 # Legacy aliases for backward compatibility
 AUDIO_OUTPUT_MODE_OPTICAL_OUT = AUDIO_OUTPUT_MODE_SPDIF_OUT
@@ -423,6 +425,7 @@ AUDIO_OUTPUT_MODE_MAP: dict[int, str] = {
     AUDIO_OUTPUT_MODE_AUX_OUT: "Line Out",  # Mode 2 - AUX (primary line out)
     AUDIO_OUTPUT_MODE_COAX_OUT: "Coax Out",  # Mode 3 - COAX
     AUDIO_OUTPUT_MODE_BLUETOOTH_OUT: "Bluetooth Out",  # Mode 4 - default mapping
+    AUDIO_OUTPUT_MODE_HDMI_OUT: "HDMI Out",  # Mode 7 - HDMI ARC (WiiM Amp Ultra)
 }
 
 # Reverse mapping (friendly name -> mode integer)
@@ -444,6 +447,9 @@ AUDIO_OUTPUT_MODE_NAME_TO_INT: dict[str, int] = {
     "headphones": AUDIO_OUTPUT_MODE_BLUETOOTH_OUT,
     "bluetooth out": AUDIO_OUTPUT_MODE_BLUETOOTH_OUT,  # Mode 4
     "bluetooth": AUDIO_OUTPUT_MODE_BLUETOOTH_OUT,
+    "hdmi out": AUDIO_OUTPUT_MODE_HDMI_OUT,  # Mode 7 (WiiM Amp Ultra)
+    "hdmi": AUDIO_OUTPUT_MODE_HDMI_OUT,
+    "hdmi arc": AUDIO_OUTPUT_MODE_HDMI_OUT,
 }
 
 # Alarm trigger types (WiiM devices only)
@@ -477,6 +483,7 @@ __all__ = [
     "AUDIO_OUTPUT_MODE_LINE_OUT_2",  # Legacy alias
     "AUDIO_OUTPUT_MODE_COAX_OUT",
     "AUDIO_OUTPUT_MODE_BLUETOOTH_OUT",
+    "AUDIO_OUTPUT_MODE_HDMI_OUT",
     "AUDIO_OUTPUT_MODE_MAP",
     "AUDIO_OUTPUT_MODE_NAME_TO_INT",
     "WIIM_CA_CERT",

@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.18] - 2025-11-26
+
+### Fixed
+- **Defensive fix: Prevent mode=0 from being mapped to source="idle" (Issues #122, #103)**
+  - **Root cause**: `mode=0` maps to "idle" in MODE_MAP, but "idle" is a play STATE, not a SOURCE
+  - Parser now ignores mode=0 when setting source field to prevent incorrect `source="idle"`
+  - **Why this matters**: Primarily affects legacy LinkPlay devices (e.g., Audio Pro)
+    - Modern WiiM devices (tested: WiiM Pro) correctly report mode=31 for Spotify ✓
+    - Legacy Audio Pro devices may report mode=0 for DLNA/Spotify (Issue #103 - v0.28 worked, later versions broke)
+    - WiiM Amp Ultra user reported similar issue (Issue #122) but unverified
+  - **Impact**: Defensive - prevents source from being set to "idle" if device reports mode=0
+  - This is a conceptually correct fix regardless: "idle" should never be a source value
+  - **Note**: Other Spotify state issues exist but are integration-specific:
+    - Issue #103: UPnP subscription failures on Audio Pro devices (integration bug)
+    - Issue #83: State desync when controlling from phone (integration timing bug)
+
+### Added
+- **Added HDMI audio output mode support for WiiM Amp Ultra (Issue #122)**
+  - Added `AUDIO_OUTPUT_MODE_HDMI_OUT = 7` constant
+  - Updated `AUDIO_OUTPUT_MODE_MAP` to recognize mode 7 as "HDMI Out"
+  - Added name mappings: "hdmi out", "hdmi", "hdmi arc" → mode 7
+  - **Impact**: Eliminates "Unknown audio output mode 7" warning on WiiM Amp Ultra devices
+  - HDMI ARC output now properly recognized and controllable
+
 ## [2.1.17] - 2025-11-25
 
 ### Fixed

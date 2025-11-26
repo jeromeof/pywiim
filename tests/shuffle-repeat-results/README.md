@@ -4,7 +4,7 @@ This directory contains test results from systematic shuffle/repeat testing acro
 
 ## Purpose
 
-To systematically test and document which sources and content types support shuffle/repeat controls, helping to finally resolve the long-standing shuffle/repeat issues documented in the CHANGELOG.
+To systematically test and document which sources and content types support shuffle/repeat controls, helping to refine the library's blacklist and ensure accurate predictions.
 
 ## Key Insight
 
@@ -14,18 +14,50 @@ To systematically test and document which sources and content types support shuf
 
 The same applies to other services - the source alone doesn't tell the full story.
 
-## Test Results Format
+## Testing Tools
 
-Each test run generates a JSON file with the following structure:
+### Quick Testing (Single Source)
+
+Use when you want to quickly test the current playing source:
+
+```bash
+source .venv/bin/activate
+python scripts/test-shuffle-repeat-once.py <device_ip> "<content_description>"
+```
+
+**Example:**
+```bash
+python scripts/test-shuffle-repeat-once.py 192.168.1.115 "Spotify Album - Rumors"
+```
+
+Tests shuffle and repeat on the current source, shows results, and restores initial state.
+
+### Comprehensive Testing (Multiple Sources)
+
+Use for systematic testing across many sources with persistent results:
+
+```bash
+source .venv/bin/activate
+python scripts/test-shuffle-repeat-by-source.py <device_ip>
+```
+
+**Interactive workflow:**
+1. Script connects to device and starts interactive session
+2. Start playing content on device (via WiiM app or other app)
+3. Return to script and press `[t]` to test current source
+4. Provide descriptive name: `Spotify Album - Fleetwood Mac`
+5. Script tests shuffle and repeat controls
+6. Repeat for different sources and content types
+7. Press `[r]` to view summary or `[q]` to quit and save
+
+**Results saved to:** `tests/shuffle-repeat-results/shuffle_repeat_test_<model>_<timestamp>.json`
+
+## Test Results Format
 
 ```json
 {
   "device_name": "Living Room",
   "device_model": "WiiM Pro",
-  "device_firmware": "4.8.731953",
-  "device_ip": "192.168.1.100",
-  "test_start": "2025-11-25T10:30:00",
-  "test_end": "2025-11-25T11:15:00",
   "source_tests": [
     {
       "source_name": "spotify",
@@ -46,104 +78,81 @@ Each test run generates a JSON file with the following structure:
 }
 ```
 
-## How to Test
+## Testing Checklist
 
-### 1. Run the Test Script
+### High Priority Sources
 
-```bash
-# Activate venv first
-source .venv/bin/activate
+**Spotify:**
+- [ ] Album - "Spotify Album - Rumors by Fleetwood Mac"
+- [ ] Playlist - "Spotify Playlist - My Liked Songs"
+- [ ] Radio - "Spotify Radio - Daily Mix 1"
+- [ ] Podcast - "Spotify Podcast - The Daily"
 
-# Run interactive testing
-python scripts/test-shuffle-repeat-by-source.py 192.168.1.100
-```
+**Amazon Music:**
+- [ ] Album - "Amazon Music Album - 1989"
+- [ ] Playlist - "Amazon Music Playlist - Top 50"
+- [ ] Station - "Amazon Music Station - Pop Hits"
 
-### 2. Test Different Sources
+**Local Storage:**
+- [ ] USB Folder - "USB - Music/Rock Folder"
+- [ ] USB Playlist - "USB - Favorites.m3u"
 
-For each source you want to test:
+**Physical Inputs:**
+- [ ] Line In - "Line In - CD Player"
+- [ ] Optical - "Optical - TV Audio"
+- [ ] Bluetooth - "Bluetooth - iPhone Music App"
 
-1. Use the WiiM app (or other app) to start playing content
-2. Return to the test script
-3. Choose option `[t]` to test current source
-4. Provide a descriptive name like: `Spotify Album - Fleetwood Mac`
-5. Script will test shuffle and repeat controls
-6. Repeat for different sources and content types
+**AirPlay:**
+- [ ] Apple Music Album - "AirPlay - Apple Music Album"
+- [ ] Apple Music Radio - "AirPlay - Apple Music 1 Radio"
 
-### 3. Important Content Types to Test
+**TuneIn:**
+- [ ] Live Radio - "TuneIn - BBC Radio 1"
+- [ ] Podcast - "TuneIn Podcast - Serial"
 
-#### Spotify
-- ✓ Album playback
-- ✓ Playlist playback
-- ✓ Radio station
-- ✓ Artist Radio
+### Medium Priority
 
-#### Amazon Music
-- ✓ Album playback
-- ✓ Playlist playback
-- ✓ Station
+**Tidal, Qobuz, Deezer:**
+- [ ] Album playback
+- [ ] Playlist playback
+- [ ] Radio/Discovery
 
-#### TuneIn / iHeartRadio
-- ✓ Live radio station
-- ✓ Podcast
-
-#### USB / Local Files
-- ✓ Folder playback
-- ✓ Playlist
-
-#### Physical Inputs
-- ✓ Line In
-- ✓ Optical
-- ✓ Bluetooth
-
-#### AirPlay
-- ✓ Apple Music album
-- ✓ Apple Music radio
-- ✓ Podcast
-
-### 4. Review Results
-
-After testing, the script will:
-- Save detailed JSON results
-- Print a summary showing what works and what doesn't
-- Highlight prediction mismatches (where the library is wrong)
-
-## Analysis
-
-After collecting test results, review them to:
-
-1. **Identify patterns**: Which sources/content types consistently work or don't work?
-2. **Find prediction mismatches**: Where is the library incorrectly predicting support?
-3. **Update the blacklist**: Based on results, update `pywiim/player/properties.py`'s `_is_device_controlled_source()` method
-4. **Document exceptions**: Some sources may need content-type-aware logic
+**DLNA:**
+- [ ] Media Server Album
+- [ ] Network Share Folder
 
 ## Expected Patterns
 
-Based on LinkPlay architecture (from CHANGELOG v1.0.71):
+Based on LinkPlay architecture:
 
-### Should Work (Device is Control Point)
-- USB local files
+### ✅ Should Work (Device Controls)
+- USB, SD card (local files)
 - Physical inputs (Line In, Optical, Coax)
-- Local playlists
+- On-demand albums and playlists (queue-based)
 
-### May Not Work (External Control)
-- AirPlay (iOS device controls)
-- Bluetooth (source device controls)
-- Spotify Radio (algorithmic, not queue-based)
-- Live radio streams (TuneIn, iHeartRadio)
-- Spotify Connect on some content types
+### ❌ Should NOT Work (External Control)
+- Live radio streams (no queue to shuffle)
+- Algorithmic radio (no fixed queue)
+- AirPlay (iOS controls it)
+- Multiroom slaves (can't control master)
 
-### Needs Testing
-- Spotify albums/playlists
-- Amazon Music albums/playlists
+### ❓ Needs Testing
+- Spotify albums vs radio
+- Amazon Music albums vs stations
 - Tidal, Qobuz, Deezer
 - DLNA sources
+
+## After Testing
+
+1. **Review Results**: Look for patterns and prediction mismatches
+2. **Update Blacklist**: Modify `pywiim/player/properties.py` if needed
+3. **Document Findings**: Update design docs with empirical results
 
 ## Historical Context
 
 From CHANGELOG:
-- **v2.1.2 (Issue #111)**: Fixed loop_mode interpretation for WiiM/Arylic devices
+- **v2.1.2**: Fixed loop_mode interpretation for WiiM/Arylic devices
 - **v2.1.1**: Changed to blacklist approach (permissive by default)
 - **v1.0.71**: Added source-aware shuffle/repeat support
 
-The goal is to use empirical testing to refine the blacklist and document what actually works.
-
+The goal is to use empirical testing to refine predictions and document what actually works.

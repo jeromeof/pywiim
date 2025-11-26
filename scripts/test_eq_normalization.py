@@ -60,9 +60,7 @@ async def test_eq_normalization(ip: str) -> None:
                 print(f"  ✓ {description:30} '{input_preset}' -> '{normalized}'")
                 passed += 1
             else:
-                print(
-                    f"  ✗ {description:30} '{input_preset}' -> '{normalized}' (expected '{expected_key}')"
-                )
+                print(f"  ✗ {description:30} '{input_preset}' -> '{normalized}' (expected '{expected_key}')")
                 failed += 1
         except ValueError as e:
             print(f"  ✗ {description:30} '{input_preset}' -> ERROR: {e}")
@@ -149,4 +147,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-

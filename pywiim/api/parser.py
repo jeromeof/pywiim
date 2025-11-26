@@ -360,8 +360,13 @@ def parse_player_status(
                     data["_multiroom_mode"] = True
             else:
                 mapped_source = MODE_MAP.get(str(mode_val), "unknown")
-                # Only set if we have a valid mapping (not "unknown")
-                if mapped_source != "unknown":
+                # Only set if we have a valid mapping (not "unknown" or "idle")
+                # "idle" is a play STATE, not a SOURCE - don't overwrite existing source
+                # Defensive fix for Issues #122, #103: Prevent mode=0 from setting source="idle"
+                # - Modern WiiM devices: Report correct mode values (e.g., mode=31 for Spotify)
+                # - Legacy Audio Pro devices: May report mode=0 for DLNA/Spotify (Issue #103)
+                # Without this check, source from vendor field could be overwritten with "idle"
+                if mapped_source not in ("unknown", "idle"):
                     data["source"] = mapped_source
                     _LOGGER.debug(
                         "Mapped mode %s to source '%s' (previous source: %s)",
@@ -371,8 +376,9 @@ def parse_player_status(
                     )
                 else:
                     _LOGGER.debug(
-                        "Mode %s has no mapping in MODE_MAP, keeping source '%s'",
+                        "Mode %s maps to '%s' (not a valid source), keeping source '%s'",
                         mode_val,
+                        mapped_source,
                         current_source or "missing",
                     )
         else:

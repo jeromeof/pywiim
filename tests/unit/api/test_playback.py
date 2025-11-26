@@ -323,6 +323,7 @@ class TestPlaybackAPIAudioOutput:
         assert mock_client.audio_output_mode_to_name(0) == "Line Out"
         assert mock_client.audio_output_mode_to_name(1) == "Optical Out"
         assert mock_client.audio_output_mode_to_name(4) == "Bluetooth Out"  # Default for mode 4
+        assert mock_client.audio_output_mode_to_name(7) == "HDMI Out"  # Mode 7 - WiiM Amp Ultra
         assert mock_client.audio_output_mode_to_name(None) is None
 
     @pytest.mark.asyncio
@@ -332,6 +333,9 @@ class TestPlaybackAPIAudioOutput:
         assert mock_client.audio_output_name_to_mode("Optical Out") == 1  # Maps to SPDIF
         assert mock_client.audio_output_name_to_mode("Headphone Out") == 4  # Mode 4
         assert mock_client.audio_output_name_to_mode("Bluetooth Out") == 4  # Mode 4
+        assert mock_client.audio_output_name_to_mode("HDMI Out") == 7  # Mode 7 - WiiM Amp Ultra
+        assert mock_client.audio_output_name_to_mode("hdmi") == 7  # Case insensitive
+        assert mock_client.audio_output_name_to_mode("hdmi arc") == 7  # Alias
         assert mock_client.audio_output_name_to_mode("Unknown") is None
         assert mock_client.audio_output_name_to_mode("") is None
 

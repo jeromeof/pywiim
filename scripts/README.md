@@ -63,9 +63,28 @@ python scripts/interactive-playback-test.py 192.168.1.100
 
 **Note**: Press Ctrl+C or enter 'q' to quit.
 
-### `test-shuffle-repeat-by-source.py`
+### Shuffle/Repeat Testing Scripts
 
-**NEW** - Comprehensive source-by-source shuffle/repeat testing tool to finally nail down this thorny issue!
+Two scripts for testing shuffle/repeat controls across different sources and content types.
+
+#### `test-shuffle-repeat-once.py` - Quick Testing
+
+**Usage**:
+```bash
+python scripts/test-shuffle-repeat-once.py <device_ip> "<content_description>"
+
+# Example:
+python scripts/test-shuffle-repeat-once.py 192.168.1.115 "Spotify Album - Rumors"
+```
+
+**Features**:
+- Quick non-interactive test of current source
+- Tests shuffle and repeat controls
+- Shows library predictions vs actual behavior
+- Restores initial state after testing
+- Perfect for quick verification
+
+#### `test-shuffle-repeat-by-source.py` - Comprehensive Testing
 
 **Usage**:
 ```bash
@@ -73,7 +92,7 @@ python scripts/test-shuffle-repeat-by-source.py 192.168.1.100
 ```
 
 **Features**:
-- Interactive testing across different sources and content types
+- Interactive testing across multiple sources and content types
 - Tests shuffle and repeat controls systematically
 - Compares library predictions vs actual behavior
 - Records detailed results including loop_mode values
@@ -82,9 +101,9 @@ python scripts/test-shuffle-repeat-by-source.py 192.168.1.100
 - Helps understand content-type-specific behavior (e.g., Spotify album vs radio)
 
 **Why This Matters**:
-Shuffle and repeat support has been problematic (see CHANGELOG issues #111, v2.1.2, v2.1.1, v1.0.71). 
-Content type matters! Spotify albums may support controls while Spotify radio may not. This script 
-helps systematically test and document what actually works.
+Shuffle and repeat support has been problematic. Content type matters! Spotify albums may support 
+controls while Spotify radio may not. These scripts help systematically test and document what 
+actually works.
 
 **Workflow**:
 1. Start the script
@@ -97,10 +116,7 @@ helps systematically test and document what actually works.
 
 **Results**: Saved to `tests/shuffle-repeat-results/` with detailed JSON data.
 
-**Documentation**:
-- Testing guide: `docs/testing/SHUFFLE_REPEAT_TESTING_GUIDE.md`
-- Design doc: `docs/design/SHUFFLE_REPEAT_SUPPORT.md`
-- Results README: `tests/shuffle-repeat-results/README.md`
+**Documentation**: See `tests/shuffle-repeat-results/README.md` for full testing guide.
 
 ### `release.sh`
 

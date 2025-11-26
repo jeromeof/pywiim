@@ -28,7 +28,7 @@ async def test_shuffle_repeat(ip: str, description: str) -> None:
         # Connect
         print("📡 Connecting...")
         await player.refresh()
-        
+
         print(f"   ✓ Device: {player.name}")
         print(f"   ✓ Model: {player.model}")
         print(f"   ✓ Firmware: {player.firmware}")
@@ -69,7 +69,7 @@ async def test_shuffle_repeat(ip: str, description: str) -> None:
         print(f"\n{'─' * 80}")
         print("🎲 Testing Shuffle Controls")
         print(f"{'─' * 80}")
-        
+
         shuffle_works = None
         try:
             # Enable shuffle
@@ -77,11 +77,11 @@ async def test_shuffle_repeat(ip: str, description: str) -> None:
             await player.set_shuffle(True)
             await asyncio.sleep(1.5)
             await player.refresh()
-            
+
             shuffle_on = player.shuffle_state
             loop_after_on = player._status_model.loop_mode if player._status_model else None
             repeat_after_shuffle = player.repeat_mode
-            
+
             print(f"   ✓ Shuffle state: {shuffle_on}")
             print(f"   ✓ Loop mode: {loop_after_on}")
             print(f"   ✓ Repeat preserved: {repeat_after_shuffle == initial_repeat}")
@@ -91,13 +91,13 @@ async def test_shuffle_repeat(ip: str, description: str) -> None:
             await player.set_shuffle(False)
             await asyncio.sleep(1.5)
             await player.refresh()
-            
+
             shuffle_off = player.shuffle_state
             loop_after_off = player._status_model.loop_mode if player._status_model else None
-            
+
             print(f"   ✓ Shuffle state: {shuffle_off}")
             print(f"   ✓ Loop mode: {loop_after_off}")
-            
+
             # Assessment
             if shuffle_on == True and shuffle_off == False:
                 shuffle_works = True
@@ -105,7 +105,7 @@ async def test_shuffle_repeat(ip: str, description: str) -> None:
             else:
                 shuffle_works = False
                 print(f"\n   ⚠️  Shuffle controls may not work (on={shuffle_on}, off={shuffle_off})")
-                
+
         except Exception as e:
             shuffle_works = False
             print(f"\n   ❌ Shuffle test failed: {e}")
@@ -114,7 +114,7 @@ async def test_shuffle_repeat(ip: str, description: str) -> None:
         print(f"\n{'─' * 80}")
         print("🔁 Testing Repeat Controls")
         print(f"{'─' * 80}")
-        
+
         repeat_works = None
         try:
             # Repeat ALL
@@ -122,11 +122,11 @@ async def test_shuffle_repeat(ip: str, description: str) -> None:
             await player.set_repeat("all")
             await asyncio.sleep(1.5)
             await player.refresh()
-            
+
             repeat_all = player.repeat_mode
             loop_all = player._status_model.loop_mode if player._status_model else None
             shuffle_after = player.shuffle_state
-            
+
             print(f"   ✓ Repeat mode: {repeat_all}")
             print(f"   ✓ Loop mode: {loop_all}")
             print(f"   ✓ Shuffle: {shuffle_after}")
@@ -136,10 +136,10 @@ async def test_shuffle_repeat(ip: str, description: str) -> None:
             await player.set_repeat("one")
             await asyncio.sleep(1.5)
             await player.refresh()
-            
+
             repeat_one = player.repeat_mode
             loop_one = player._status_model.loop_mode if player._status_model else None
-            
+
             print(f"   ✓ Repeat mode: {repeat_one}")
             print(f"   ✓ Loop mode: {loop_one}")
 
@@ -148,13 +148,13 @@ async def test_shuffle_repeat(ip: str, description: str) -> None:
             await player.set_repeat("off")
             await asyncio.sleep(1.5)
             await player.refresh()
-            
+
             repeat_off = player.repeat_mode
             loop_off = player._status_model.loop_mode if player._status_model else None
-            
+
             print(f"   ✓ Repeat mode: {repeat_off}")
             print(f"   ✓ Loop mode: {loop_off}")
-            
+
             # Assessment
             if repeat_all == "all" and repeat_one == "one" and repeat_off == "off":
                 repeat_works = True
@@ -162,7 +162,7 @@ async def test_shuffle_repeat(ip: str, description: str) -> None:
             else:
                 repeat_works = False
                 print(f"\n   ⚠️  Repeat controls may not work (all={repeat_all}, one={repeat_one}, off={repeat_off})")
-                
+
         except Exception as e:
             repeat_works = False
             print(f"\n   ❌ Repeat test failed: {e}")
@@ -171,22 +171,26 @@ async def test_shuffle_repeat(ip: str, description: str) -> None:
         print(f"\n{'=' * 80}")
         print("📊 FINAL ASSESSMENT")
         print(f"{'=' * 80}\n")
-        
+
         print(f"Source: {source} - {description}\n")
-        
+
         if shuffle_works is not None:
             shuffle_icon = "✅" if shuffle_works else "❌"
             print(f"{shuffle_icon} Shuffle: {'WORKS' if shuffle_works else 'DOES NOT WORK'}")
             if shuffle_supported != shuffle_works:
-                print(f"   ⚠️  Library predicted {shuffle_supported}, but actually {'works' if shuffle_works else 'does not work'}!")
+                print(
+                    f"   ⚠️  Library predicted {shuffle_supported}, but actually {'works' if shuffle_works else 'does not work'}!"
+                )
         else:
             print(f"⚠️  Shuffle: TEST FAILED")
-            
+
         if repeat_works is not None:
             repeat_icon = "✅" if repeat_works else "❌"
             print(f"{repeat_icon} Repeat: {'WORKS' if repeat_works else 'DOES NOT WORK'}")
             if repeat_supported != repeat_works:
-                print(f"   ⚠️  Library predicted {repeat_supported}, but actually {'works' if repeat_works else 'does not work'}!")
+                print(
+                    f"   ⚠️  Library predicted {repeat_supported}, but actually {'works' if repeat_works else 'does not work'}!"
+                )
         else:
             print(f"⚠️  Repeat: TEST FAILED")
 
@@ -208,6 +212,7 @@ async def test_shuffle_repeat(ip: str, description: str) -> None:
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback
+
         traceback.print_exc()
     finally:
         await client.close()
@@ -216,7 +221,7 @@ async def test_shuffle_repeat(ip: str, description: str) -> None:
 async def main():
     """Main entry point."""
     if len(sys.argv) < 3:
-        print("Usage: python scripts/test-shuffle-repeat-once.py <device_ip> \"<content_description>\"")
+        print('Usage: python scripts/test-shuffle-repeat-once.py <device_ip> "<content_description>"')
         print("\nExample:")
         print('  python scripts/test-shuffle-repeat-once.py 192.168.1.115 "Spotify Album - Rumors"')
         sys.exit(1)
@@ -233,4 +238,3 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n\n⚠️  Interrupted by user")
         sys.exit(1)
-
