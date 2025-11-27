@@ -1,8 +1,94 @@
 # Utility Scripts
 
-This directory contains utility scripts for development and testing.
+This directory contains utility scripts for development, testing, and release management.
 
-## Scripts
+## Release & Publishing Scripts
+
+### `release.sh`
+
+Automated release script that runs all checks, bumps version, and pushes to git.
+
+**Usage**:
+```bash
+# Bump patch version (default)
+./scripts/release.sh
+
+# Or explicitly specify bump type
+./scripts/release.sh patch
+./scripts/release.sh minor
+./scripts/release.sh major
+```
+
+**What it does**:
+1. Formats code with `black` and `isort`
+2. Runs linting with `ruff`
+3. Runs type checking with `mypy`
+4. Runs tests with `pytest`
+5. Bumps version in both `pyproject.toml` and `pywiim/__init__.py`
+6. Commits changes with a version bump message
+7. Creates a git tag
+8. Pushes to remote repository
+
+**Note**: The script will exit early if any step fails. All checks must pass before version bump and push.
+
+### `publish.sh`
+
+Manual PyPI publishing script (rarely needed - GitHub Actions handles this automatically).
+
+**Usage**:
+```bash
+./scripts/publish.sh
+```
+
+**Note**: Normally you don't need this. After pushing a tag, GitHub Actions automatically publishes to PyPI.
+
+### `create_releases_for_tags.sh`
+
+Creates GitHub releases for existing git tags that don't have releases yet.
+
+**Usage**:
+```bash
+./scripts/create_releases_for_tags.sh
+```
+
+### `generate_changelog.py`
+
+Generates changelog entries from git commits.
+
+**Usage**:
+```bash
+python scripts/generate_changelog.py
+```
+
+## Authentication Setup Scripts
+
+### `gh-auth-token.sh`
+
+Sets up GitHub CLI authentication.
+
+**Usage**:
+```bash
+./scripts/gh-auth-token.sh
+```
+
+### `setup_pypi_auth.sh`
+
+Configures PyPI authentication for manual publishing.
+
+**Usage**:
+```bash
+./scripts/setup_pypi_auth.sh
+```
+
+## Git Hooks
+
+### `pre-push.sh`
+
+Git pre-push hook script.
+
+**Usage**: Automatically runs when pushing (if configured as a git hook).
+
+## Device Testing Scripts
 
 ### `test_my_devices.py`
 
@@ -23,8 +109,6 @@ python scripts/test_my_devices.py 192.168.1.100 192.168.1.101
 - Detects capabilities
 - Tests basic features
 - Shows summary
-
-**Note**: This is a development/testing script, not part of the package distribution.
 
 ### `test-playback-controls.py`
 
@@ -59,15 +143,14 @@ python scripts/interactive-playback-test.py 192.168.1.100
 - Next/previous track controls
 - Shuffle and repeat mode controls
 - Real-time status display
-- Perfect for manual verification and exploration
 
 **Note**: Press Ctrl+C or enter 'q' to quit.
 
-### Shuffle/Repeat Testing Scripts
+## Shuffle/Repeat Testing Scripts
 
-Two scripts for testing shuffle/repeat controls across different sources and content types.
+### `test-shuffle-repeat-once.py`
 
-#### `test-shuffle-repeat-once.py` - Quick Testing
+Quick non-interactive test of shuffle/repeat controls for the current source.
 
 **Usage**:
 ```bash
@@ -82,9 +165,10 @@ python scripts/test-shuffle-repeat-once.py 192.168.1.115 "Spotify Album - Rumors
 - Tests shuffle and repeat controls
 - Shows library predictions vs actual behavior
 - Restores initial state after testing
-- Perfect for quick verification
 
-#### `test-shuffle-repeat-by-source.py` - Comprehensive Testing
+### `test-shuffle-repeat-by-source.py`
+
+Comprehensive interactive testing across multiple sources and content types.
 
 **Usage**:
 ```bash
@@ -96,14 +180,7 @@ python scripts/test-shuffle-repeat-by-source.py 192.168.1.100
 - Tests shuffle and repeat controls systematically
 - Compares library predictions vs actual behavior
 - Records detailed results including loop_mode values
-- Identifies prediction mismatches (where library is wrong)
 - Saves comprehensive JSON results for analysis
-- Helps understand content-type-specific behavior (e.g., Spotify album vs radio)
-
-**Why This Matters**:
-Shuffle and repeat support has been problematic. Content type matters! Spotify albums may support 
-controls while Spotify radio may not. These scripts help systematically test and document what 
-actually works.
 
 **Workflow**:
 1. Start the script
@@ -115,32 +192,3 @@ actually works.
 7. Press `[q]` to save results and see summary
 
 **Results**: Saved to `tests/shuffle-repeat-results/` with detailed JSON data.
-
-**Documentation**: See `tests/shuffle-repeat-results/README.md` for full testing guide.
-
-### `release.sh`
-
-Automated release script that runs linting, formatting, version bumping, and git push in one command.
-
-**Usage**:
-```bash
-# Bump patch version (default)
-./scripts/release.sh
-
-# Or explicitly specify bump type
-./scripts/release.sh patch
-./scripts/release.sh minor
-./scripts/release.sh major
-```
-
-**What it does**:
-1. Formats code with `black` and `isort`
-2. Runs linting with `ruff`
-3. Runs type checking with `mypy`
-4. Runs tests with `pytest`
-5. Bumps version in both `pyproject.toml` and `pywiim/__init__.py`
-6. Commits changes with a version bump message
-7. Pushes to remote repository
-
-**Note**: The script will exit early if any step fails (linting errors, test failures, etc.). All checks must pass before version bump and push.
-
