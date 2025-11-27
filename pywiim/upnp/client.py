@@ -51,6 +51,7 @@ class UpnpClient:
         self._av_transport_service: Any | None = None
         self._rendering_control_service: Any | None = None
         self._notify_server: AiohttpNotifyServer | None = None
+        self._internal_session: ClientSession | None = None  # Session we created internally
 
     @classmethod
     async def create(
@@ -91,6 +92,7 @@ class UpnpClient:
                 connector = TCPConnector(ssl=False)
 
             session = ClientSession(connector=connector)
+            self._internal_session = session  # Track for cleanup
             # DLNA pattern: with_sleep=True adds retry logic, timeout ensures we don't hang
             requester = AiohttpSessionRequester(session, with_sleep=True, timeout=10)
 
@@ -305,6 +307,24 @@ class UpnpClient:
             finally:
                 self._notify_server = None
                 _LOGGER.debug("Notify server stopped for %s", self.host)
+
+    async def close(self) -> None:
+        """Close the UPnP client and clean up resources.
+
+        Stops the notify server and closes the internal aiohttp session.
+        """
+        # Stop notify server first
+        await self.unwind_notify_server()
+
+        # Close internal session
+        if self._internal_session and not self._internal_session.closed:
+            try:
+                await self._internal_session.close()
+                _LOGGER.debug("Closed internal session for %s", self.host)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("Error closing internal session for %s: %s", self.host, err)
+            finally:
+                self._internal_session = None
 
     @property
     def av_transport(self) -> Any:
@@ -596,3 +616,288 @@ class UpnpClient:
         result = await action_obj.async_call(**arguments or {})
 
         return cast(dict[str, Any], result)
+
+    async def get_media_info(self) -> dict[str, Any]:
+        """Fetch current media info via GetMediaInfo UPnP action.
+
+        This is a "pull" method that fetches the current media state on demand.
+        Useful for:
+        - Initial state when starting up
+        - Debugging/diagnostics
+        - Fallback when UPnP events fail
+
+        Returns:
+            Dictionary with media info:
+            - CurrentURI: URI of currently playing media
+            - CurrentURIMetaData: DIDL-Lite XML with title/artist/album/artwork
+            - TrackSource: Source of the track (e.g., "spotify", "tunein")
+            - NrTracks: Number of tracks
+            - MediaDuration: Duration of current media
+            - PlayMedium: Current play medium
+            - RecordMedium: Current record medium
+            - WriteStatus: Write status
+
+        Raises:
+            UpnpError: If AVTransport service is not available or action fails
+        """
+        if not self._av_transport_service:
+            raise UpnpError("AVTransport service not available")
+
+        try:
+            result = await self.async_call_action(
+                "av_transport",
+                "GetMediaInfo",
+                {"InstanceID": 0},
+            )
+            _LOGGER.debug("GetMediaInfo result: %s", result)
+            return result
+        except Exception as err:
+            _LOGGER.warning("GetMediaInfo failed for %s: %s", self.host, err)
+            raise UpnpError(f"GetMediaInfo failed: {err}") from err
+
+    async def get_transport_info(self) -> dict[str, Any]:
+        """Fetch current transport state via GetTransportInfo UPnP action.
+
+        Returns:
+            Dictionary with transport info:
+            - CurrentTransportState: PLAYING, PAUSED_PLAYBACK, STOPPED, etc.
+            - CurrentTransportStatus: OK, ERROR_OCCURRED, etc.
+            - CurrentSpeed: Playback speed (1 = normal)
+
+        Raises:
+            UpnpError: If AVTransport service is not available or action fails
+        """
+        if not self._av_transport_service:
+            raise UpnpError("AVTransport service not available")
+
+        try:
+            result = await self.async_call_action(
+                "av_transport",
+                "GetTransportInfo",
+                {"InstanceID": 0},
+            )
+            _LOGGER.debug("GetTransportInfo result: %s", result)
+            return result
+        except Exception as err:
+            _LOGGER.warning("GetTransportInfo failed for %s: %s", self.host, err)
+            raise UpnpError(f"GetTransportInfo failed: {err}") from err
+
+    async def get_position_info(self) -> dict[str, Any]:
+        """Fetch current position info via GetPositionInfo UPnP action.
+
+        Returns:
+            Dictionary with position info:
+            - Track: Current track number
+            - TrackDuration: Duration of current track (HH:MM:SS format)
+            - TrackMetaData: DIDL-Lite XML with track metadata
+            - TrackURI: URI of current track
+            - RelTime: Relative time position (HH:MM:SS format)
+            - AbsTime: Absolute time position
+            - RelCount: Relative counter position
+            - AbsCount: Absolute counter position
+
+        Raises:
+            UpnpError: If AVTransport service is not available or action fails
+        """
+        if not self._av_transport_service:
+            raise UpnpError("AVTransport service not available")
+
+        try:
+            result = await self.async_call_action(
+                "av_transport",
+                "GetPositionInfo",
+                {"InstanceID": 0},
+            )
+            _LOGGER.debug("GetPositionInfo result: %s", result)
+            return result
+        except Exception as err:
+            _LOGGER.warning("GetPositionInfo failed for %s: %s", self.host, err)
+            raise UpnpError(f"GetPositionInfo failed: {err}") from err
+
+    async def get_volume(self, channel: str = "Master") -> int:
+        """Fetch current volume via GetVolume UPnP action.
+
+        Useful for initial state or when UPnP events are not working.
+
+        Args:
+            channel: Audio channel ("Master", "LF", "RF"). Default "Master".
+
+        Returns:
+            Volume level (0-100)
+
+        Raises:
+            UpnpError: If RenderingControl service is not available or action fails
+        """
+        if not self._rendering_control_service:
+            raise UpnpError("RenderingControl service not available")
+
+        try:
+            result = await self.async_call_action(
+                "rendering_control",
+                "GetVolume",
+                {"InstanceID": 0, "Channel": channel},
+            )
+            volume = result.get("CurrentVolume", 0)
+            _LOGGER.debug("GetVolume result for %s: %s", self.host, volume)
+            return int(volume)
+        except Exception as err:
+            _LOGGER.warning("GetVolume failed for %s: %s", self.host, err)
+            raise UpnpError(f"GetVolume failed: {err}") from err
+
+    async def get_mute(self, channel: str = "Master") -> bool:
+        """Fetch current mute state via GetMute UPnP action.
+
+        Useful for initial state or when UPnP events are not working.
+
+        Args:
+            channel: Audio channel ("Master", "LF", "RF"). Default "Master".
+
+        Returns:
+            True if muted, False otherwise
+
+        Raises:
+            UpnpError: If RenderingControl service is not available or action fails
+        """
+        if not self._rendering_control_service:
+            raise UpnpError("RenderingControl service not available")
+
+        try:
+            result = await self.async_call_action(
+                "rendering_control",
+                "GetMute",
+                {"InstanceID": 0, "Channel": channel},
+            )
+            muted = result.get("CurrentMute", False)
+            _LOGGER.debug("GetMute result for %s: %s", self.host, muted)
+            return bool(muted)
+        except Exception as err:
+            _LOGGER.warning("GetMute failed for %s: %s", self.host, err)
+            raise UpnpError(f"GetMute failed: {err}") from err
+
+    async def get_device_capabilities(self) -> dict[str, Any]:
+        """Fetch device capabilities via GetDeviceCapabilities UPnP action.
+
+        Returns what media types and protocols the device supports.
+
+        Returns:
+            Dictionary with:
+            - PlayMedia: Supported play media types
+            - RecMedia: Supported record media types
+            - RecQualityModes: Supported recording quality modes
+
+        Raises:
+            UpnpError: If AVTransport service is not available or action fails
+        """
+        if not self._av_transport_service:
+            raise UpnpError("AVTransport service not available")
+
+        try:
+            result = await self.async_call_action(
+                "av_transport",
+                "GetDeviceCapabilities",
+                {"InstanceID": 0},
+            )
+            _LOGGER.debug("GetDeviceCapabilities result for %s: %s", self.host, result)
+            return result
+        except Exception as err:
+            _LOGGER.warning("GetDeviceCapabilities failed for %s: %s", self.host, err)
+            raise UpnpError(f"GetDeviceCapabilities failed: {err}") from err
+
+    async def get_current_transport_actions(self) -> list[str]:
+        """Fetch currently available transport actions via GetCurrentTransportActions.
+
+        Returns what actions are currently valid (e.g., can't Pause if already paused).
+
+        Returns:
+            List of available actions like ["Play", "Stop", "Pause", "Seek", "Next", "Previous"]
+
+        Raises:
+            UpnpError: If AVTransport service is not available or action fails
+        """
+        if not self._av_transport_service:
+            raise UpnpError("AVTransport service not available")
+
+        try:
+            result = await self.async_call_action(
+                "av_transport",
+                "GetCurrentTransportActions",
+                {"InstanceID": 0},
+            )
+            actions_str = result.get("Actions", "")
+            actions = [a.strip() for a in actions_str.split(",") if a.strip()]
+            _LOGGER.debug("GetCurrentTransportActions result for %s: %s", self.host, actions)
+            return actions
+        except Exception as err:
+            _LOGGER.warning("GetCurrentTransportActions failed for %s: %s", self.host, err)
+            raise UpnpError(f"GetCurrentTransportActions failed: {err}") from err
+
+    async def get_full_state_snapshot(self) -> dict[str, Any]:
+        """Fetch complete device state via UPnP for diagnostics.
+
+        This is a convenience method that fetches all available state in one call.
+        Intended for diagnostics and debugging - NOT for regular state updates
+        (use HTTP polling + UPnP events for that).
+
+        Returns:
+            Dictionary with all available UPnP state:
+            - transport: GetTransportInfo result (play state)
+            - media: GetMediaInfo result (current URI, metadata)
+            - position: GetPositionInfo result (position, duration)
+            - volume: Current volume level (0-100)
+            - muted: Current mute state
+            - available_actions: List of valid transport actions
+            - errors: Any errors encountered during fetch
+
+        Note:
+            Individual fetch errors are caught and reported in 'errors' dict
+            rather than raising exceptions.
+        """
+        result: dict[str, Any] = {"errors": {}}
+
+        # Fetch transport info (play state)
+        try:
+            result["transport"] = await self.get_transport_info()
+        except Exception as err:
+            result["transport"] = None
+            result["errors"]["transport"] = str(err)
+
+        # Fetch media info (what's playing)
+        try:
+            result["media"] = await self.get_media_info()
+        except Exception as err:
+            result["media"] = None
+            result["errors"]["media"] = str(err)
+
+        # Fetch position info
+        try:
+            result["position"] = await self.get_position_info()
+        except Exception as err:
+            result["position"] = None
+            result["errors"]["position"] = str(err)
+
+        # Fetch volume
+        try:
+            result["volume"] = await self.get_volume()
+        except Exception as err:
+            result["volume"] = None
+            result["errors"]["volume"] = str(err)
+
+        # Fetch mute state
+        try:
+            result["muted"] = await self.get_mute()
+        except Exception as err:
+            result["muted"] = None
+            result["errors"]["muted"] = str(err)
+
+        # Fetch available actions
+        try:
+            result["available_actions"] = await self.get_current_transport_actions()
+        except Exception as err:
+            result["available_actions"] = None
+            result["errors"]["available_actions"] = str(err)
+
+        # Clean up errors dict if empty
+        if not result["errors"]:
+            del result["errors"]
+
+        return result

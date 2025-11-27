@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.20] - 2025-11-27
+
+### Added
+- **UPnP SOAP action methods for diagnostics and edge cases**
+  - `get_media_info()` - Fetch current media URI and metadata via UPnP
+  - `get_transport_info()` - Fetch play state (PLAYING/PAUSED/STOPPED) via UPnP
+  - `get_position_info()` - Fetch position and duration via UPnP
+  - `get_volume()` / `get_mute()` - Fetch volume/mute state via UPnP
+  - `get_device_capabilities()` - Fetch supported media types via UPnP
+  - `get_current_transport_actions()` - Fetch available transport controls via UPnP
+  - `get_full_state_snapshot()` - Convenience method to fetch all state in one call
+  - **Use case**: Diagnostics, debugging, and Audio Pro MkII devices (which require UPnP for volume/play state)
+  - **Note**: These are low-level utilities on `UpnpClient`, not integrated into Player state flow
+
+### Fixed
+- **Added URL validation for UPnP image URLs**
+  - Invalid image URLs from DIDL-Lite metadata are now filtered out
+  - Uses Python's built-in `urllib.parse` (no new dependencies)
+  - Prevents invalid/placeholder URLs from being used as album art
+- **Added proper resource cleanup to UPnP client**
+  - Added `close()` method to `UpnpClient` for proper session cleanup
+  - Eliminates "unclosed connector" warnings
+
 ## [2.1.19] - 2025-11-27
 
 ### Fixed

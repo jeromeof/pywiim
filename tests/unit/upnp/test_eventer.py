@@ -7,7 +7,42 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from pywiim.upnp.eventer import UpnpEventer
+from pywiim.upnp.eventer import UpnpEventer, _is_valid_url
+
+
+class TestIsValidUrl:
+    """Test URL validation helper function."""
+
+    def test_valid_http_url(self):
+        """Test valid HTTP URLs."""
+        assert _is_valid_url("http://example.com/image.jpg") is True
+        assert _is_valid_url("http://192.168.1.100:8080/cover.png") is True
+        assert _is_valid_url("http://server.local/path/to/image.png") is True
+
+    def test_valid_https_url(self):
+        """Test valid HTTPS URLs."""
+        assert _is_valid_url("https://example.com/image.jpg") is True
+        assert _is_valid_url("https://cdn.example.com/album/cover.png") is True
+
+    def test_invalid_urls(self):
+        """Test invalid URLs are rejected."""
+        assert _is_valid_url("not-a-url") is False
+        assert _is_valid_url("ftp://example.com/file.jpg") is False
+        assert _is_valid_url("file:///local/path.jpg") is False
+        assert _is_valid_url("/just/a/path.jpg") is False
+        assert _is_valid_url("example.com/image.jpg") is False
+
+    def test_empty_and_none(self):
+        """Test empty and None values."""
+        assert _is_valid_url(None) is False
+        assert _is_valid_url("") is False
+        assert _is_valid_url("   ") is False
+
+    def test_special_placeholder_values(self):
+        """Test that special placeholder values are handled."""
+        # These should be valid URLs structurally but may be rejected by context
+        assert _is_valid_url("http://un_known") is True  # Valid URL structure
+        # The "un_known" check happens in the parsing code, not URL validation
 
 
 class TestUpnpEventer:

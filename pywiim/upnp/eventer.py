@@ -22,6 +22,7 @@ import logging
 import time
 from collections.abc import Callable, Sequence
 from typing import Any
+from urllib.parse import urlparse
 
 from async_upnp_client.client import UpnpService, UpnpStateVariable
 from async_upnp_client.exceptions import UpnpResponseError
@@ -29,6 +30,30 @@ from async_upnp_client.exceptions import UpnpResponseError
 from .client import UpnpClient
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _is_valid_url(url: str | None) -> bool:
+    """Validate that a string is a valid HTTP/HTTPS URL.
+
+    Args:
+        url: URL string to validate
+
+    Returns:
+        True if valid HTTP/HTTPS URL, False otherwise
+    """
+    if not url or not isinstance(url, str):
+        return False
+
+    url = url.strip()
+    if not url:
+        return False
+
+    try:
+        result = urlparse(url)
+        # Must have scheme (http/https) and netloc (domain/IP)
+        return result.scheme in ("http", "https") and bool(result.netloc)
+    except Exception:
+        return False
 
 
 class UpnpEventer:
@@ -617,14 +642,22 @@ class UpnpEventer:
                 # Element exists but is empty - clear it only if allowed
                 changes["album"] = None
 
-            # Extract album art URI (upnp:albumArtURI)
+            # Extract album art URI (upnp:albumArtURI) with URL validation
             art_elem = item.find("upnp:albumArtURI", namespaces)
             if art_elem is None:
                 art_elem = item.find(".//{urn:schemas-upnp-org:metadata-1-0/upnp/}albumArtURI")
-            if art_elem is not None and art_elem.text and art_elem.text.strip() and art_elem.text.strip() != "un_known":
-                changes["image_url"] = art_elem.text.strip()
+            if art_elem is not None and art_elem.text:
+                image_url = art_elem.text.strip()
+                # Validate URL: must be valid http/https and not placeholder values
+                if image_url and image_url != "un_known" and _is_valid_url(image_url):
+                    changes["image_url"] = image_url
+                elif allow_clear:
+                    # Invalid URL or placeholder - clear it only if allowed
+                    if image_url and image_url != "un_known":
+                        _LOGGER.debug("Invalid image URL in DIDL-Lite (not a valid URL): %s", image_url[:100])
+                    changes["image_url"] = None
             elif art_elem is not None and allow_clear:
-                # Element exists but is empty or "un_known" - clear it only if allowed
+                # Element exists but is empty - clear it only if allowed
                 changes["image_url"] = None
 
             if any(v is not None for v in changes.values()):
