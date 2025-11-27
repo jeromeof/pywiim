@@ -359,7 +359,7 @@ API_ENDPOINT_RESUME = "/httpapi.asp?command=setPlayerCmd:resume"
 API_ENDPOINT_CLEAR_PLAYLIST = "/httpapi.asp?command=setPlayerCmd:clear_playlist"
 API_ENDPOINT_PLAY_URL = "/httpapi.asp?command=setPlayerCmd:play:"
 API_ENDPOINT_PLAY_M3U = "/httpapi.asp?command=setPlayerCmd:playlist:"
-API_ENDPOINT_PLAY_PROMPT_URL = "/httpapi.asp?command=playPromptUrl:"
+API_ENDPOINT_PLAY_PROMPT_URL = "/httpapi.asp?command=setPlayerCmd:playPromptUrl:"
 
 # Audio settings endpoints
 API_ENDPOINT_GET_SPDIF_SAMPLE_RATE = "/httpapi.asp?command=getSpdifOutSampleRate"

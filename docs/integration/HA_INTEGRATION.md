@@ -1078,6 +1078,7 @@ from homeassistant.components.media_player import (
     MediaPlayerEntity,
     MediaPlayerEnqueue,
     ATTR_MEDIA_ENQUEUE,
+    ATTR_MEDIA_ANNOUNCE,
 )
 
 class WiiMMediaPlayer(MediaPlayerEntity):
@@ -1099,7 +1100,15 @@ class WiiMMediaPlayer(MediaPlayerEntity):
         media_id: str,
         **kwargs: Any,
     ) -> None:
-        """Play media with optional enqueue support."""
+        """Play media with optional enqueue and announcement support."""
+        # Handle announcements (TTS, doorbell sounds, etc.)
+        # Uses device's built-in playPromptUrl which auto-handles volume
+        announce = kwargs.get(ATTR_MEDIA_ANNOUNCE, False)
+        if announce:
+            await self.coordinator.player.play_notification(media_id)
+            return
+        
+        # Handle queue management
         enqueue: MediaPlayerEnqueue | None = kwargs.get(ATTR_MEDIA_ENQUEUE)
 
         if enqueue and enqueue != MediaPlayerEnqueue.REPLACE:
@@ -1122,6 +1131,51 @@ class WiiMMediaPlayer(MediaPlayerEntity):
             await self.coordinator.player.play_url(media_id)
 ```
 
+### Notification/Announcement Support
+
+The `play_notification()` method uses the device's built-in `playPromptUrl` command for TTS announcements, doorbell sounds, and other notifications.
+
+#### How It Works
+
+The device firmware handles everything automatically:
+1. **Lowers current playback volume** (if something is playing)
+2. **Plays the notification audio**
+3. **Restores original volume** after completion
+
+No timing logic, state saving, or manual restoration is needed.
+
+#### Home Assistant Service Calls
+
+```yaml
+# TTS announcement
+service: tts.speak
+data:
+  entity_id: media_player.wiim_pro
+  message: "Your package has been delivered"
+  options:
+    announce: true
+
+# Media player announcement
+service: media_player.play_media
+target:
+  entity_id: media_player.wiim_pro
+data:
+  media_content_id: "https://example.com/doorbell.mp3"
+  media_content_type: "music"
+  announce: true
+```
+
+#### Limitations
+
+- **Only works in NETWORK or USB playback mode** - If the device is playing from Line In, Optical, or Bluetooth input, notifications may not play
+- **Requires firmware 4.6.415145+** - Older firmware may not support this command
+
+#### Benefits
+
+- **Simple**: Just call `play_notification(url)` - no state management needed
+- **Reliable**: Device firmware handles volume lowering and restoration
+- **Non-disruptive**: Doesn't interrupt streaming services (Spotify, etc.)
+
 ### Error Handling
 
 Queue management methods will raise `WiiMError` if:
@@ -1129,6 +1183,8 @@ Queue management methods will raise `WiiMError` if:
 - UPnP client is not available
 - UPnP AVTransport service is not available
 - Device doesn't support queue operations
+
+Announcement playback will attempt state restoration even if playback fails. Expected warnings (e.g., streaming service source restore) are logged but don't raise exceptions.
 
 **Best Practice:** Check for UPnP client availability before enabling queue features:
 

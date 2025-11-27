@@ -67,3 +67,14 @@
   - **Exception**: Scripts, CLI tools, and test code may call client methods directly when appropriate
   - **Why**: This ensures the player's cached state stays synchronized and properties work correctly
 
+## Date Format Rules
+
+- **CRITICAL: Always Use Actual Dates**
+  - When updating CHANGELOG.md or any date fields, **ALWAYS use the actual current date** in YYYY-MM-DD format
+  - **NEVER use placeholder dates** like "2025-01-XX", "2025-XX-XX", "2025-XX-13", or any date with "XX" or placeholders
+  - **How to get the correct date:** Use `date +%Y-%m-%d` and use the EXACT output from this command
+  - **Check existing format:** Look at previous changelog entries - format is always: `## [VERSION] - YYYY-MM-DD` (e.g., `## [1.0.7] - 2025-11-13`)
+  - **If unsure, check the system date first:** Run `date +%Y-%m-%d`
+  - **Why this matters:** Placeholder dates look unprofessional, require manual fixes, break automation, and confuse users reading the changelog
+  - **Remember: NO PLACEHOLDERS. EVER. ALWAYS USE THE ACTUAL DATE.**
+

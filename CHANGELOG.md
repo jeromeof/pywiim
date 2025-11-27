@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.19] - 2025-11-27
+
+### Fixed
+- **Fixed `play_notification()` endpoint to use correct API command**
+  - Fixed URL encoding to use consistent `safe=":/?&=#%"` matching `play_url()`
+  - **Tested successfully**: Spotify and AirPlay both resume seamlessly after notification
+  - The device firmware handles volume attenuation and restoration automatically
+  - No state management needed - device's built-in `playPromptUrl` handles everything
+
 ## [2.1.18] - 2025-11-26
 
 ### Fixed

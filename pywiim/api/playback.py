@@ -354,13 +354,19 @@ class PlaybackAPI:
     async def play_notification(self, url: str) -> None:
         """Play a notification sound from URL.
 
+        This uses the device's playPromptUrl command which automatically
+        lowers the current playback volume, plays the notification,
+        and restores volume afterwards.
+
+        Note: Only works in NETWORK or USB playback mode.
+
         Args:
             url: URL to notification audio file.
 
         Raises:
             WiiMError: If the request fails.
         """
-        encoded = quote(url, safe="")
+        encoded = quote(url, safe=":/?&=#%")
         await self._request(f"{API_ENDPOINT_PLAY_PROMPT_URL}{encoded}")  # type: ignore[attr-defined]
 
     # ------------------------------------------------------------------

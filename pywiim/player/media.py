@@ -278,6 +278,12 @@ class MediaControl:
     async def play_notification(self, url: str) -> None:
         """Play a notification sound from URL.
 
+        Uses the device's built-in playPromptUrl command which automatically
+        lowers the current playback volume, plays the notification, and
+        restores volume afterwards.
+
+        Note: Only works in NETWORK or USB playback mode.
+
         Args:
             url: URL to notification audio file.
         """

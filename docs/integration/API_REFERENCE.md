@@ -516,6 +516,11 @@ await player.set_source(source: str)
 await player.clear_playlist()
 await player.set_shuffle(enabled: bool)  # Preserves repeat state
 
+# Media playback
+await player.play_url(url: str, enqueue: str = "replace")  # Play URL directly
+await player.play_playlist(playlist_url: str)  # Play M3U playlist
+await player.play_notification(url: str)  # Play notification (auto volume handling)
+
 # EQ control
 await player.set_eq_preset(preset: str)
 await player.get_eq()  # Returns dict[str, Any]
@@ -694,6 +699,37 @@ asyncio.run(monitor_playback())
 - Position estimation provides smooth 1-second updates while playing
 - Callbacks fire on seeks, track changes, and every second during playback
 - Hybrid approach (HTTP + UPnP + estimation) ensures reliability
+
+### Notification Playback
+
+The `play_notification()` method uses the device's built-in `playPromptUrl` command for playing notification sounds (TTS, doorbell, alerts, etc.):
+
+```python
+await player.play_notification("https://example.com/doorbell.mp3")
+```
+
+#### How It Works
+
+The device firmware handles everything automatically:
+1. **Lowers current playback volume** (if something is playing)
+2. **Plays the notification audio**
+3. **Restores original volume** after completion
+
+No timing logic, state saving, or manual restoration is needed - the device handles it internally.
+
+#### Limitations
+
+- **Only works in NETWORK or USB playback mode** - If the device is in a different mode (e.g., Line In, Optical), the notification may not play
+- **Requires firmware 4.6.415145+** - Older firmware versions may not support this command
+
+#### Use Cases
+
+- TTS announcements (Home Assistant `tts.speak`)
+- Doorbell sounds
+- Alert notifications
+- Timer/alarm sounds
+
+This is the recommended approach for integrations that need to play announcements without interrupting the current audio source.
 
 ## Models
 

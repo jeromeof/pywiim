@@ -195,7 +195,18 @@ class Player(PlayerBase):
         await self._media_ctrl.play_playlist(playlist_url)
 
     async def play_notification(self, url: str) -> None:
-        """Play a notification sound from URL."""
+        """Play a notification sound from URL.
+
+        Uses the device's built-in playPromptUrl command which automatically
+        lowers the current playback volume, plays the notification, and
+        restores volume afterwards. No timing logic or state management needed.
+
+        Note: Only works in NETWORK or USB playback mode.
+        Requires firmware 4.6.415145 or newer.
+
+        Args:
+            url: URL to notification audio file.
+        """
         await self._media_ctrl.play_notification(url)
 
     async def add_to_queue(self, url: str, metadata: str = "") -> None:
