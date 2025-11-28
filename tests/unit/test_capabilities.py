@@ -333,6 +333,95 @@ class TestWiiMCapabilitiesClass:
         detector.clear_cache()
         assert detector.get_cached_capabilities(device_id) is None
 
+    @pytest.mark.asyncio
+    async def test_detect_capabilities_probes_getplayerstatusex(self, mock_client):
+        """Test that capability detection probes getPlayerStatusEx support."""
+        device_info = DeviceInfo(uuid="test-uuid", model="ARYLIC_H50", firmware="4.6.529755")
+        # mock_client already has host set from fixture
+        mock_client.get_status = AsyncMock(return_value={"status": "ok"})
+        # getPlayerStatusEx succeeds
+        mock_client._request = AsyncMock(return_value={"volume": 5, "status": "stop"})
+
+        detector = WiiMCapabilities()
+        capabilities = await detector.detect_capabilities(mock_client, device_info)
+
+        # Should probe getPlayerStatusEx and detect it's supported
+        # Even though static detection might say False for "original" generation
+        assert capabilities["supports_player_status_ex"] is True
+        # Verify it was probed (check that _request was called with getPlayerStatusEx)
+        calls = [str(call) for call in mock_client._request.call_args_list]
+        assert any("getPlayerStatusEx" in str(call) for call in calls)
+
+    @pytest.mark.asyncio
+    async def test_detect_capabilities_getplayerstatusex_fails(self, mock_client):
+        """Test that capability detection handles getPlayerStatusEx failure."""
+        device_info = DeviceInfo(uuid="test-uuid", model="Audio Pro A10 MkII", firmware="1.58")
+        # mock_client already has host set from fixture
+        mock_client.get_status = AsyncMock(return_value={"status": "ok"})
+
+        # getPlayerStatusEx fails
+        def request_side_effect(endpoint, **kwargs):
+            if "getPlayerStatusEx" in endpoint:
+                raise WiiMError("Not supported")
+            return {"status": "ok"}
+
+        mock_client._request = AsyncMock(side_effect=request_side_effect)
+
+        detector = WiiMCapabilities()
+        capabilities = await detector.detect_capabilities(mock_client, device_info)
+
+        # Should detect that getPlayerStatusEx is not supported
+        assert capabilities["supports_player_status_ex"] is False
+
+    @pytest.mark.asyncio
+    async def test_detect_capabilities_arylic_not_audio_pro(self, mock_client):
+        """Test that Arylic devices don't get Audio Pro generation-specific settings."""
+        device_info = DeviceInfo(uuid="test-uuid", model="ARYLIC_H50", firmware="4.6.529755")
+        # mock_client already has host set from fixture
+        mock_client.get_status = AsyncMock(return_value={"status": "ok"})
+        mock_client._request = AsyncMock(return_value={"volume": 5, "status": "stop"})
+
+        detector = WiiMCapabilities()
+        capabilities = await detector.detect_capabilities(mock_client, device_info)
+
+        # Should be detected as arylic vendor
+        assert capabilities["vendor"] == "arylic"
+        # Should be legacy device
+        assert capabilities["is_legacy_device"] is True
+        # Should NOT have Audio Pro MkII settings (no client cert, no special ports)
+        assert capabilities.get("requires_client_cert") is not True
+        assert capabilities.get("preferred_ports") is None
+        # Should probe getPlayerStatusEx and use it if supported
+        # (probe will override static detection)
+        assert capabilities["supports_player_status_ex"] is True
+
+    @pytest.mark.asyncio
+    async def test_detect_capabilities_audio_pro_gets_special_settings(self, mock_client):
+        """Test that Audio Pro devices get generation-specific settings."""
+        device_info = DeviceInfo(uuid="test-uuid", model="Audio Pro A10 MkII", firmware="1.58")
+        # mock_client already has host set from fixture
+        mock_client.get_status = AsyncMock(return_value={"status": "ok"})
+
+        # getPlayerStatusEx fails for Audio Pro MkII
+        def request_side_effect(endpoint, **kwargs):
+            if "getPlayerStatusEx" in endpoint:
+                raise WiiMError("Not supported")
+            return {"status": "ok"}
+
+        mock_client._request = AsyncMock(side_effect=request_side_effect)
+
+        detector = WiiMCapabilities()
+        capabilities = await detector.detect_capabilities(mock_client, device_info)
+
+        # Should be detected as audio_pro vendor
+        assert capabilities["vendor"] == "audio_pro"
+        # Should be legacy device
+        assert capabilities["is_legacy_device"] is True
+        # Should have Audio Pro MkII settings
+        assert capabilities["requires_client_cert"] is True
+        assert capabilities["preferred_ports"] == [4443, 8443, 443]
+        assert capabilities["supports_player_status_ex"] is False
+
 
 class TestPollingInterval:
     """Test optimal polling interval calculation."""

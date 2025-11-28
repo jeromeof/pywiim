@@ -191,10 +191,13 @@ class PlayerMonitor:
                 description_url = f"http://{self.player.client.host}:49152/description.xml"
 
                 # Create UPnP client using factory method
+                # Pass client's session for connection pooling
+                await self.player.client._ensure_session()
+                client_session = getattr(self.player.client, "_session", None)
                 self.upnp_client = await UpnpClient.create(
                     self.player.client.host,
                     description_url,
-                    session=None,
+                    session=client_session,
                 )
 
                 # Initialize UPnP health tracker

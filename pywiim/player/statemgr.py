@@ -48,6 +48,8 @@ class StateManager:
         self.player = player
         # Track last track signature to detect track changes for immediate artwork fetching
         self._last_track_signature: str | None = None
+        # Track if we've tried to create UPnP client (to avoid repeated attempts)
+        self._upnp_client_creation_attempted: bool = False
         # Track if we're already fetching artwork to avoid duplicate requests
         self._artwork_fetch_task: asyncio.Task | None = None
 
@@ -68,6 +70,66 @@ class StateManager:
 
         # Polling strategy for periodic fetching decisions
         self._polling_strategy: PollingStrategy | None = None
+
+        # Track if we've tried to create UPnP client (to avoid repeated attempts)
+        self._upnp_client_creation_attempted: bool = False
+
+    async def _ensure_upnp_client(self) -> bool:
+        """Lazily create UPnP client if not already present.
+
+        Returns:
+            True if UPnP client is available (either existed or was created),
+            False if creation failed or device doesn't support UPnP.
+        """
+        # If already exists, return True
+        if self.player._upnp_client is not None:
+            return True
+
+        # If we've already tried and failed, don't retry
+        if self._upnp_client_creation_attempted:
+            return False
+
+        # Mark that we're attempting creation
+        self._upnp_client_creation_attempted = True
+
+        try:
+            from ..upnp.client import UpnpClient
+
+            # UPnP description URL is typically on port 49152
+            description_url = f"http://{self.player.client.host}:49152/description.xml"
+
+            _LOGGER.debug("Lazily creating UPnP client for %s", self.player.client.host)
+            # Pass client's session to UPnP client for connection pooling
+            # Ensure session exists (client may create it lazily)
+            await self.player.client._ensure_session()
+            client_session = getattr(self.player.client, "_session", None)
+            self.player._upnp_client = await UpnpClient.create(
+                self.player.client.host,
+                description_url,
+                session=client_session,
+            )
+
+            # Initialize UPnP health tracker if not already present
+            if self.player._upnp_health_tracker is None:
+                from ..upnp.health import UpnpHealthTracker
+
+                self.player._upnp_health_tracker = UpnpHealthTracker()
+
+            _LOGGER.info(
+                "✅ Auto-created UPnP client for %s: AVTransport=%s, RenderingControl=%s",
+                self.player.client.host,
+                self.player._upnp_client.av_transport is not None,
+                self.player._upnp_client.rendering_control is not None,
+            )
+            return True
+        except Exception as err:
+            _LOGGER.debug(
+                "Failed to auto-create UPnP client for %s: %s (will use HTTP only)",
+                self.player.client.host,
+                err,
+            )
+            # Don't set _upnp_client to None - leave it as None so we don't retry
+            return False
 
     def apply_diff(self, changes: dict[str, Any]) -> bool:
         """Apply state changes from UPnP events.
@@ -515,6 +577,9 @@ class StateManager:
             full = True
 
         try:
+            # Try to ensure UPnP client is available (lazy creation)
+            await self._ensure_upnp_client()
+
             # Tier 1: Always fetch fast status
             status = await self.player.client.get_player_status_model()
 
@@ -524,6 +589,27 @@ class StateManager:
                 device_info = await self.player.client.get_device_info_model()
                 self.player._device_info = device_info
 
+            # Try UPnP GetVolume first if available, fallback to HTTP
+            volume_from_upnp: int | None = None
+            mute_from_upnp: bool | None = None
+
+            if self.player._upnp_client and self.player._upnp_client.rendering_control:
+                try:
+                    volume_from_upnp = await self.player._upnp_client.get_volume()
+                    mute_from_upnp = await self.player._upnp_client.get_mute()
+                    _LOGGER.debug(
+                        "Got volume from UPnP for %s: volume=%s, mute=%s",
+                        self.player.client.host,
+                        volume_from_upnp,
+                        mute_from_upnp,
+                    )
+                except Exception as err:
+                    _LOGGER.debug(
+                        "UPnP GetVolume failed for %s: %s (falling back to HTTP)",
+                        self.player.client.host,
+                        err,
+                    )
+
             # Update StateSynchronizer with HTTP data
             status_dict = status.model_dump(exclude_none=False) if status else {}
             if "entity_picture" in status_dict:
@@ -531,6 +617,12 @@ class StateManager:
             for field_name in ["title", "artist", "album", "image_url"]:
                 if field_name not in status_dict:
                     status_dict[field_name] = None
+
+            # Override volume/mute with UPnP values if available (UPnP preferred)
+            if volume_from_upnp is not None:
+                status_dict["volume"] = volume_from_upnp
+            if mute_from_upnp is not None:
+                status_dict["muted"] = mute_from_upnp
 
             self.player._state_synchronizer.update_from_http(status_dict)
 

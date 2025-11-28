@@ -256,14 +256,17 @@ class StateSynchronizer:
             )
 
         # Extract volume and mute
-        if "volume" in data:
+        # Only update if value is not None (preserve existing values when API doesn't return volume)
+        # This prevents clearing volume when some devices (e.g., Audio Pro) don't return volume
+        # in status when grouped, or when API returns None explicitly
+        if "volume" in data and data.get("volume") is not None:
             self._http_state["volume"] = TimestampedField(
                 value=data.get("volume"),
                 source="http",
                 timestamp=ts,
             )
 
-        if "muted" in data:
+        if "muted" in data and data.get("muted") is not None:
             self._http_state["muted"] = TimestampedField(
                 value=data.get("muted"),
                 source="http",

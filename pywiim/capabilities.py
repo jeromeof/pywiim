@@ -124,6 +124,27 @@ class WiiMCapabilities:
             capabilities["supports_getstatuse"] = False
             _LOGGER.debug("Device %s does not support getStatusEx", client.host)
 
+        # Probe for getPlayerStatusEx support (override static detection)
+        # Some "original" generation devices actually support getPlayerStatusEx
+        # Always probe to verify - if probe succeeds, use getPlayerStatusEx; if it fails, keep static value
+        try:
+            raw = await client._request("/httpapi.asp?command=getPlayerStatusEx")
+            # If we get a response, it's supported (even if it's an error dict, the endpoint exists)
+            if isinstance(raw, dict):
+                capabilities["supports_player_status_ex"] = True
+                _LOGGER.debug("Device %s supports getPlayerStatusEx (probed, overriding static detection)", client.host)
+        except WiiMError:
+            # Probe failed - if static detection said False, keep it; if it said True, override to False
+            if capabilities.get("supports_player_status_ex", True):
+                capabilities["supports_player_status_ex"] = False
+                _LOGGER.debug(
+                    "Device %s does not support getPlayerStatusEx (probed, overriding static detection)", client.host
+                )
+            else:
+                _LOGGER.debug(
+                    "Device %s does not support getPlayerStatusEx (probe confirmed static detection)", client.host
+                )
+
         # Probe for getSlaveList support
         try:
             await client._request("/httpapi.asp?command=multiroom:getSlaveList")
@@ -289,38 +310,42 @@ def detect_device_capabilities(device_info: DeviceInfo) -> dict[str, Any]:
         capabilities["supports_sleep_timer"] = True  # WiiM devices support sleep timer
         capabilities["max_alarm_slots"] = 3  # WiiM supports 3 independent alarms
     elif capabilities["is_legacy_device"]:
-        # Apply Audio Pro generation specific optimizations
-        generation = capabilities["audio_pro_generation"]
-        if generation == "mkii":
-            capabilities["response_timeout"] = 6.0
-            capabilities["retry_count"] = 3
-            capabilities["protocol_priority"] = ["https", "http"]  # HTTPS first for MkII
-            # Audio Pro MkII specific: requires client certificate for mTLS on port 4443
-            capabilities["requires_client_cert"] = True
-            capabilities["preferred_ports"] = [4443, 8443, 443]  # Port 4443 primary
-            capabilities["supports_player_status_ex"] = False  # Use getStatusEx instead
-            capabilities["supports_presets"] = False  # getPresetInfo not supported
-            capabilities["supports_eq"] = False  # EQ commands not supported
-            capabilities["supports_metadata"] = False  # getMetaInfo not supported
-            capabilities["status_endpoint"] = "/httpapi.asp?command=getStatusEx"
-        elif generation == "w_generation":
-            capabilities["supports_enhanced_grouping"] = True
-            capabilities["response_timeout"] = 4.0
-            capabilities["retry_count"] = 2
-            capabilities["protocol_priority"] = ["https", "http"]
-            capabilities["supports_player_status_ex"] = True
-            capabilities["supports_presets"] = True  # May support presets
-            capabilities["supports_eq"] = True  # May support EQ
-            capabilities["supports_metadata"] = True  # May support metadata
-        else:
-            # Original Audio Pro devices
-            capabilities["response_timeout"] = 8.0
-            capabilities["retry_count"] = 4
-            capabilities["protocol_priority"] = ["http", "https"]  # HTTP first for legacy
-            capabilities["supports_player_status_ex"] = False  # Use getStatusEx
-            capabilities["supports_presets"] = True  # May support presets
-            capabilities["supports_eq"] = False  # EQ typically not supported
-            capabilities["supports_metadata"] = False  # Metadata typically not supported
+        # Apply Audio Pro generation specific optimizations ONLY for Audio Pro devices
+        # Other legacy devices (e.g., Arylic) should use defaults or be probed
+        vendor = capabilities.get("vendor", "")
+        if vendor == "audio_pro":
+            generation = capabilities["audio_pro_generation"]
+            if generation == "mkii":
+                capabilities["response_timeout"] = 6.0
+                capabilities["retry_count"] = 3
+                capabilities["protocol_priority"] = ["https", "http"]  # HTTPS first for MkII
+                # Audio Pro MkII specific: requires client certificate for mTLS on port 4443
+                capabilities["requires_client_cert"] = True
+                capabilities["preferred_ports"] = [4443, 8443, 443]  # Port 4443 primary
+                capabilities["supports_player_status_ex"] = False  # Use getStatusEx instead
+                capabilities["supports_presets"] = False  # getPresetInfo not supported
+                capabilities["supports_eq"] = False  # EQ commands not supported
+                capabilities["supports_metadata"] = False  # getMetaInfo not supported
+                capabilities["status_endpoint"] = "/httpapi.asp?command=getStatusEx"
+            elif generation == "w_generation":
+                capabilities["supports_enhanced_grouping"] = True
+                capabilities["response_timeout"] = 4.0
+                capabilities["retry_count"] = 2
+                capabilities["protocol_priority"] = ["https", "http"]
+                capabilities["supports_player_status_ex"] = True
+                capabilities["supports_presets"] = True  # May support presets
+                capabilities["supports_eq"] = True  # May support EQ
+                capabilities["supports_metadata"] = True  # May support metadata
+            else:
+                # Original Audio Pro devices
+                capabilities["response_timeout"] = 8.0
+                capabilities["retry_count"] = 4
+                capabilities["protocol_priority"] = ["http", "https"]  # HTTP first for legacy
+                capabilities["supports_player_status_ex"] = False  # Use getStatusEx
+                capabilities["supports_presets"] = True  # May support presets
+                capabilities["supports_eq"] = False  # EQ typically not supported
+                capabilities["supports_metadata"] = False  # Metadata typically not supported
+        # For other legacy devices (e.g., Arylic), use defaults - capabilities will be probed
 
     return capabilities
 

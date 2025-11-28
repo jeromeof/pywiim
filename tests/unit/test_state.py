@@ -214,6 +214,79 @@ class TestStateSynchronizer:
         assert state_obj.play_state is not None
         assert state_obj.play_state.value == "play"
 
+    def test_update_from_http_preserves_volume_when_none(self):
+        """Test that update_from_http preserves existing volume when HTTP returns None."""
+        sync = StateSynchronizer()
+
+        # First, set volume from UPnP
+        sync.update_from_upnp({"volume": 50, "muted": False})
+        merged1 = sync.get_merged_state()
+        assert merged1["volume"] == 50
+
+        # Then, HTTP poll returns None for volume (e.g., grouped device)
+        # Should preserve existing volume, not clear it
+        sync.update_from_http({"play_state": "play", "volume": None, "muted": None})
+        merged2 = sync.get_merged_state()
+
+        # Volume should still be 50 (from UPnP), not None
+        assert merged2["volume"] == 50
+        # Mute should still be False (from UPnP), not None
+        assert merged2["muted"] is False
+
+    def test_update_from_http_preserves_mute_when_none(self):
+        """Test that update_from_http preserves existing mute when HTTP returns None."""
+        sync = StateSynchronizer()
+
+        # First, set mute from UPnP
+        sync.update_from_upnp({"volume": 50, "muted": True})
+        merged1 = sync.get_merged_state()
+        assert merged1["muted"] is True
+
+        # Then, HTTP poll returns None for mute
+        # Should preserve existing mute, not clear it
+        sync.update_from_http({"play_state": "play", "muted": None})
+        merged2 = sync.get_merged_state()
+
+        # Mute should still be True (from UPnP), not None
+        assert merged2["muted"] is True
+
+    def test_update_from_http_updates_volume_when_provided(self):
+        """Test that update_from_http updates volume when HTTP provides a value."""
+        sync = StateSynchronizer()
+
+        # First, set volume from UPnP (stale - older timestamp)
+        import time
+
+        old_time = time.time() - 20.0  # 20 seconds ago (stale)
+        sync.update_from_upnp({"volume": 50}, timestamp=old_time)
+        merged1 = sync.get_merged_state()
+        assert merged1["volume"] == 50
+
+        # Then, HTTP poll returns a new volume value (fresh)
+        # Should update to HTTP value since UPnP is stale
+        sync.update_from_http({"volume": 75})
+        merged2 = sync.get_merged_state()
+
+        # Volume should be updated to 75 (from HTTP, since UPnP is stale)
+        assert merged2["volume"] == 75
+
+    def test_update_from_http_handles_missing_volume_key(self):
+        """Test that update_from_http handles missing volume key (not in dict at all)."""
+        sync = StateSynchronizer()
+
+        # First, set volume from UPnP
+        sync.update_from_upnp({"volume": 50})
+        merged1 = sync.get_merged_state()
+        assert merged1["volume"] == 50
+
+        # Then, HTTP poll doesn't include volume key at all
+        # Should preserve existing volume
+        sync.update_from_http({"play_state": "play"})
+        merged2 = sync.get_merged_state()
+
+        # Volume should still be 50 (from UPnP)
+        assert merged2["volume"] == 50
+
 
 class TestGroupStateSynchronizer:
     """Test GroupStateSynchronizer class."""

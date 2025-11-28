@@ -41,17 +41,17 @@ class UpnpClient:
         Args:
             host: Device hostname or IP
             description_url: URL to device description.xml
-            session: aiohttp session for HTTP requests (unused, creates own session)
+            session: aiohttp session for HTTP requests (reused when possible)
         """
         self.host = host
         self.description_url = description_url
-        self.session = session  # Kept for compatibility, but we create our own session
+        self.session = session  # External session to reuse when possible
         self._device: UpnpDevice | None = None
         self._dmr_device: DmrDevice | None = None  # DmrDevice wrapper for subscriptions (DLNA pattern)
         self._av_transport_service: Any | None = None
         self._rendering_control_service: Any | None = None
         self._notify_server: AiohttpNotifyServer | None = None
-        self._internal_session: ClientSession | None = None  # Session we created internally
+        self._internal_session: ClientSession | None = None  # Session we created internally (only if needed)
 
     @classmethod
     async def create(
@@ -65,7 +65,7 @@ class UpnpClient:
         Args:
             host: Device hostname or IP
             description_url: URL to device description.xml
-            session: Optional aiohttp session (unused, creates own session)
+            session: Optional aiohttp session (reused for HTTP operations, new session created only for HTTPS with special SSL config)
 
         Returns:
             Initialized UpnpClient instance
@@ -77,22 +77,31 @@ class UpnpClient:
     async def _initialize(self) -> None:
         """Initialize UPnP device and services."""
         try:
-            # Handle both HTTP and HTTPS description URLs
+            # Use passed session for HTTP operations, create new session only for HTTPS with special SSL config
             if self.description_url.startswith("https://"):
                 _LOGGER.info("Using HTTPS for UPnP description (self-signed cert support enabled)")
-                # HTTPS with self-signed cert support
+                # HTTPS with self-signed cert support - need special SSL config
+                # Create new session with custom SSL context
                 ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
                 ssl_context.check_hostname = False
                 ssl_context.verify_mode = ssl.CERT_NONE
                 ssl_context.set_ciphers("ALL:@SECLEVEL=0")
                 connector = TCPConnector(ssl=ssl_context)
+                session = ClientSession(connector=connector)
+                self._internal_session = session  # Track for cleanup
             else:
-                _LOGGER.info("Using HTTP for UPnP description (no SSL needed)")
-                # HTTP - no SSL needed
-                connector = TCPConnector(ssl=False)
+                # HTTP - can reuse passed session if available
+                if self.session is not None and not self.session.closed:
+                    _LOGGER.debug("Reusing passed aiohttp session for UPnP HTTP operations")
+                    session = self.session
+                    self._internal_session = None  # Not our session, don't close it
+                else:
+                    _LOGGER.info("Using HTTP for UPnP description (no SSL needed)")
+                    # No session provided or session is closed - create our own
+                    connector = TCPConnector(ssl=False)
+                    session = ClientSession(connector=connector)
+                    self._internal_session = session  # Track for cleanup
 
-            session = ClientSession(connector=connector)
-            self._internal_session = session  # Track for cleanup
             # DLNA pattern: with_sleep=True adds retry logic, timeout ensures we don't hang
             requester = AiohttpSessionRequester(session, with_sleep=True, timeout=10)
 
@@ -179,14 +188,20 @@ class UpnpClient:
         Returns:
             Started AiohttpNotifyServer instance
         """
-        # Create notify server (DLNA/DMR pattern) with SSL disabled for self-signed certs
-        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-        ssl_context.set_ciphers("ALL:@SECLEVEL=0")
+        # Try to reuse passed session for notify server (used for subscription requests)
+        # Only create new session if we need special SSL config or no session provided
+        if self.session is not None and not self.session.closed:
+            _LOGGER.debug("Reusing passed aiohttp session for UPnP notify server")
+            session = self.session
+        else:
+            # Create notify server (DLNA/DMR pattern) with SSL disabled for self-signed certs
+            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            ssl_context.set_ciphers("ALL:@SECLEVEL=0")
 
-        connector = TCPConnector(ssl=ssl_context)
-        session = ClientSession(connector=connector)
+            connector = TCPConnector(ssl=ssl_context)
+            session = ClientSession(connector=connector)
         requester = AiohttpSessionRequester(session, with_sleep=True, timeout=10)
 
         # Get the correct local IP for callback URL
@@ -311,12 +326,13 @@ class UpnpClient:
     async def close(self) -> None:
         """Close the UPnP client and clean up resources.
 
-        Stops the notify server and closes the internal aiohttp session.
+        Stops the notify server and closes the internal aiohttp session (only if we created it).
+        Does not close externally-provided sessions.
         """
         # Stop notify server first
         await self.unwind_notify_server()
 
-        # Close internal session
+        # Close internal session (only if we created it, not if it was passed in)
         if self._internal_session and not self._internal_session.closed:
             try:
                 await self._internal_session.close()

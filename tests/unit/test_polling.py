@@ -31,12 +31,34 @@ class TestPollingStrategy:
 
         assert interval == 1.0  # Fast poll during playback
 
+    def test_get_optimal_interval_wiim_idle_startup(self):
+        """Test optimal interval for WiiM device on startup (should use normal polling)."""
+        capabilities = {"is_legacy_device": False}
+        strategy = PollingStrategy(capabilities)
+        # On startup, _last_playing_time is 0, so should use normal polling
+        assert strategy._last_playing_time == 0.0
+
+        interval = strategy.get_optimal_interval("master", is_playing=False)
+
+        assert interval == 5.0  # Normal poll on startup (not fast)
+
+    def test_get_optimal_interval_wiim_idle_active(self):
+        """Test optimal interval for WiiM device in active idle window."""
+        capabilities = {"is_legacy_device": False}
+        strategy = PollingStrategy(capabilities)
+        # Set last playing time to be < 30 seconds ago (within active idle window)
+        strategy._last_playing_time = time.time() - 10
+
+        interval = strategy.get_optimal_interval("master", is_playing=False)
+
+        assert interval == 1.0  # Fast poll during active idle window
+
     def test_get_optimal_interval_wiim_idle(self):
         """Test optimal interval for WiiM device idle."""
         capabilities = {"is_legacy_device": False}
         strategy = PollingStrategy(capabilities)
-        # Set last playing time to be > 5 minutes ago to get normal interval
-        strategy._last_playing_time = time.time() - 400
+        # Set last playing time to be > 30 seconds ago to get normal interval
+        strategy._last_playing_time = time.time() - 60
 
         interval = strategy.get_optimal_interval("master", is_playing=False)
 

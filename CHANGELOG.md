@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [2.1.21] - 2025-11-28
+
+### Fixed
+- **Fixed volume attribute missing for grouped speakers (Issue #126)**
+  - State synchronization now preserves volume/mute when HTTP API returns `None` (e.g., grouped Audio Pro devices)
+  - Capability detection now probes `getPlayerStatusEx` support instead of assuming based on device generation
+  - Audio Pro generation-specific settings now only apply to Audio Pro devices, not all legacy devices (e.g., Arylic)
+- **Improved volume detection reliability**
+  - Added lazy UPnP client creation for automatic UPnP support
+  - UPnP `GetVolume` is now preferred over HTTP for volume retrieval (with HTTP fallback)
+  - Ensures volume is available even when HTTP API doesn't return it (e.g., grouped devices)
+- **Fixed excessive polling on Home Assistant startup when devices are idle**
+
 ## [2.1.20] - 2025-11-27
 
 ### Added

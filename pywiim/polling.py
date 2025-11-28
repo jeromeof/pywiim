@@ -78,7 +78,7 @@ class PollingStrategy:
             capabilities: Device capabilities dictionary from capability detection.
         """
         self.capabilities = capabilities
-        self._last_playing_time: float = time.time()  # Initialize to now for initial active window
+        self._last_playing_time: float = 0.0  # Initialize to 0 (far in past) so startup uses normal polling
 
     def get_optimal_interval(
         self,
@@ -132,11 +132,11 @@ class PollingStrategy:
 
             # Not playing: Check "Active Idle" window
             time_since_playing = time.time() - self._last_playing_time
-            if time_since_playing < 300:  # 5 minutes
-                # Active Idle: Recently played, stay fast to catch resumed playback quickly
+            if time_since_playing < 30:  # 30 seconds
+                # Active Idle: Recently paused, stay fast to catch resumed playback quickly
                 return self.FAST_POLL_INTERVAL  # 1 second
 
-            # Deep Idle: Not played for > 5 mins
+            # Deep Idle: Not played for > 30 seconds
             return self.NORMAL_POLL_INTERVAL  # 5 seconds
 
     def should_fetch_configuration(

@@ -235,6 +235,104 @@ class TestPlayerRefresh:
 
         assert player._status_model == mock_status
 
+    @pytest.mark.asyncio
+    async def test_refresh_with_upnp_volume(self, mock_client):
+        """Test refresh uses UPnP GetVolume when available."""
+        from unittest.mock import MagicMock
+        from pywiim.models import DeviceInfo, PlayerStatus
+        from pywiim.player import Player
+        from pywiim.upnp.client import UpnpClient
+
+        # Setup HTTP status (volume=50)
+        mock_status = PlayerStatus(play_state="play", volume=50, mute=False)
+        mock_info = DeviceInfo(uuid="test-uuid", name="Test Device")
+        mock_client.get_player_status_model = AsyncMock(return_value=mock_status)
+        mock_client.get_device_info_model = AsyncMock(return_value=mock_info)
+        mock_client.get_device_info_model = AsyncMock(return_value=mock_info)
+
+        # Setup UPnP client with RenderingControl
+        mock_upnp_client = MagicMock(spec=UpnpClient)
+        mock_upnp_client.rendering_control = MagicMock()
+        mock_upnp_client.get_volume = AsyncMock(return_value=75)  # UPnP volume = 75
+        mock_upnp_client.get_mute = AsyncMock(return_value=True)  # UPnP mute = True
+
+        player = Player(mock_client, upnp_client=mock_upnp_client)
+        await player.refresh()
+
+        # Verify UPnP GetVolume was called
+        mock_upnp_client.get_volume.assert_called_once()
+        mock_upnp_client.get_mute.assert_called_once()
+
+        # Verify state synchronizer was updated with UPnP values (overriding HTTP)
+        merged = player._state_synchronizer.get_merged_state()
+        # UPnP volume (75) should override HTTP volume (50)
+        assert merged["volume"] == 75
+        # UPnP mute (True) should override HTTP mute (False)
+        assert merged["muted"] is True
+
+    @pytest.mark.asyncio
+    async def test_refresh_lazy_upnp_client_creation(self, mock_client):
+        """Test refresh creates UPnP client lazily if not provided."""
+        from unittest.mock import MagicMock, patch
+        from pywiim.models import DeviceInfo, PlayerStatus
+        from pywiim.player import Player
+
+        # Setup HTTP status
+        mock_status = PlayerStatus(play_state="play", volume=50, mute=False)
+        mock_info = DeviceInfo(uuid="test-uuid", name="Test Device")
+        mock_client.get_player_status_model = AsyncMock(return_value=mock_status)
+        mock_client.get_device_info_model = AsyncMock(return_value=mock_info)
+
+        # Mock UPnP client creation
+        mock_upnp_client = MagicMock()
+        mock_upnp_client.rendering_control = MagicMock()
+        mock_upnp_client.get_volume = AsyncMock(return_value=60)
+        mock_upnp_client.get_mute = AsyncMock(return_value=False)
+
+        with patch("pywiim.upnp.client.UpnpClient.create", new_callable=AsyncMock) as mock_create:
+            mock_create.return_value = mock_upnp_client
+
+            player = Player(mock_client)  # No UPnP client provided
+            assert player._upnp_client is None
+
+            await player.refresh()
+
+            # Should attempt to create UPnP client
+            mock_create.assert_called_once()
+            # UPnP client should be set
+            assert player._upnp_client is not None
+
+    @pytest.mark.asyncio
+    async def test_refresh_upnp_volume_fallback_to_http(self, mock_client):
+        """Test refresh falls back to HTTP volume when UPnP GetVolume fails."""
+        from unittest.mock import MagicMock
+        from pywiim.models import DeviceInfo, PlayerStatus
+        from pywiim.player import Player
+        from pywiim.upnp.client import UpnpClient
+
+        # Setup HTTP status (volume=50)
+        mock_status = PlayerStatus(play_state="play", volume=50, mute=False)
+        mock_info = DeviceInfo(uuid="test-uuid", name="Test Device")
+        mock_client.get_player_status_model = AsyncMock(return_value=mock_status)
+        mock_client.get_device_info_model = AsyncMock(return_value=mock_info)
+
+        # Setup UPnP client but GetVolume fails
+        mock_upnp_client = MagicMock(spec=UpnpClient)
+        mock_upnp_client.rendering_control = MagicMock()
+        mock_upnp_client.get_volume = AsyncMock(side_effect=Exception("UPnP error"))
+        mock_upnp_client.get_mute = AsyncMock(side_effect=Exception("UPnP error"))
+
+        player = Player(mock_client, upnp_client=mock_upnp_client)
+        await player.refresh()
+
+        # Should fall back to HTTP volume
+        merged = player._state_synchronizer.get_merged_state()
+        # Should use HTTP volume (50) since UPnP failed
+        assert merged["volume"] == 50
+        # Mute might be None if HTTP status doesn't include it, or False if it does
+        # The important thing is that volume works (the main test)
+        assert merged.get("muted") in [False, None]
+
 
 class TestPlayerVolumeControl:
     """Test Player volume control methods."""
