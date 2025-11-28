@@ -27,17 +27,17 @@ jobs:
         python -m pip install --upgrade pip
         pip install -e ".[dev]"
     
-    - name: Format code with black
+    - name: Check code formatting with black
       run: |
-        black pywiim tests
+        black pywiim tests --check --diff || (echo "❌ Code formatting failed! Run 'black pywiim tests' to fix." && exit 1)
     
-    - name: Sort imports with isort
+    - name: Check import sorting with isort
       run: |
-        isort pywiim tests
+        isort pywiim tests --check-only --diff || (echo "❌ Import sorting failed! Run 'isort pywiim tests' to fix." && exit 1)
     
     - name: Lint with Ruff
       run: |
-        ruff check pywiim tests
+        ruff check pywiim tests || (echo "❌ Linting failed! Run 'ruff check pywiim tests' locally to see errors." && exit 1)
     
     - name: Type check with mypy
       run: |
