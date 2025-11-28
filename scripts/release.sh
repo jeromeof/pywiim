@@ -281,25 +281,39 @@ if command -v gh &> /dev/null; then
         
         if [ -n "$CHANGELOG_NOTES" ]; then
             # Create release with changelog notes
-            if echo "$CHANGELOG_NOTES" | gh release create "v$NEW_VERSION" \
+            RELEASE_OUTPUT=$(echo "$CHANGELOG_NOTES" | gh release create "v$NEW_VERSION" \
                 --title "Release v$NEW_VERSION" \
                 --notes-file - \
-                --target main 2>&1; then
+                --target main 2>&1)
+            RELEASE_EXIT_CODE=$?
+            
+            if [ $RELEASE_EXIT_CODE -eq 0 ]; then
                 info "GitHub release created successfully!"
             else
-                warn "Failed to create GitHub release (but version was tagged and pushed)"
+                error "Failed to create GitHub release (exit code: $RELEASE_EXIT_CODE)"
+                if [ -n "$RELEASE_OUTPUT" ]; then
+                    error "Error output: $RELEASE_OUTPUT"
+                fi
+                warn "Version was tagged and pushed, but GitHub release was not created"
                 warn "You can create it manually at: https://github.com/mjcumming/pywiim/releases/new"
             fi
         else
             # Create release without notes (fallback)
             warn "Could not extract changelog, creating release without notes"
-            if gh release create "v$NEW_VERSION" \
+            RELEASE_OUTPUT=$(gh release create "v$NEW_VERSION" \
                 --title "Release v$NEW_VERSION" \
                 --notes "Release version $NEW_VERSION" \
-                --target main 2>&1; then
+                --target main 2>&1)
+            RELEASE_EXIT_CODE=$?
+            
+            if [ $RELEASE_EXIT_CODE -eq 0 ]; then
                 info "GitHub release created successfully!"
             else
-                warn "Failed to create GitHub release (but version was tagged and pushed)"
+                error "Failed to create GitHub release (exit code: $RELEASE_EXIT_CODE)"
+                if [ -n "$RELEASE_OUTPUT" ]; then
+                    error "Error output: $RELEASE_OUTPUT"
+                fi
+                warn "Version was tagged and pushed, but GitHub release was not created"
                 warn "You can create it manually at: https://github.com/mjcumming/pywiim/releases/new"
             fi
         fi
