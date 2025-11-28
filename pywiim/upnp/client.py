@@ -65,7 +65,8 @@ class UpnpClient:
         Args:
             host: Device hostname or IP
             description_url: URL to device description.xml
-            session: Optional aiohttp session (reused for HTTP operations, new session created only for HTTPS with special SSL config)
+            session: Optional aiohttp session (reused for HTTP operations,
+                new session created only for HTTPS with special SSL config)
 
         Returns:
             Initialized UpnpClient instance
