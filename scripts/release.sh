@@ -212,15 +212,10 @@ info "Version updated successfully in both files"
 
 # Step 8: Final validation before commit
 step "Running final validation checks before commit..."
-# Re-run critical checks one more time to ensure nothing broke
-if ! $PYTHON -m ruff check pywiim tests > /dev/null 2>&1; then
-    error "Final ruff check failed! Aborting release."
-    error "Run 'ruff check pywiim tests' to see errors."
-    exit 1
-fi
-
+# Re-run all CI checks one more time to ensure nothing broke
 if ! ./check.sh > /dev/null 2>&1; then
     error "Final CI checks failed! Aborting release."
+    error "Run './check.sh' to see detailed errors."
     exit 1
 fi
 
