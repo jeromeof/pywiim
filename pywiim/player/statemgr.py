@@ -71,9 +71,6 @@ class StateManager:
         # Polling strategy for periodic fetching decisions
         self._polling_strategy: PollingStrategy | None = None
 
-        # Track if we've tried to create UPnP client (to avoid repeated attempts)
-        self._upnp_client_creation_attempted: bool = False
-
     async def _ensure_upnp_client(self) -> bool:
         """Lazily create UPnP client if not already present.
 
