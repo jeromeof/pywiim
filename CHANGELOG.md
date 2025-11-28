@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+## [2.1.22] - 2025-11-28
+
+### Changed
+- **Improved CI workflow reliability**
+  - Changed black/isort to check-only mode (fail if formatting needed)
+  - Added clear error messages for failed checks
+  - Ensures CI catches formatting/linting issues before merge
+
 ## [2.1.21] - 2025-11-28
 
 ### Fixed

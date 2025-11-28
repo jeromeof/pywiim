@@ -239,6 +239,7 @@ class TestPlayerRefresh:
     async def test_refresh_with_upnp_volume(self, mock_client):
         """Test refresh uses UPnP GetVolume when available."""
         from unittest.mock import MagicMock
+
         from pywiim.models import DeviceInfo, PlayerStatus
         from pywiim.player import Player
         from pywiim.upnp.client import UpnpClient
@@ -274,6 +275,7 @@ class TestPlayerRefresh:
     async def test_refresh_lazy_upnp_client_creation(self, mock_client):
         """Test refresh creates UPnP client lazily if not provided."""
         from unittest.mock import MagicMock, patch
+
         from pywiim.models import DeviceInfo, PlayerStatus
         from pywiim.player import Player
 
@@ -306,6 +308,7 @@ class TestPlayerRefresh:
     async def test_refresh_upnp_volume_fallback_to_http(self, mock_client):
         """Test refresh falls back to HTTP volume when UPnP GetVolume fails."""
         from unittest.mock import MagicMock
+
         from pywiim.models import DeviceInfo, PlayerStatus
         from pywiim.player import Player
         from pywiim.upnp.client import UpnpClient
