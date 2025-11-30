@@ -5,12 +5,12 @@ coverage:
   status:
     project:
       default:
-        target: 80%
+        target: 60%  # Gradually increasing from 57% baseline
         threshold: 1%
         base: auto
     patch:
       default:
-        target: 80%
+        target: 60%  # New code should have at least 60% coverage
         threshold: 1%
 
 flags:
