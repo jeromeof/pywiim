@@ -162,7 +162,7 @@ class TestGroupAPIOperations:
 
     @pytest.mark.asyncio
     async def test_join_slave(self, mock_client):
-        """Test joining as slave."""
+        """Test joining as slave with router-based mode (default)."""
         master_ip = "192.168.1.101"
         mock_client._request = AsyncMock(return_value={"raw": "OK"})
         type(mock_client).host = "192.168.1.100"
@@ -172,6 +172,70 @@ class TestGroupAPIOperations:
         assert mock_client._group_master == master_ip
         assert mock_client._group_slaves == []
         mock_client._request.assert_called_once()
+        # Verify router-based mode command format
+        call_args = mock_client._request.call_args[0][0]
+        assert f"ConnectMasterAp:JoinGroupMaster:eth{master_ip}:wifi0.0.0.0" in call_args
+
+    @pytest.mark.asyncio
+    async def test_join_slave_wifi_direct_mode(self, mock_client):
+        """Test joining as slave with WiFi Direct mode for Gen1 devices."""
+        import binascii
+
+        master_ip = "192.168.1.101"
+        mock_client._request = AsyncMock(return_value={"raw": "OK"})
+        type(mock_client).host = "192.168.1.100"
+
+        from pywiim.models import DeviceInfo
+
+        # Create master device info for Gen1 device (wmrm_version 2.0) with SSID and channel
+        master_device_info = DeviceInfo(
+            uuid="master-uuid",
+            model="Audio Pro A26",
+            wmrm_version="2.0",
+            firmware="4.2.5000",  # Old firmware < 4.2.8020
+            ssid="MyWiFiNetwork",
+            wifi_channel=6,
+        )
+
+        await mock_client.join_slave(master_ip, master_device_info=master_device_info)
+
+        assert mock_client._group_master == master_ip
+        assert mock_client._group_slaves == []
+        mock_client._request.assert_called_once()
+
+        # Verify WiFi Direct mode command format
+        call_args = mock_client._request.call_args[0][0]
+        ssid_hex = binascii.hexlify(b"MyWiFiNetwork").decode()
+        assert f"ConnectMasterAp:ssid={ssid_hex}:ch=6:auth=OPEN:encry=NONE:pwd=:chext=0" in call_args
+
+    @pytest.mark.asyncio
+    async def test_join_slave_wifi_direct_mode_missing_ssid(self, mock_client):
+        """Test WiFi Direct mode fallback when SSID is missing."""
+        master_ip = "192.168.1.101"
+        mock_client._request = AsyncMock(return_value={"raw": "OK"})
+        type(mock_client).host = "192.168.1.100"
+
+        from pywiim.models import DeviceInfo
+
+        # Create master device info for Gen1 device but without SSID
+        master_device_info = DeviceInfo(
+            uuid="master-uuid",
+            model="Audio Pro A26",
+            wmrm_version="2.0",
+            firmware="4.2.5000",
+            ssid=None,  # Missing SSID
+            wifi_channel=6,
+        )
+
+        await mock_client.join_slave(master_ip, master_device_info=master_device_info)
+
+        assert mock_client._group_master == master_ip
+        assert mock_client._group_slaves == []
+        mock_client._request.assert_called_once()
+
+        # Should fall back to router-based mode when SSID is missing
+        call_args = mock_client._request.call_args[0][0]
+        assert f"ConnectMasterAp:JoinGroupMaster:eth{master_ip}:wifi0.0.0.0" in call_args
 
     @pytest.mark.asyncio
     async def test_leave_group(self, mock_client):

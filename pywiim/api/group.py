@@ -8,16 +8,87 @@ still refresh via `get_multiroom_status` periodically.
 
 from __future__ import annotations
 
+import binascii
+import logging
 import time
 from typing import Any
 
-from ..models import DeviceGroupInfo, GroupDeviceState, GroupState
+from ..models import DeviceGroupInfo, DeviceInfo, GroupDeviceState, GroupState
 from .constants import (
     API_ENDPOINT_GROUP_EXIT,
     API_ENDPOINT_GROUP_KICK,
     API_ENDPOINT_GROUP_SLAVE_MUTE,
     API_ENDPOINT_GROUP_SLAVES,
 )
+from .firmware import compare_firmware_versions
+
+_LOGGER = logging.getLogger(__name__)
+
+# Minimum firmware version for router-based multiroom (firmware >= 4.2.8020)
+FW_MROOM_RTR_MIN = "4.2.8020"
+
+
+def _needs_wifi_direct_mode(device_info: DeviceInfo | None) -> bool:
+    """Determine if device needs WiFi Direct mode for multiroom grouping.
+
+    WiFi Direct mode is required for:
+    - Devices with wmrm_version 2.0 (Audio Pro Gen1, legacy LinkPlay)
+    - Devices with firmware < 4.2.8020 (older firmware versions)
+
+    Router-based mode is used for:
+    - Devices with wmrm_version 4.2 (WiiM, Audio Pro Gen2+)
+    - Devices with firmware >= 4.2.8020
+
+    Args:
+        device_info: Device information to check, or None.
+
+    Returns:
+        True if WiFi Direct mode is needed, False for router-based mode.
+    """
+    if device_info is None:
+        _LOGGER.debug("_needs_wifi_direct_mode: device_info is None, defaulting to router-based mode")
+        return False
+
+    # Check wmrm_version first (most reliable indicator)
+    if device_info.wmrm_version == "2.0":
+        _LOGGER.debug(
+            "_needs_wifi_direct_mode: wmrm_version=2.0 detected for %s (%s) - WiFi Direct mode required",
+            device_info.name or "unknown",
+            device_info.model or "unknown",
+        )
+        return True
+
+    if device_info.wmrm_version == "4.2":
+        _LOGGER.debug(
+            "_needs_wifi_direct_mode: wmrm_version=4.2 detected for %s (%s) - router-based mode",
+            device_info.name or "unknown",
+            device_info.model or "unknown",
+        )
+        return False
+
+    # Fallback to firmware version check if wmrm_version not available
+    if device_info.firmware:
+        comparison = compare_firmware_versions(device_info.firmware, FW_MROOM_RTR_MIN)
+        needs_wifi_direct = comparison < 0
+        _LOGGER.debug(
+            "_needs_wifi_direct_mode: firmware=%s, comparison with %s=%d, WiFi Direct=%s for %s (%s)",
+            device_info.firmware,
+            FW_MROOM_RTR_MIN,
+            comparison,
+            needs_wifi_direct,
+            device_info.name or "unknown",
+            device_info.model or "unknown",
+        )
+        return needs_wifi_direct
+
+    # Default to router-based mode if we can't determine
+    _LOGGER.debug(
+        "_needs_wifi_direct_mode: cannot determine mode (no wmrm_version or firmware), "
+        "defaulting to router-based for %s (%s)",
+        device_info.name or "unknown",
+        device_info.model or "unknown",
+    )
+    return False
 
 
 class GroupAPI:
@@ -145,17 +216,85 @@ class GroupAPI:
         self._group_master = None
         self._group_slaves = []
 
-    async def join_slave(self, master_ip: str) -> None:
+    async def join_slave(self, master_ip: str, master_device_info: DeviceInfo | None = None) -> None:
         """Join the group hosted by *master_ip*.
+
+        Supports both router-based and WiFi Direct modes:
+        - Router-based mode: Used for modern devices (wmrm_version 4.2, firmware >= 4.2.8020)
+        - WiFi Direct mode: Used for legacy devices (wmrm_version 2.0, firmware < 4.2.8020)
 
         Args:
             master_ip: IP address of the master device to join.
+            master_device_info: Optional device info for the master device.
+                If provided, used to determine join mode (WiFi Direct vs router-based).
+                If None, defaults to router-based mode.
 
         Raises:
             WiiMError: If the request fails.
         """
-        command = f"ConnectMasterAp:JoinGroupMaster:eth{master_ip}:wifi0.0.0.0"
+        import logging
+
+        _logger = logging.getLogger(__name__)
+
+        # Determine if WiFi Direct mode is needed
+        use_wifi_direct = _needs_wifi_direct_mode(master_device_info)
+
+        if use_wifi_direct:
+            # WiFi Direct mode for Gen1/legacy devices
+            if master_device_info is None:
+                _logger.warning(
+                    "WiFi Direct mode requested but master_device_info is None - cannot get SSID/channel. "
+                    "Falling back to router-based mode."
+                )
+                use_wifi_direct = False
+            else:
+                # Get SSID and WiFi channel from master device
+                ssid = master_device_info.ssid or ""
+                wifi_channel = master_device_info.wifi_channel or 1
+
+                if not ssid:
+                    _logger.warning(
+                        "WiFi Direct mode requested but SSID not available from master device %s (%s). "
+                        "Falling back to router-based mode. This may fail for Gen1 devices.",
+                        master_device_info.name or "unknown",
+                        master_device_info.model or "unknown",
+                    )
+                    use_wifi_direct = False
+                else:
+                    # Encode SSID as hex (as done in old library)
+                    try:
+                        ssid_hex = binascii.hexlify(ssid.encode("utf-8")).decode()
+                        _logger.info(
+                            "Using WiFi Direct mode for Gen1 device join: master=%s (%s), "
+                            "ssid=%s (hex=%s), channel=%s, wmrm_version=%s, firmware=%s",
+                            master_ip,
+                            master_device_info.name or "unknown",
+                            ssid,
+                            ssid_hex,
+                            wifi_channel,
+                            master_device_info.wmrm_version or "unknown",
+                            master_device_info.firmware or "unknown",
+                        )
+                        command = f"ConnectMasterAp:ssid={ssid_hex}:ch={wifi_channel}:auth=OPEN:encry=NONE:pwd=:chext=0"
+                    except Exception as e:
+                        _logger.error(
+                            "Failed to encode SSID for WiFi Direct mode: %s. Falling back to router-based mode.",
+                            e,
+                        )
+                        use_wifi_direct = False
+
+        if not use_wifi_direct:
+            # Router-based mode (default for modern devices)
+            _logger.debug(
+                "Using router-based mode for join: master=%s, wmrm_version=%s, firmware=%s",
+                master_ip,
+                master_device_info.wmrm_version if master_device_info else "unknown",
+                master_device_info.firmware if master_device_info else "unknown",
+            )
+            command = f"ConnectMasterAp:JoinGroupMaster:eth{master_ip}:wifi0.0.0.0"
+
         endpoint = f"/httpapi.asp?command={command}"
+        _logger.debug("Sending join command to slave device: endpoint=%s", endpoint)
         await self._request(endpoint)  # type: ignore[attr-defined]
         self._group_master = master_ip
         self._group_slaves = []

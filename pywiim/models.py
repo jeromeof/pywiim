@@ -69,6 +69,8 @@ class DeviceInfo(_WiimBase):
     plm_support: str | int | None = Field(
         None, alias="plm_support"
     )  # Bitmask for physical input sources (plm_support from getStatusEx)
+    ssid: str | None = Field(None, alias="ssid")  # WiFi SSID (needed for WiFi Direct multiroom mode)
+    wifi_channel: int | None = Field(None, alias="WifiChannel")  # WiFi channel (needed for WiFi Direct multiroom mode)
 
     # ---------------- Validators ----------------
 

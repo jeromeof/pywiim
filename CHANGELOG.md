@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.25] - 2025-11-30
+
+### Added
+- **WiFi Direct mode support for Gen1 devices (Audio Pro Gen1, legacy LinkPlay)**
+  - Added automatic detection of WiFi Direct vs router-based multiroom join mode
+  - WiFi Direct mode is used for devices with `wmrm_version` 2.0 or firmware < 4.2.8020
+  - Router-based mode (default) is used for modern devices with `wmrm_version` 4.2 or firmware >= 4.2.8020
+  - `join_slave()` now accepts optional `master_device_info` parameter to determine join mode
+  - WiFi Direct mode uses command format: `ConnectMasterAp:ssid={hex}:ch={channel}:auth=OPEN:encry=NONE:pwd=:chext=0`
+  - Router-based mode uses command format: `ConnectMasterAp:JoinGroupMaster:eth{ip}:wifi0.0.0.0`
+  - Automatically falls back to router-based mode if SSID is missing (with warning)
+  - **Impact**: Gen1 devices can now join groups correctly using the legacy WiFi Direct protocol
+  - **Related**: Fixes GitHub issue #129 - Audio Pro Gen1 speakers can now join groups
+
+### Fixed
+- **Enhanced wmrm_version validation with extensive debug logging for Gen1 devices**
+  - Added comprehensive debug logging for Gen1 device join operations
+  - Logs SSID, WiFi channel, firmware version, and wmrm_version for troubleshooting
+  - Detailed error messages when join fails for Gen1 devices
+  - Helps diagnose WiFi Direct mode configuration issues when testing with Gen1 devices
+
+### Changed
+- **Added SSID and WiFi channel fields to DeviceInfo model**
+  - `DeviceInfo` now includes `ssid` and `wifi_channel` fields needed for WiFi Direct mode
+  - Fields are populated from `getStatusEx` response (same endpoint path for all devices)
+  - Enables automatic WiFi Direct mode detection and join command generation
+
 ## [2.1.24] - 2025-11-30
 
 ### Added

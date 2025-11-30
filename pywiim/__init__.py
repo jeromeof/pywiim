@@ -42,6 +42,7 @@ from .discovery import (
 from .exceptions import (
     WiiMConnectionError,
     WiiMError,
+    WiiMGroupCompatibilityError,
     WiiMInvalidDataError,
     WiiMRequestError,
     WiiMResponseError,
@@ -56,7 +57,7 @@ from .polling import PollingStrategy, TrackChangeDetector, fetch_parallel
 from .role import RoleDetectionResult, detect_role
 from .state import GroupStateSynchronizer, StateSynchronizer
 
-__version__ = "2.1.24"
+__version__ = "2.1.25"
 __all__ = [
     # Main client
     "WiiMClient",
@@ -70,6 +71,7 @@ __all__ = [
     "WiiMTimeoutError",
     "WiiMConnectionError",
     "WiiMInvalidDataError",
+    "WiiMGroupCompatibilityError",
     # Models
     "DeviceInfo",
     "PlayerStatus",

@@ -126,3 +126,51 @@ class WiiMConnectionError(WiiMRequestError):
 
 class WiiMInvalidDataError(WiiMError):
     """The device responded with malformed or non-JSON data."""
+
+
+class WiiMGroupCompatibilityError(WiiMError):
+    """Raised when attempting to group devices with incompatible multiroom protocol versions.
+
+    Devices can only group with matching wmrm_version:
+    - wmrm_version 2.0: Legacy LinkPlay protocol (older devices, Audio Pro Gen 1)
+    - wmrm_version 4.2: Current router-based multiroom protocol (WiiM, Audio Pro Gen 2+/W-Gen)
+
+    This is a protocol-level requirement - devices with different versions cannot join groups together.
+    """
+
+    def __init__(
+        self,
+        slave_version: str | None,
+        master_version: str | None,
+        slave_model: str | None = None,
+        master_model: str | None = None,
+    ) -> None:
+        """Initialize group compatibility error.
+
+        Args:
+            slave_version: WMRM version of the slave device attempting to join.
+            master_version: WMRM version of the master device.
+            slave_model: Optional model name of the slave device.
+            master_model: Optional model name of the master device.
+        """
+        self.slave_version = slave_version
+        self.master_version = master_version
+        self.slave_model = slave_model
+        self.master_model = master_model
+
+        # Build user-friendly error message
+        slave_info = f"{slave_model} " if slave_model else ""
+        master_info = f"{master_model} " if master_model else ""
+        slave_ver_str = slave_version or "unknown"
+        master_ver_str = master_version or "unknown"
+
+        message = (
+            f"Cannot group devices with incompatible multiroom protocol versions: "
+            f"{slave_info}(wmrm_version={slave_ver_str}) cannot join "
+            f"{master_info}(wmrm_version={master_ver_str}). "
+            f"Devices can only group with matching wmrm_version. "
+            f"Audio Pro Gen1 devices (wmrm_version 2.0) can only group with other Gen1 devices. "
+            f"WiiM and Audio Pro Gen2+ devices (wmrm_version 4.2) can only group with other Gen2+ devices."
+        )
+
+        super().__init__(message)
