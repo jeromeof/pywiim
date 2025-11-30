@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.26] - 2025-11-30
+
+### Fixed
+- **wmrm_version compatibility check now compares major versions only**
+  - Changed compatibility check from exact version match to major version comparison
+  - Devices with same major version but different minor versions can now group together (e.g., 4.2 and 4.3 are compatible)
+  - Devices with different major versions are still correctly rejected (e.g., 2.0 cannot join 4.x)
+  - Updated error messages to clarify that major versions must match
+  - **Impact**: Devices on the same subnet with compatible major versions can now group together
+  - **Related**: Fixes issue where devices with wmrm_version 4.2 and 4.3 were incorrectly rejected
+
+### Changed
+- **Group test script now keeps volumes at 0 during testing**
+  - Modified `test-group-real-devices.py` to use volume 0.0 instead of higher volumes
+  - Prevents accidental audio output during testing
+
 ## [2.1.25] - 2025-11-30
 
 ### Added

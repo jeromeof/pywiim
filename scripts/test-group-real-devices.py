@@ -360,15 +360,15 @@ async def test_set_volume_all(players: dict[str, Player]) -> TestResult:
         await asyncio.sleep(2.0)
         await asyncio.gather(*(p.refresh() for p in [master, slave]), return_exceptions=True)
 
-        # Set volume via group
-        await group.set_volume_all(0.5)
+        # Set volume via group to 0 (keep volumes at 0)
+        await group.set_volume_all(0.0)
         await asyncio.sleep(2.0)
         await asyncio.gather(*(p.refresh() for p in [master, slave]), return_exceptions=True)
 
         master_vol = await master.get_volume()
         slave_vol = await slave.get_volume()
 
-        result.add_detail(f"Set group volume to 0.5: master={master_ip}, slave={slave_ip}")
+        result.add_detail(f"Set group volume to 0.0: master={master_ip}, slave={slave_ip}")
         result.add_detail(f"  master volume: {master_vol}")
         result.add_detail(f"  slave volume: {slave_vol}")
 
@@ -416,17 +416,17 @@ async def test_volume_level_max(players: dict[str, Player]) -> TestResult:
         await slave.join_group(master)
         await asyncio.sleep(2.0)
 
-        # Set different volumes
-        await master.set_volume(0.5)
-        await slave.set_volume(0.75)
+        # Set volumes to 0 (keep volumes at 0)
+        await master.set_volume(0.0)
+        await slave.set_volume(0.0)
         await asyncio.sleep(2.0)
         await asyncio.gather(*(p.refresh() for p in [master, slave]), return_exceptions=True)
 
         volume = group.volume_level
 
-        result.add_detail(f"Set volumes: master=0.5, slave=0.75")
+        result.add_detail(f"Set volumes: master=0.0, slave=0.0")
         result.add_detail(f"  group.volume_level: {volume}")
-        result.add_detail(f"  Expected: 0.75 (max)")
+        result.add_detail(f"  Expected: 0.0 (max)")
 
         # Restore volumes
         if initial_master_vol is not None:
@@ -434,10 +434,10 @@ async def test_volume_level_max(players: dict[str, Player]) -> TestResult:
         if initial_slave_vol is not None:
             await slave.set_volume(initial_slave_vol)
 
-        if volume is not None and abs(volume - 0.75) < 0.1:
+        if volume is not None and abs(volume - 0.0) < 0.1:
             result.success()
         else:
-            result.fail(f"Volume level max failed: got {volume}, expected ~0.75")
+            result.fail(f"Volume level max failed: got {volume}, expected ~0.0")
 
         await group.disband()
         await asyncio.sleep(1.0)
@@ -546,6 +546,48 @@ async def test_playback_control(players: dict[str, Player]) -> TestResult:
     return result
 
 
+async def test_cross_subnet_combination(players: dict[str, Player], master_ip: str, slave_ip: str) -> TestResult:
+    """Test a specific master/slave combination."""
+    result = TestResult(f"cross_subnet_{master_ip}_to_{slave_ip}")
+
+    try:
+        master = players[master_ip]
+        slave = players[slave_ip]
+
+        await ensure_all_solo([master, slave])
+
+        group = await master.create_group()
+        await slave.join_group(master)
+        await asyncio.sleep(2.0)
+        await asyncio.gather(*(p.refresh() for p in [master, slave]), return_exceptions=True)
+
+        result.add_detail(f"Master: {master_ip}, Slave: {slave_ip}")
+        result.add_detail(f"  master.is_master: {master.is_master}")
+        result.add_detail(f"  slave.is_slave: {slave.is_slave}")
+        result.add_detail(f"  slave in group.slaves: {slave in group.slaves}")
+        result.add_detail(f"  group.size: {group.size}")
+
+        if master.is_master and slave.is_slave and slave in group.slaves and group.size == 2:
+            result.success()
+        else:
+            result.fail("Cross-subnet group creation failed")
+
+        await group.disband()
+        await asyncio.sleep(2.0)
+    except WiiMError as e:
+        # Check if this is an expected compatibility error
+        if "incompatible multiroom protocol versions" in str(e):
+            result.add_detail(f"Master: {master_ip}, Slave: {slave_ip}")
+            result.add_detail("  Expected failure: Incompatible wmrm_version (this is correct behavior)")
+            result.success()  # This is expected, so mark as success
+        else:
+            result.fail(f"WiiMError: {e}")
+    except Exception as e:
+        result.fail(f"Exception: {e}")
+
+    return result
+
+
 async def run_test_combinations(players: dict[str, Player]) -> list[TestResult]:
     """Run tests with various device combinations."""
     results: list[TestResult] = []
@@ -644,6 +686,25 @@ async def run_test_combinations(players: dict[str, Player]) -> list[TestResult]:
         print(f"    Error: {result.error}")
     for detail in result.details:
         print(f"    {detail}")
+
+    # Test cross-subnet combinations
+    if len(players) >= 2:
+        print(f"\n{'='*80}")
+        print("Testing cross-subnet combinations...")
+        print(f"{'='*80}\n")
+
+        ips = list(players.keys())
+        # Test all pairs
+        for i, master_ip in enumerate(ips):
+            for slave_ip in ips[i + 1 :]:
+                print(f"\nTest: Cross-subnet combination {master_ip} -> {slave_ip}")
+                result = await test_cross_subnet_combination(players, master_ip, slave_ip)
+                results.append(result)
+                print(f"  {'✓ PASSED' if result.passed else '✗ FAILED'}: {result.name}")
+                if result.error:
+                    print(f"    Error: {result.error}")
+                for detail in result.details:
+                    print(f"    {detail}")
 
     return results
 

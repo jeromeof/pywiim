@@ -3012,6 +3012,69 @@ class TestPlayerGroupOperations:
         slave_client.join_slave.assert_called_once_with(master.host, master_device_info=master._device_info)
 
     @pytest.mark.asyncio
+    async def test_join_group_wmrm_version_compatible_minor_difference(
+        self, mock_client, mock_player_status, mock_aiohttp_session, mock_capabilities
+    ):
+        """Test joining group when wmrm_version has compatible minor version difference (4.2 vs 4.3)."""
+        from pywiim.client import WiiMClient
+        from pywiim.group import Group
+        from pywiim.models import DeviceInfo
+        from pywiim.player import Player
+
+        # Create separate clients for master and slave
+        master_client = WiiMClient(
+            host="192.168.1.100",
+            port=80,
+            session=mock_aiohttp_session,
+            capabilities=mock_capabilities,
+        )
+        master_client._request = AsyncMock(return_value={"status": "ok"})
+
+        slave_client = WiiMClient(
+            host="192.168.1.101",
+            port=80,
+            session=mock_aiohttp_session,
+            capabilities=mock_capabilities,
+        )
+        slave_client._request = AsyncMock(return_value={"status": "ok"})
+
+        master = Player(master_client)
+        slave = Player(slave_client)
+        group = Group(master)
+
+        # Set device_info with compatible wmrm_version (4.2 vs 4.3 - same major version)
+        master._device_info = DeviceInfo(uuid="master-uuid", model="WiiM Pro", wmrm_version="4.3")
+        slave._device_info = DeviceInfo(uuid="slave-uuid", model="WiiM Mini", wmrm_version="4.2")
+
+        # Mock master status
+        master_client.get_player_status_model = AsyncMock(return_value=mock_player_status)
+        master_client.get_multiroom_status = AsyncMock(return_value={"slaves": [slave.host]})
+
+        # Mock slave status - should show it's a slave with master info
+        slave_status = mock_player_status.model_copy()
+        slave_status.group = "1"  # Slave indicator
+        slave_status.master_ip = master.host
+        slave_client.get_player_status_model = AsyncMock(return_value=slave_status)
+        slave_client.get_multiroom_status = AsyncMock(return_value={"slaves": []})
+        slave_client.join_slave = AsyncMock()
+
+        # Mock refresh to update slave status after join - must update role to "slave"
+        async def mock_slave_refresh(full=False):
+            slave._detected_role = "slave"
+            slave._status_model = slave_status
+
+        slave.refresh = AsyncMock(side_effect=mock_slave_refresh)
+
+        # Should not raise - versions are compatible (same major version 4)
+        await slave.join_group(master)
+
+        # Verify refresh was called to verify the join
+        slave.refresh.assert_called()
+        assert slave.group == group
+        assert slave in group.slaves
+        # Verify join_slave was called with master host and device info
+        slave_client.join_slave.assert_called_once_with(master.host, master_device_info=master._device_info)
+
     async def test_join_group_wmrm_version_incompatible_pre_check(
         self, mock_client, mock_aiohttp_session, mock_capabilities
     ):

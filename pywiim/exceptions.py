@@ -131,11 +131,12 @@ class WiiMInvalidDataError(WiiMError):
 class WiiMGroupCompatibilityError(WiiMError):
     """Raised when attempting to group devices with incompatible multiroom protocol versions.
 
-    Devices can only group with matching wmrm_version:
-    - wmrm_version 2.0: Legacy LinkPlay protocol (older devices, Audio Pro Gen 1)
-    - wmrm_version 4.2: Current router-based multiroom protocol (WiiM, Audio Pro Gen 2+/W-Gen)
+    Devices can only group with matching major wmrm_version:
+    - wmrm_version 2.x: Legacy LinkPlay protocol (older devices, Audio Pro Gen 1)
+    - wmrm_version 4.x: Current router-based multiroom protocol (WiiM, Audio Pro Gen 2+/W-Gen)
 
-    This is a protocol-level requirement - devices with different versions cannot join groups together.
+    This is a protocol-level requirement - devices with different major versions cannot join groups together.
+    Minor version differences (e.g., 4.2 vs 4.3) are compatible.
     """
 
     def __init__(
@@ -168,9 +169,9 @@ class WiiMGroupCompatibilityError(WiiMError):
             f"Cannot group devices with incompatible multiroom protocol versions: "
             f"{slave_info}(wmrm_version={slave_ver_str}) cannot join "
             f"{master_info}(wmrm_version={master_ver_str}). "
-            f"Devices can only group with matching wmrm_version. "
-            f"Audio Pro Gen1 devices (wmrm_version 2.0) can only group with other Gen1 devices. "
-            f"WiiM and Audio Pro Gen2+ devices (wmrm_version 4.2) can only group with other Gen2+ devices."
+            f"Devices can only group with matching major wmrm_version. "
+            f"Audio Pro Gen1 devices (wmrm_version 2.x) can only group with other Gen1 devices. "
+            f"WiiM and Audio Pro Gen2+ devices (wmrm_version 4.x) can only group with other Gen2+ devices."
         )
 
         super().__init__(message)

@@ -348,8 +348,24 @@ class GroupOperations:
                 getattr(master._device_info, "wifi_channel", None) if master._device_info else "unknown",
             )
 
-        # Check compatibility: both versions must be present and match
-        if slave_wmrm and master_wmrm and slave_wmrm != master_wmrm:
+        # Check compatibility: compare major version numbers only
+        # Extract major version (e.g., "4.2" -> 4, "2.0" -> 2)
+        def get_major_version(version_str: str | None) -> int | None:
+            """Extract major version number from wmrm_version string."""
+            if not version_str:
+                return None
+            try:
+                # Split on '.' and take first part
+                major_str = version_str.split(".")[0]
+                return int(major_str)
+            except (ValueError, AttributeError):
+                return None
+
+        slave_major = get_major_version(slave_wmrm)
+        master_major = get_major_version(master_wmrm)
+
+        # Both versions must be present and have matching major version
+        if slave_major is not None and master_major is not None and slave_major != master_major:
             slave_model = self.player._device_info.model if self.player._device_info else None
             master_model = master._device_info.model if master._device_info else None
             raise WiiMGroupCompatibilityError(
