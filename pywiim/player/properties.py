@@ -164,6 +164,24 @@ class PlayerProperties:
             except (TypeError, ValueError):
                 return None
 
+        # Fallback to cached status if synchronizer has no data yet
+        if self.player._status_model is None:
+            return None
+        status_position = getattr(self.player._status_model, "position", None)
+        if status_position is not None:
+            try:
+                pos_value = int(float(status_position))
+                if pos_value < 0:
+                    return None
+                # Clamp to duration if available
+                duration_value = self.media_duration
+                if duration_value is not None and duration_value > 0:
+                    if pos_value > duration_value:
+                        pos_value = duration_value
+                return pos_value
+            except (TypeError, ValueError):
+                return None
+
         return None
 
     @property

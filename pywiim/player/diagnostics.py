@@ -177,3 +177,27 @@ class DiagnosticsCollector:
         diagnostics["available"] = self.player.available
 
         return diagnostics
+
+    async def reboot(self) -> None:
+        """Reboot the device.
+
+        Note: This command may not return a response as the device will restart.
+        The method handles this gracefully and considers the command successful
+        even if the device stops responding.
+
+        Raises:
+            WiiMError: If the request fails before the device reboots.
+        """
+        await self.player.client.reboot()
+        self.player._available = False
+
+    async def sync_time(self, ts: int | None = None) -> None:
+        """Synchronize device time with system time or provided timestamp.
+
+        Args:
+            ts: Unix timestamp (seconds since epoch). If None, uses current system time.
+
+        Raises:
+            WiiMError: If the request fails.
+        """
+        await self.player.client.sync_time(ts)

@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.24] - 2025-11-30
+
+### Added
+- **Comprehensive pre-release testing infrastructure**
+  - Added extensive integration test suite (`test_prerelease.py`) with real device validation
+  - Tests cover all major Player functionality: playback controls, shuffle/repeat, volume/mute, EQ presets, source switching, audio output modes
+  - Automatic state restoration after tests to prevent device disruption
+  - Pre-release check script (`scripts/prerelease-check.sh`) for automated validation before releases
+  - Enhanced unit test coverage with 730+ new test cases for API client functionality
+- **Codecov integration for test coverage reporting**
+  - Added Codecov configuration and coverage uploads to CI workflow
+  - Coverage badge and reporting now available in repository
+
+### Changed
+- **Enhanced capability detection with read/write distinction**
+  - EQ capability detection now distinguishes between read-only and read/write support
+  - Some devices (e.g., Arylic) can read EQ status but not set EQ presets - now correctly detected
+  - Audio output capability detection improved with separate read/set probing
+  - Preset capability detection enhanced with fallback to `preset_key` field when `getPresetInfo` unavailable
+  - Capability probing now uses multiple endpoint attempts for more reliable detection
+- **Improved CI/CD workflow reliability**
+  - Enhanced GitHub release creation error handling
+  - Removed duplicate ruff check from release script
+  - Streamlined CI workflow configuration
 
 ## [2.1.23] - 2025-11-28
 

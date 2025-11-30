@@ -432,102 +432,121 @@ class UpnpEventer:
             root = ET.fromstring(last_change_xml)
 
             # Parse Event XML structure
-            for event in root.findall(".//Event"):
-                for instance in event.findall("./InstanceID"):
-                    _ = instance.get("val", "0")  # Instance ID not currently used
+            # Handle namespace: XML may have xmlns="urn:schemas-upnp-org:metadata-1-0/AVT/"
+            # Try to find InstanceID elements, handling both namespaced and non-namespaced XML
+            instances = []
+            if root.tag.endswith("Event") or "Event" in root.tag:
+                # Root is the Event element - find InstanceID children
+                # Try with namespace wildcard first
+                instances = root.findall(".//{*}InstanceID")
+                if not instances:
+                    # Try direct children
+                    instances = [child for child in root if child.tag.endswith("InstanceID")]
+            else:
+                # Event is nested - find Event first, then InstanceID
+                events = root.findall(".//{*}Event")
+                if not events:
+                    events = root.findall(".//Event")
+                for event in events:
+                    instances.extend(event.findall(".//{*}InstanceID"))
+                    if not instances:
+                        instances.extend([child for child in event if child.tag.endswith("InstanceID")])
 
-                    # Parse AVTransport service variables
-                    if service_type == "AVTransport":
-                        for var in list(instance):
-                            var_name = var.tag
-                            var_value = var.get("val", "")
+            for instance in instances:
+                _ = instance.get("val", "0")  # Instance ID not currently used
 
-                            if var_name == "TransportState":
-                                changes["play_state"] = var_value.lower().replace("_", " ")
-                            elif var_name == "AbsoluteTimePosition":
-                                # Position provided in UPnP events when track starts (in LastChange event)
-                                # Not sent continuously during playback - only on track changes
-                                changes["position"] = self._parse_time_position(var_value)  # type: ignore[assignment]
-                            elif var_name == "RelativeTimePosition":
-                                # Position provided in UPnP events when track starts (in LastChange event)
-                                # Not sent continuously during playback - only on track changes
-                                changes["position"] = self._parse_time_position(var_value)  # type: ignore[assignment]
-                            elif var_name == "CurrentTrackDuration":
-                                # Duration provided in UPnP events when track starts (in LastChange event)
-                                # Not sent continuously during playback - only on track changes
-                                changes["duration"] = self._parse_time_position(var_value)  # type: ignore[assignment]
-                            elif var_name == "CurrentTrackMetaData":
-                                # Parse DIDL-Lite metadata from LastChange XML
-                                # Check if device is playing/transitioning before clearing metadata
-                                current_play_state = changes.get("play_state") or getattr(
-                                    self.state_manager, "play_state", None
-                                )
-                                is_playing_or_transitioning = current_play_state and any(
-                                    state in str(current_play_state).lower()
-                                    for state in ["play", "playing", "transitioning", "load", "loading", "buffering"]
-                                )
-                                metadata_changes = self._parse_didl_metadata(
-                                    var_value, allow_clear=not is_playing_or_transitioning
-                                )
-                                changes.update(metadata_changes)
-                            elif var_name == "AVTransportURIMetaData":
-                                # Parse DIDL-Lite metadata from LastChange XML
-                                # Check if device is playing/transitioning before clearing metadata
-                                current_play_state = changes.get("play_state") or getattr(
-                                    self.state_manager, "play_state", None
-                                )
-                                is_playing_or_transitioning = current_play_state and any(
-                                    state in str(current_play_state).lower()
-                                    for state in ["play", "playing", "transitioning", "load", "loading", "buffering"]
-                                )
-                                metadata_changes = self._parse_didl_metadata(
-                                    var_value, allow_clear=not is_playing_or_transitioning
-                                )
-                                changes.update(metadata_changes)
-                            elif var_name == "TrackSource":
-                                changes["source"] = var_value
-                            elif var_name in ("AVTransportURI", "CurrentURI"):
-                                # Extract stream URL for potential ICY metadata extraction
-                                # Store in changes but don't expose as a property (internal use)
-                                changes["_stream_uri"] = var_value
-                                _LOGGER.debug(
-                                    "Extracted stream URI from UPnP: %s", var_value[:100] if var_value else None
-                                )
+                # Parse AVTransport service variables
+                if service_type == "AVTransport":
+                    for var in list(instance):
+                        # Strip namespace from tag name (e.g., {urn:...}TransportState -> TransportState)
+                        var_name = var.tag.split("}")[-1] if "}" in var.tag else var.tag
+                        var_value = var.get("val", "")
 
-                    # Parse RenderingControl service variables
-                    elif service_type == "RenderingControl":
-                        for var in list(instance):
-                            var_name = var.tag
-                            var_value = var.get("val", "")
-                            channel = var.get("channel", "")
+                        if var_name == "TransportState":
+                            changes["play_state"] = var_value.lower().replace("_", " ")
+                        elif var_name == "AbsoluteTimePosition":
+                            # Position provided in UPnP events when track starts (in LastChange event)
+                            # Not sent continuously during playback - only on track changes
+                            changes["position"] = self._parse_time_position(var_value)  # type: ignore[assignment]
+                        elif var_name == "RelativeTimePosition":
+                            # Position provided in UPnP events when track starts (in LastChange event)
+                            # Not sent continuously during playback - only on track changes
+                            changes["position"] = self._parse_time_position(var_value)  # type: ignore[assignment]
+                        elif var_name == "CurrentTrackDuration":
+                            # Duration provided in UPnP events when track starts (in LastChange event)
+                            # Not sent continuously during playback - only on track changes
+                            changes["duration"] = self._parse_time_position(var_value)  # type: ignore[assignment]
+                        elif var_name == "CurrentTrackMetaData":
+                            # Parse DIDL-Lite metadata from LastChange XML
+                            # Check if device is playing/transitioning before clearing metadata
+                            current_play_state = changes.get("play_state") or getattr(
+                                self.state_manager, "play_state", None
+                            )
+                            is_playing_or_transitioning = current_play_state and any(
+                                state in str(current_play_state).lower()
+                                for state in ["play", "playing", "transitioning", "load", "loading", "buffering"]
+                            )
+                            metadata_changes = self._parse_didl_metadata(
+                                var_value, allow_clear=not is_playing_or_transitioning
+                            )
+                            changes.update(metadata_changes)
+                        elif var_name == "AVTransportURIMetaData":
+                            # Parse DIDL-Lite metadata from LastChange XML
+                            # Check if device is playing/transitioning before clearing metadata
+                            current_play_state = changes.get("play_state") or getattr(
+                                self.state_manager, "play_state", None
+                            )
+                            is_playing_or_transitioning = current_play_state and any(
+                                state in str(current_play_state).lower()
+                                for state in ["play", "playing", "transitioning", "load", "loading", "buffering"]
+                            )
+                            metadata_changes = self._parse_didl_metadata(
+                                var_value, allow_clear=not is_playing_or_transitioning
+                            )
+                            changes.update(metadata_changes)
+                        elif var_name == "TrackSource":
+                            changes["source"] = var_value
+                        elif var_name in ("AVTransportURI", "CurrentURI"):
+                            # Extract stream URL for potential ICY metadata extraction
+                            # Store in changes but don't expose as a property (internal use)
+                            changes["_stream_uri"] = var_value
+                            _LOGGER.debug("Extracted stream URI from UPnP: %s", var_value[:100] if var_value else None)
 
-                            if var_name == "Volume":
-                                if channel == "Master" or not channel:
-                                    try:
-                                        vol_int = int(var_value)
-                                        changes["volume"] = vol_int / 100.0  # type: ignore[assignment]
-                                    except (ValueError, TypeError):
-                                        pass
-                            elif var_name == "Mute":
-                                if channel == "Master" or not channel:
-                                    changes["muted"] = var_value.lower() == "1"  # type: ignore[assignment]
-                            # Log any other RenderingControl variables we're not parsing
-                            # (might include audio output mode changes)
-                            else:
-                                _LOGGER.debug(
-                                    "Unparsed RenderingControl variable: %s = %s",
-                                    var_name,
-                                    var_value,
-                                )
+                # Parse RenderingControl service variables
+                elif service_type == "RenderingControl":
+                    for var in list(instance):
+                        # Strip namespace from tag name (e.g., {urn:...}Volume -> Volume)
+                        var_name = var.tag.split("}")[-1] if "}" in var.tag else var.tag
+                        var_value = var.get("val", "")
+                        channel = var.get("channel", "")
 
-                    # Log any other variables we encounter (for discovering audio output mode changes)
-                    else:
-                        _LOGGER.debug(
-                            "Unparsed variable in %s service: %s = %s",
-                            service_type,
-                            var_name,
-                            var_value,
-                        )
+                        if var_name == "Volume":
+                            if channel == "Master" or not channel:
+                                try:
+                                    vol_int = int(var_value)
+                                    changes["volume"] = vol_int / 100.0  # type: ignore[assignment]
+                                except (ValueError, TypeError):
+                                    pass
+                        elif var_name == "Mute":
+                            if channel == "Master" or not channel:
+                                changes["muted"] = var_value.lower() == "1"  # type: ignore[assignment]
+                        # Log any other RenderingControl variables we're not parsing
+                        # (might include audio output mode changes)
+                        else:
+                            _LOGGER.debug(
+                                "Unparsed RenderingControl variable: %s = %s",
+                                var_name,
+                                var_value,
+                            )
+
+                # Log any other variables we encounter (for discovering audio output mode changes)
+                else:
+                    _LOGGER.debug(
+                        "Unparsed variable in %s service: %s = %s",
+                        service_type,
+                        var_name,
+                        var_value,
+                    )
 
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("Error parsing LastChange XML: %s", err)

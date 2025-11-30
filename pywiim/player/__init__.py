@@ -253,7 +253,7 @@ class Player(PlayerBase):
 
     async def sync_time(self, ts: int | None = None) -> None:
         """Synchronize device time."""
-        await self._audio_config.sync_time(ts)
+        await self._diagnostics.sync_time(ts)
 
     async def set_eq_preset(self, preset: str) -> None:
         """Set equalizer preset."""
@@ -293,7 +293,7 @@ class Player(PlayerBase):
 
     async def reboot(self) -> None:
         """Reboot the device."""
-        await self._audio_config.reboot()
+        await self._diagnostics.reboot()
 
     # === Playback Control ===
 

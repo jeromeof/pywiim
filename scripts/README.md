@@ -4,6 +4,33 @@ This directory contains utility scripts for development, testing, and release ma
 
 ## Release & Publishing Scripts
 
+### `prerelease-check.sh`
+
+Pre-release integration test runner. Runs comprehensive tests against a real device before releasing.
+
+**Usage**:
+```bash
+# Run pre-release checks against a device
+./scripts/prerelease-check.sh 192.168.1.100
+
+# Or use environment variable
+WIIM_TEST_DEVICE=192.168.1.100 ./scripts/prerelease-check.sh
+```
+
+**What it does**:
+1. Checks device connectivity
+2. Runs core integration tests (fast, safe)
+3. Prompts for confirmation before running comprehensive tests
+4. Runs comprehensive pre-release tests (changes device state, restores it)
+
+**When to use**:
+- Before major releases (X.0.0)
+- Before minor releases (X.Y.0) with new features
+- After significant refactoring
+- Optional for patch releases
+
+**Note**: Comprehensive tests will change device state (volume, playback, etc.) but restore it afterward. Make sure no one is using the device during testing.
+
 ### `release.sh`
 
 Automated release script that runs all checks, bumps version, and pushes to git.
@@ -30,6 +57,15 @@ Automated release script that runs all checks, bumps version, and pushes to git.
 8. Pushes to remote repository
 
 **Note**: The script will exit early if any step fails. All checks must pass before version bump and push.
+
+**Recommended workflow**:
+```bash
+# 1. Run pre-release checks (optional but recommended)
+./scripts/prerelease-check.sh 192.168.1.100
+
+# 2. Run release script
+./scripts/release.sh patch
+```
 
 ### `publish.sh`
 

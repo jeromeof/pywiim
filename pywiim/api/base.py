@@ -212,7 +212,16 @@ class BaseWiiMClient:
                         url,
                         err,
                     )
-                    raise
+                    # Reset session before raising error
+                    await self._handle_loop_closed_session(err)
+                    # Convert to WiiMConnectionError for consistent error handling
+                    from ..exceptions import WiiMConnectionError
+
+                    raise WiiMConnectionError(
+                        f"Event loop closed while requesting {url}: {err}",
+                        endpoint=url,
+                        last_error=err,
+                    ) from err
 
     @property
     def capabilities(self) -> dict[str, Any]:

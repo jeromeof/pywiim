@@ -312,6 +312,20 @@ class GroupOperations:
 
         await self.player.client.join_slave(master.host)
 
+        # CRITICAL: join_slave() always returns "OK" even when it fails
+        # Refresh slave to verify the join actually worked by checking if device became a slave
+        await self.player.refresh(full=False)
+
+        # Verify the join actually worked by checking device state
+        # If still solo, the join failed (but API returned success)
+        if self.player.is_solo:
+            _LOGGER.warning(
+                "join_slave() returned success but device %s is still solo - join may have failed",
+                self.player.host,
+            )
+            # Don't update group state if join failed
+            return
+
         if old_group is not None:
             old_group.remove_slave(self.player)
 

@@ -228,9 +228,13 @@ class TestGroupVolumeControl:
         group = Group(master)
         group.add_slave(slave)
 
-        # Set volumes
+        # Set volumes in status model
         master._status_model = PlayerStatus(volume=50, play_state="play")
         slave._status_model = PlayerStatus(volume=75, play_state="play")
+
+        # Ensure state synchronizer has volume data (property reads from synchronizer first)
+        master._state_synchronizer.update_from_http({"volume": 50})
+        slave._state_synchronizer.update_from_http({"volume": 75})
 
         volume = group.volume_level
 
@@ -262,6 +266,10 @@ class TestGroupVolumeControl:
 
         master._status_model = PlayerStatus(mute=True, play_state="play")
         slave._status_model = PlayerStatus(mute=True, play_state="play")
+
+        # Ensure state synchronizer has mute data (property reads from synchronizer first)
+        master._state_synchronizer.update_from_http({"muted": True})
+        slave._state_synchronizer.update_from_http({"muted": True})
 
         assert group.is_muted is True
 
@@ -391,6 +399,9 @@ class TestGroupPlaybackControl:
         group = Group(master)
 
         master._status_model = PlayerStatus(play_state="play")
+
+        # Ensure state synchronizer has play_state data (property reads from synchronizer first)
+        master._state_synchronizer.update_from_http({"play_state": "play"})
 
         assert group.play_state == "play"
 

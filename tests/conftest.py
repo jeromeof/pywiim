@@ -150,6 +150,77 @@ def mock_client(mock_aiohttp_session, mock_capabilities):
 # ============================================================================
 
 
+@pytest.fixture(autouse=True, scope="function")
+def restore_capabilities_after_test():
+    """Restore WiiMClient.capabilities property after each test to avoid affecting other tests.
+
+    This fixture ensures that any test that patches the capabilities property on WiiMClient
+    restores it after the test completes, preventing test isolation issues.
+    """
+    from pywiim.client import WiiMClient
+
+    # Store original property before tests
+    original_capabilities = getattr(WiiMClient, "capabilities", None)
+
+    yield
+
+    # Restore original property after test if it was patched
+    if hasattr(WiiMClient, "_original_capabilities_property"):
+        WiiMClient.capabilities = WiiMClient._original_capabilities_property
+        delattr(WiiMClient, "_original_capabilities_property")
+    elif original_capabilities is not None:
+        # Only restore if it was actually changed
+        current_capabilities = getattr(WiiMClient, "capabilities", None)
+        if current_capabilities is not original_capabilities:
+            try:
+                WiiMClient.capabilities = original_capabilities
+            except (AttributeError, TypeError):
+                pass  # Ignore if we can't restore
+
+
+@pytest.fixture(autouse=True, scope="function")
+def restore_player_properties_after_test():
+    """Restore Player class properties after each test to avoid affecting other tests.
+
+    This fixture ensures that any test that patches Player class properties (like volume_level,
+    is_muted, play_state, etc.) restores them after the test completes, preventing test
+    isolation issues.
+    """
+    from pywiim.player import Player
+
+    # Store original properties before tests
+    original_properties = {}
+    property_names = [
+        "volume_level",
+        "is_muted",
+        "play_state",
+        "media_title",
+        "media_position",
+        "is_master",
+        "audio_output_mode",
+        "is_bluetooth_output_active",
+        "source",
+    ]
+    for prop_name in property_names:
+        original_properties[prop_name] = getattr(Player, prop_name, None)
+
+    yield
+
+    # Restore original properties after test if they were patched
+    for prop_name, original_prop in original_properties.items():
+        if hasattr(Player, f"_original_{prop_name}_property"):
+            setattr(Player, prop_name, getattr(Player, f"_original_{prop_name}_property"))
+            delattr(Player, f"_original_{prop_name}_property")
+        elif original_prop is not None:
+            # Only restore if it was actually changed (not the same descriptor)
+            current_prop = getattr(Player, prop_name, None)
+            if current_prop is not original_prop:
+                try:
+                    setattr(Player, prop_name, original_prop)
+                except (AttributeError, TypeError):
+                    pass  # Ignore if we can't restore
+
+
 def pytest_configure(config):
     """Configure pytest for integration tests."""
     # Mark integration tests
@@ -159,7 +230,19 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers",
+        "core: marks tests as core integration tests (fast, safe)",
+    )
+    config.addinivalue_line(
+        "markers",
+        "prerelease: marks tests as pre-release integration tests (comprehensive)",
+    )
+    config.addinivalue_line(
+        "markers",
         "slow: marks tests as slow (may take longer to run)",
+    )
+    config.addinivalue_line(
+        "markers",
+        "destructive: marks tests that change device state (require restoration)",
     )
 
 
@@ -231,6 +314,46 @@ def integration_test_marker(real_device_available):
     """Fixture to skip integration tests if no device is available."""
     if not real_device_available:
         pytest.skip("Integration tests require WIIM_TEST_DEVICE environment variable")
+
+
+@pytest.fixture
+async def real_device_player(real_device_client, integration_test_marker):
+    """Create a Player instance for integration testing.
+
+    This fixture requires WIIM_TEST_DEVICE environment variable to be set.
+    Example: WIIM_TEST_DEVICE=192.168.1.100 pytest tests/integration/
+
+    Args:
+        real_device_client: Fixture that provides a WiiMClient.
+        integration_test_marker: Fixture that ensures device is available.
+
+    Yields:
+        Player instance connected to real device.
+
+    Raises:
+        pytest.skip: If device is unreachable or connection fails.
+    """
+    from pywiim.exceptions import WiiMConnectionError, WiiMRequestError
+    from pywiim.player import Player
+
+    player = Player(real_device_client)
+
+    # Try to refresh, but handle connection errors gracefully
+    try:
+        await player.refresh()
+    except (WiiMConnectionError, WiiMRequestError) as e:
+        error_msg = str(e)
+        if "No working protocol/port found" in error_msg or "Connection" in error_msg:
+            pytest.skip(
+                f"Device at {real_device_client.host} is unreachable or not responding. "
+                f"Error: {error_msg}. "
+                "Please ensure the device is powered on and accessible on the network."
+            )
+        raise  # Re-raise other errors
+
+    yield player
+
+    # Cleanup is handled by real_device_client fixture
 
 
 @pytest.fixture

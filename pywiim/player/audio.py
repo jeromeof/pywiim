@@ -32,6 +32,7 @@ class AudioConfiguration:
         await self.player.client.set_source(source)
 
         # Update cached state immediately (optimistic)
+        # If API returns success, we trust the device changed
         if self.player._status_model:
             self.player._status_model.source = source.lower()
 
@@ -153,14 +154,6 @@ class AudioConfiguration:
             raise ValueError(f"Balance must be between -1.0 and 1.0, got {balance}")
         await self.player.client.set_channel_balance(balance)
 
-    async def sync_time(self, ts: int | None = None) -> None:
-        """Synchronize device time.
-
-        Args:
-            ts: Optional Unix timestamp in seconds.
-        """
-        await self.player.client.sync_time(ts)
-
     async def set_eq_preset(self, preset: str) -> None:
         """Set equalizer preset.
 
@@ -237,8 +230,3 @@ class AudioConfiguration:
     async def get_meta_info(self) -> dict[str, Any]:
         """Get detailed metadata information about current track."""
         return await self.player.client.get_meta_info()
-
-    async def reboot(self) -> None:
-        """Reboot the device."""
-        await self.player.client.reboot()
-        self.player._available = False

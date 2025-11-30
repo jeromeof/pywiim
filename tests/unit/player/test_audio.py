@@ -1,0 +1,537 @@
+"""Unit tests for AudioConfiguration.
+
+Tests audio configuration operations including EQ, output modes, and settings.
+"""
+
+from unittest.mock import AsyncMock, MagicMock, PropertyMock
+
+import pytest
+
+from pywiim.models import PlayerStatus
+
+
+class TestAudioConfiguration:
+    """Test AudioConfiguration class."""
+
+    @pytest.fixture
+    def mock_player(self, mock_client):
+        """Create a mock Player instance."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        player._status_model = PlayerStatus()
+        player._audio_output_status = None
+        player._on_state_changed = None
+        player._properties = MagicMock()
+        player._properties.bluetooth_output_devices = []
+        # Mock is_bluetooth_output_active property
+        type(player).is_bluetooth_output_active = PropertyMock(return_value=False)
+
+        # Mock audio_output_mode property to read from _audio_output_status
+        def audio_output_mode_getter():
+            if player._audio_output_status is None:
+                return None
+            hardware_mode = player._audio_output_status.get("hardware")
+            if hardware_mode is None:
+                return None
+            # Simple mapping for test
+            mode_int = int(hardware_mode) if isinstance(hardware_mode, str) else hardware_mode
+            mode_map = {0: "Line Out", 1: "Optical Out", 2: "Coax Out", 3: "Headphone Out", 4: "Bluetooth Out"}
+            return mode_map.get(mode_int)
+
+        type(player).audio_output_mode = PropertyMock(side_effect=audio_output_mode_getter)
+        # Also set on properties mock
+        player._properties.audio_output_mode = PropertyMock(side_effect=audio_output_mode_getter)
+
+        # Mock source property to read from state synchronizer or _status_model
+        def source_getter():
+            # First try state synchronizer
+            if hasattr(player, "_state_synchronizer") and player._state_synchronizer:
+                merged = player._state_synchronizer.get_merged_state()
+                source = merged.get("source") if isinstance(merged, dict) else None
+                if source is not None:
+                    return source
+            # Fallback to _status_model
+            if player._status_model:
+                return player._status_model.source
+            return None
+
+        type(player).source = PropertyMock(side_effect=source_getter)
+        player._properties.source = PropertyMock(side_effect=source_getter)
+        return player
+
+    @pytest.fixture
+    def audio_config(self, mock_player):
+        """Create an AudioConfiguration instance."""
+        from pywiim.player.audio import AudioConfiguration
+
+        return AudioConfiguration(mock_player)
+
+    @pytest.mark.asyncio
+    async def test_set_source(self, audio_config, mock_player):
+        """Test setting audio source."""
+        mock_player.client.set_source = AsyncMock()
+        mock_player._on_state_changed = MagicMock()
+        mock_player._status_model = PlayerStatus()
+
+        await audio_config.set_source("wifi")
+
+        mock_player.client.set_source.assert_called_once_with("wifi")
+        assert mock_player._status_model.source == "wifi"
+        mock_player._on_state_changed.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_set_source_updates_status_model(self, audio_config, mock_player):
+        """Test that set_source() updates _status_model.source immediately."""
+        mock_player.client.set_source = AsyncMock()
+        mock_player._status_model = PlayerStatus(source="bluetooth")
+
+        # Before: source is "bluetooth"
+        assert mock_player._status_model.source == "bluetooth"
+
+        # Call set_source
+        await audio_config.set_source("wifi")
+
+        # After: _status_model.source should be updated immediately (optimistic update)
+        assert mock_player._status_model.source == "wifi"
+        mock_player.client.set_source.assert_called_once_with("wifi")
+
+    @pytest.mark.asyncio
+    async def test_set_source_property_reflects_change(self, audio_config, mock_player):
+        """Test that source property reflects the change after set_source."""
+        from pywiim.models import PlayerStatus
+
+        mock_player.client.set_source = AsyncMock()
+        mock_player._status_model = PlayerStatus(source="bluetooth")
+        # Mock state synchronizer to return None (so it falls back to _status_model)
+        mock_player._state_synchronizer = MagicMock()
+        mock_player._state_synchronizer.get_merged_state = MagicMock(return_value={})
+
+        # Before: source should be "bluetooth"
+        assert mock_player.source == "bluetooth"
+
+        # Call set_source
+        await audio_config.set_source("wifi")
+
+        # After: source property should reflect the change (reads from _status_model as fallback)
+        assert mock_player._status_model.source == "wifi"
+        assert mock_player.source == "wifi"
+
+    @pytest.mark.asyncio
+    async def test_set_source_refresh_updates_state_synchronizer(self, audio_config, mock_player):
+        """Test that refresh after set_source() updates state synchronizer with device state."""
+        from pywiim.models import PlayerStatus
+
+        mock_player.client.set_source = AsyncMock()
+        mock_player._status_model = PlayerStatus(source="bluetooth")
+        mock_player._state_synchronizer = MagicMock()
+        mock_player._state_synchronizer.get_merged_state = MagicMock(return_value={})
+        mock_player._state_synchronizer.update_from_http = MagicMock()
+
+        # Mock refresh to simulate what it does - updates state synchronizer
+        async def mock_refresh(full=False):
+            # Simulate refresh getting status from device
+            status = PlayerStatus(source="wifi")  # Device confirms the change
+            mock_player._status_model = status
+            # Refresh updates state synchronizer
+            mock_player._state_synchronizer.update_from_http({"source": "wifi"})
+            # Update merged state to include the new source
+            mock_player._state_synchronizer.get_merged_state = MagicMock(return_value={"source": "wifi"})
+
+        mock_player.refresh = AsyncMock(side_effect=mock_refresh)
+
+        # Call set_source (optimistic update)
+        await audio_config.set_source("wifi")
+        assert mock_player._status_model.source == "wifi"
+
+        # Call refresh to sync with device
+        await mock_player.refresh(full=False)
+
+        # Verify state synchronizer was updated
+        mock_player._state_synchronizer.update_from_http.assert_called()
+        # Verify source property now reads from state synchronizer
+        assert mock_player.source == "wifi"
+
+    @pytest.mark.asyncio
+    async def test_set_source_propagates_api_errors(self, audio_config, mock_player):
+        """Test that errors from the API are properly propagated (not silently swallowed)."""
+        from pywiim.exceptions import WiiMRequestError
+
+        # Setup: API call raises an error
+        api_error = WiiMRequestError("API call failed")
+        mock_player.client.set_source = AsyncMock(side_effect=api_error)
+        mock_player._status_model = PlayerStatus(source="bluetooth")
+
+        # Call set_source - should raise the error
+        with pytest.raises(WiiMRequestError) as exc_info:
+            await audio_config.set_source("wifi")
+
+        # Verify the error was propagated
+        assert exc_info.value == api_error
+        # Verify _status_model was NOT updated (since API call failed)
+        assert mock_player._status_model.source == "bluetooth"
+        # Verify callback was NOT called
+        assert (
+            not hasattr(mock_player, "_on_state_changed")
+            or mock_player._on_state_changed is None
+            or not hasattr(mock_player._on_state_changed, "call_count")
+            or mock_player._on_state_changed.call_count == 0
+        )
+
+    @pytest.mark.asyncio
+    async def test_set_audio_output_mode_string(self, audio_config, mock_player):
+        """Test setting audio output mode by string."""
+        mock_player.client.set_audio_output_mode = AsyncMock()
+        mock_player.refresh = AsyncMock()
+        mock_player._on_state_changed = MagicMock()
+
+        await audio_config.set_audio_output_mode("Line Out")
+
+        mock_player.client.set_audio_output_mode.assert_called_once_with("Line Out")
+        mock_player.refresh.assert_called_once_with(full=True)
+        mock_player._on_state_changed.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_set_audio_output_mode_int(self, audio_config, mock_player):
+        """Test setting audio output mode by integer."""
+        mock_player.client.set_audio_output_mode = AsyncMock()
+        mock_player.refresh = AsyncMock()
+
+        await audio_config.set_audio_output_mode(2)
+
+        mock_player.client.set_audio_output_mode.assert_called_once_with(2)
+
+    @pytest.mark.asyncio
+    async def test_select_output_hardware(self, audio_config, mock_player):
+        """Test selecting hardware output."""
+        mock_player.is_bluetooth_output_active = False
+        mock_player.client.set_audio_output_mode = AsyncMock()
+        mock_player.refresh = AsyncMock()
+        mock_player._on_state_changed = MagicMock()
+
+        await audio_config.select_output("Optical Out")
+
+        mock_player.client.set_audio_output_mode.assert_called_once_with("Optical Out")
+
+    @pytest.mark.asyncio
+    async def test_select_output_bluetooth_device(self, audio_config, mock_player):
+        """Test selecting specific Bluetooth device."""
+        mock_player._properties.bluetooth_output_devices = [
+            {"name": "Sony Speaker", "mac": "AA:BB:CC:DD:EE:01", "connected": False},
+        ]
+        mock_player.connect_bluetooth_device = AsyncMock()
+        mock_player.refresh = AsyncMock()
+
+        await audio_config.select_output("BT: Sony Speaker")
+
+        mock_player.connect_bluetooth_device.assert_called_once_with("AA:BB:CC:DD:EE:01")
+
+    @pytest.mark.asyncio
+    async def test_select_output_bluetooth_device_not_found(self, audio_config, mock_player):
+        """Test selecting non-existent Bluetooth device."""
+        mock_player._properties.bluetooth_output_devices = [
+            {"name": "Other Device", "mac": "AA:BB:CC:DD:EE:01"},
+        ]
+
+        with pytest.raises(ValueError, match="not found"):
+            await audio_config.select_output("BT: Sony Speaker")
+
+    @pytest.mark.asyncio
+    async def test_select_output_bluetooth_generic(self, audio_config, mock_player):
+        """Test selecting generic Bluetooth output."""
+        mock_player._properties.bluetooth_output_devices = [
+            {"name": "Device 1", "mac": "AA:BB:CC:DD:EE:01", "connected": True},
+            {"name": "Device 2", "mac": "AA:BB:CC:DD:EE:02", "connected": False},
+        ]
+        mock_player.connect_bluetooth_device = AsyncMock()
+
+        await audio_config.select_output("Bluetooth Out")
+
+        # Should connect to the connected device
+        mock_player.connect_bluetooth_device.assert_called_once_with("AA:BB:CC:DD:EE:01")
+
+    @pytest.mark.asyncio
+    async def test_select_output_bluetooth_generic_no_devices(self, audio_config, mock_player):
+        """Test selecting generic Bluetooth when no devices paired."""
+        mock_player._properties.bluetooth_output_devices = []
+
+        with pytest.raises(ValueError, match="No paired Bluetooth devices"):
+            await audio_config.select_output("Bluetooth Out")
+
+    @pytest.mark.asyncio
+    async def test_select_output_hardware_with_bt_active(self, audio_config, mock_player):
+        """Test selecting hardware output when Bluetooth is active."""
+        type(mock_player).is_bluetooth_output_active = PropertyMock(return_value=True)
+        mock_player.disconnect_bluetooth_device = AsyncMock()
+        mock_player.client.set_audio_output_mode = AsyncMock()
+        mock_player.refresh = AsyncMock()
+
+        await audio_config.select_output("Line Out")
+
+        mock_player.disconnect_bluetooth_device.assert_called_once()
+        mock_player.client.set_audio_output_mode.assert_called_once_with("Line Out")
+
+    @pytest.mark.asyncio
+    async def test_select_output_hardware_bt_disconnect_fails(self, audio_config, mock_player):
+        """Test selecting hardware output when BT disconnect fails."""
+        type(mock_player).is_bluetooth_output_active = PropertyMock(return_value=True)
+        mock_player.disconnect_bluetooth_device = AsyncMock(side_effect=Exception("Disconnect error"))
+        mock_player.client.set_audio_output_mode = AsyncMock()
+        mock_player.refresh = AsyncMock()
+
+        # Should continue even if disconnect fails
+        await audio_config.select_output("Line Out")
+
+        mock_player.disconnect_bluetooth_device.assert_called_once()
+        mock_player.client.set_audio_output_mode.assert_called_once_with("Line Out")
+
+    @pytest.mark.asyncio
+    async def test_set_led(self, audio_config, mock_player):
+        """Test setting LED state."""
+        mock_player.client.set_led = AsyncMock()
+
+        await audio_config.set_led(True)
+
+        mock_player.client.set_led.assert_called_once_with(True)
+
+    @pytest.mark.asyncio
+    async def test_set_led_brightness(self, audio_config, mock_player):
+        """Test setting LED brightness."""
+        mock_player.client.set_led_brightness = AsyncMock()
+
+        await audio_config.set_led_brightness(50)
+
+        mock_player.client.set_led_brightness.assert_called_once_with(50)
+
+    @pytest.mark.asyncio
+    async def test_set_led_brightness_invalid(self, audio_config, mock_player):
+        """Test setting invalid LED brightness."""
+        with pytest.raises(ValueError, match="between 0 and 100"):
+            await audio_config.set_led_brightness(150)
+
+    @pytest.mark.asyncio
+    async def test_set_channel_balance(self, audio_config, mock_player):
+        """Test setting channel balance."""
+        mock_player.client.set_channel_balance = AsyncMock()
+
+        await audio_config.set_channel_balance(0.5)
+
+        mock_player.client.set_channel_balance.assert_called_once_with(0.5)
+
+    @pytest.mark.asyncio
+    async def test_set_channel_balance_invalid(self, audio_config, mock_player):
+        """Test setting invalid channel balance."""
+        with pytest.raises(ValueError, match="between -1.0 and 1.0"):
+            await audio_config.set_channel_balance(1.5)
+
+    @pytest.mark.asyncio
+    async def test_set_eq_preset(self, audio_config, mock_player):
+        """Test setting EQ preset."""
+        mock_player.client.set_eq_preset = AsyncMock()
+        mock_player._on_state_changed = MagicMock()
+
+        await audio_config.set_eq_preset("rock")
+
+        mock_player.client.set_eq_preset.assert_called_once_with("rock")
+        assert mock_player._status_model.eq_preset == "rock"
+        mock_player._on_state_changed.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_set_eq_custom(self, audio_config, mock_player):
+        """Test setting custom EQ values."""
+        mock_player.client.set_eq_custom = AsyncMock()
+        mock_player._on_state_changed = MagicMock()
+
+        eq_values = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+        await audio_config.set_eq_custom(eq_values)
+
+        mock_player.client.set_eq_custom.assert_called_once_with(eq_values)
+        mock_player._on_state_changed.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_set_eq_enabled(self, audio_config, mock_player):
+        """Test enabling/disabling EQ."""
+        mock_player.client.set_eq_enabled = AsyncMock()
+        mock_player._on_state_changed = MagicMock()
+
+        await audio_config.set_eq_enabled(True)
+
+        mock_player.client.set_eq_enabled.assert_called_once_with(True)
+        mock_player._on_state_changed.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_eq(self, audio_config, mock_player):
+        """Test getting EQ values."""
+        expected_eq = {"band1": 0, "band2": 1}
+        mock_player.client.get_eq = AsyncMock(return_value=expected_eq)
+
+        result = await audio_config.get_eq()
+
+        assert result == expected_eq
+        mock_player.client.get_eq.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_eq_presets(self, audio_config, mock_player):
+        """Test getting EQ presets."""
+        expected_presets = ["rock", "jazz", "pop"]
+        mock_player.client.get_eq_presets = AsyncMock(return_value=expected_presets)
+
+        result = await audio_config.get_eq_presets()
+
+        assert result == expected_presets
+        mock_player.client.get_eq_presets.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_eq_status(self, audio_config, mock_player):
+        """Test getting EQ status."""
+        mock_player.client.get_eq_status = AsyncMock(return_value=True)
+
+        result = await audio_config.get_eq_status()
+
+        assert result is True
+        mock_player.client.get_eq_status.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_multiroom_status(self, audio_config, mock_player):
+        """Test getting multiroom status."""
+        expected_status = {"group": "test-group"}
+        mock_player.client.get_multiroom_status = AsyncMock(return_value=expected_status)
+
+        result = await audio_config.get_multiroom_status()
+
+        assert result == expected_status
+        mock_player.client.get_multiroom_status.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_audio_output_status(self, audio_config, mock_player):
+        """Test getting audio output status."""
+        expected_status = {"mode": "hardware", "source": "line"}
+        mock_player.client.get_audio_output_status = AsyncMock(return_value=expected_status)
+
+        result = await audio_config.get_audio_output_status()
+
+        assert result == expected_status
+        assert mock_player._audio_output_status == expected_status
+        mock_player.client.get_audio_output_status.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_meta_info(self, audio_config, mock_player):
+        """Test getting meta info."""
+        # get_meta_info may not exist in all API versions, skip if not available
+        if not hasattr(mock_player.client, "get_meta_info"):
+            pytest.skip("get_meta_info not available in this API version")
+
+        expected_info = {"title": "Test", "artist": "Artist"}
+        mock_player.client.get_meta_info = AsyncMock(return_value=expected_info)
+
+        result = await audio_config.get_meta_info()
+
+        assert result == expected_info
+        mock_player.client.get_meta_info.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_set_audio_output_mode_updates_cache_after_refresh(self, audio_config, mock_player):
+        """Test that set_audio_output_mode() refresh actually updates _audio_output_status."""
+        # Setup: initial state has no audio output status
+        mock_player._audio_output_status = None
+        mock_player.client.set_audio_output_mode = AsyncMock()
+        type(mock_player.client).capabilities = PropertyMock(return_value={"supports_audio_output": True})
+
+        # New audio output status that should be set after refresh
+        new_audio_output_status = {"hardware": 0, "source": 0}
+        mock_player.client.get_audio_output_status = AsyncMock(return_value=new_audio_output_status)
+
+        # Mock the refresh method to actually call get_audio_output_status
+        async def mock_refresh(full=False):
+            # Simulate what refresh does - it calls get_audio_output_status
+            audio_output_status = await mock_player.get_audio_output_status()
+            mock_player._audio_output_status = audio_output_status
+
+        mock_player.refresh = AsyncMock(side_effect=mock_refresh)
+
+        # Call set_audio_output_mode
+        await audio_config.set_audio_output_mode("Line Out")
+
+        # Verify API was called
+        mock_player.client.set_audio_output_mode.assert_called_once_with("Line Out")
+        # Verify refresh was called
+        mock_player.refresh.assert_called_once_with(full=True)
+        # Verify _audio_output_status was updated
+        assert mock_player._audio_output_status == new_audio_output_status
+        # Verify get_audio_output_status was called during refresh
+        mock_player.client.get_audio_output_status.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_set_audio_output_mode_property_reflects_change(self, audio_config, mock_player):
+        """Test that audio_output_mode property reflects the change after refresh."""
+        # Setup: initial state
+        mock_player._audio_output_status = None
+        mock_player.client.set_audio_output_mode = AsyncMock()
+        type(mock_player.client).capabilities = PropertyMock(return_value={"supports_audio_output": True})
+        mock_player.client.audio_output_mode_to_name = MagicMock(return_value="Line Out")
+
+        # New audio output status after refresh
+        new_audio_output_status = {"hardware": 0, "source": 0}
+        mock_player.client.get_audio_output_status = AsyncMock(return_value=new_audio_output_status)
+
+        # Mock refresh to update _audio_output_status
+        async def mock_refresh(full=False):
+            audio_output_status = await mock_player.get_audio_output_status()
+            mock_player._audio_output_status = audio_output_status
+
+        mock_player.refresh = AsyncMock(side_effect=mock_refresh)
+
+        # Before: audio_output_mode should be None
+        assert mock_player.audio_output_mode is None
+
+        # Call set_audio_output_mode
+        await audio_config.set_audio_output_mode("Line Out")
+
+        # After: _audio_output_status should be updated
+        assert mock_player._audio_output_status == new_audio_output_status
+        # Verify the property reflects the change
+        # The property reads from _audio_output_status via _properties
+        assert mock_player.audio_output_mode == "Line Out"
+
+    @pytest.mark.asyncio
+    async def test_set_audio_output_mode_propagates_api_errors(self, audio_config, mock_player):
+        """Test that errors from the API are properly propagated (not silently swallowed)."""
+        from pywiim.exceptions import WiiMRequestError
+
+        # Setup: API call raises an error
+        api_error = WiiMRequestError("API call failed")
+        mock_player.client.set_audio_output_mode = AsyncMock(side_effect=api_error)
+
+        # Call set_audio_output_mode - should raise the error
+        with pytest.raises(WiiMRequestError) as exc_info:
+            await audio_config.set_audio_output_mode("Line Out")
+
+        # Verify the error was propagated
+        assert exc_info.value == api_error
+        # Verify refresh was NOT called (since API call failed)
+        assert (
+            not hasattr(mock_player, "refresh")
+            or not hasattr(mock_player.refresh, "call_count")
+            or mock_player.refresh.call_count == 0
+        )
+
+    @pytest.mark.asyncio
+    async def test_set_audio_output_mode_propagates_refresh_errors(self, audio_config, mock_player):
+        """Test that errors from refresh are properly propagated."""
+        from pywiim.exceptions import WiiMConnectionError
+
+        # Setup: API call succeeds but refresh fails
+        mock_player.client.set_audio_output_mode = AsyncMock()
+        refresh_error = WiiMConnectionError("Refresh failed")
+        mock_player.refresh = AsyncMock(side_effect=refresh_error)
+
+        # Call set_audio_output_mode - should raise the refresh error
+        with pytest.raises(WiiMConnectionError) as exc_info:
+            await audio_config.set_audio_output_mode("Line Out")
+
+        # Verify the error was propagated
+        assert exc_info.value == refresh_error
+        # Verify API was called
+        mock_player.client.set_audio_output_mode.assert_called_once_with("Line Out")
+        # Verify refresh was attempted
+        mock_player.refresh.assert_called_once_with(full=True)

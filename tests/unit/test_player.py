@@ -1119,6 +1119,9 @@ class TestPlayerMediaMetadata:
         status = PlayerStatus(source="wifi", play_state="play")
         player._status_model = status
 
+        # Ensure state synchronizer has source data (property reads from synchronizer first)
+        player._state_synchronizer.update_from_http({"source": "wifi"})
+
         assert player.source == "wifi"
 
     @pytest.mark.asyncio
@@ -2243,8 +2246,16 @@ class TestPlayerMediaMetadata:
         mock_client.create_group = AsyncMock()
         mock_client.join_slave = AsyncMock()
 
+        # Mock refresh to verify join worked - need to set slave status to show it's a slave
+        async def mock_slave_refresh(full=False):
+            slave._detected_role = "slave"
+
+        slave.refresh = AsyncMock(side_effect=mock_slave_refresh)
+
         await slave.join_group(master)
 
+        # Verify refresh was called to verify the join
+        slave.refresh.assert_called_once_with(full=False)
         # Master should now have a group
         assert master.group is not None
         assert slave in master.group.slaves
@@ -2734,8 +2745,17 @@ class TestPlayerGroupOperations:
         slave_client.get_multiroom_status = AsyncMock(return_value={"slaves": []})
         slave_client.join_slave = AsyncMock()
 
+        # Mock refresh to update slave status after join - must update role to "slave"
+        async def mock_slave_refresh(full=False):
+            slave._detected_role = "slave"
+            slave._status_model = slave_status
+
+        slave.refresh = AsyncMock(side_effect=mock_slave_refresh)
+
         await slave.join_group(master)
 
+        # Verify refresh was called to verify the join
+        slave.refresh.assert_called_once_with(full=False)
         assert slave.group == group
         assert slave in group.slaves
         slave_client.join_slave.assert_called_once_with(master.host)

@@ -1,10 +1,10 @@
-"""Integration tests for WiiMClient with real devices.
+"""Core integration tests for Player with real devices.
 
 These tests require a real WiiM device to be available on the network.
 Set the WIIM_TEST_DEVICE environment variable to enable these tests.
 
-NOTE: These are minimal smoke tests for basic API functionality.
-For comprehensive testing, use the `wiim-verify` CLI tool instead.
+These are fast, safe core tests that validate basic Player functionality.
+For comprehensive testing, see test_prerelease.py or use the `wiim-verify` CLI tool.
 
 Example:
     WIIM_TEST_DEVICE=192.168.1.100 pytest tests/integration/test_real_device.py -v
@@ -15,52 +15,25 @@ For HTTPS devices:
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 
 @pytest.mark.integration
+@pytest.mark.core
 @pytest.mark.asyncio
-class TestRealDevice:
-    """Integration tests with real WiiM devices."""
+class TestRealDeviceCore:
+    """Core integration tests with real WiiM devices - fast and safe."""
 
     async def test_device_connection(self, real_device_client, integration_test_marker):
         """Test basic device connection."""
-        # Test that we can connect to the device
         device_info = await real_device_client.get_device_info_model()
 
         assert device_info is not None
         assert device_info.uuid is not None
         assert device_info.model is not None
         assert device_info.firmware is not None
-
-    async def test_get_device_info(self, real_device_client, integration_test_marker):
-        """Test getting device information."""
-        device_info = await real_device_client.get_device_info_model()
-
-        assert device_info.uuid is not None
-        assert device_info.name is not None
-        assert device_info.model is not None
-        assert device_info.firmware is not None
-        assert device_info.mac is not None
-
-        print("\nDevice Info:")
-        print(f"  Name: {device_info.name}")
-        print(f"  Model: {device_info.model}")
-        print(f"  Firmware: {device_info.firmware}")
-        print(f"  MAC: {device_info.mac}")
-        print(f"  UUID: {device_info.uuid}")
-
-    async def test_get_player_status(self, real_device_client, integration_test_marker):
-        """Test getting player status."""
-        status = await real_device_client.get_player_status()
-
-        assert status is not None
-        assert "play_state" in status or "state" in status
-
-        print("\nPlayer Status:")
-        print(f"  State: {status.get('play_state') or status.get('state')}")
-        print(f"  Volume: {status.get('volume')}")
-        print(f"  Source: {status.get('source')}")
 
     async def test_capability_detection(self, real_device_client, integration_test_marker):
         """Test automatic capability detection."""
@@ -82,3 +55,293 @@ class TestRealDevice:
         print(f"  Vendor: {real_device_client._capabilities.get('vendor')}")
         print(f"  Is WiiM: {real_device_client._capabilities.get('is_wiim_device')}")
         print(f"  Is Legacy: {real_device_client._capabilities.get('is_legacy_device')}")
+
+    async def test_player_initialization(self, real_device_player, integration_test_marker):
+        """Test Player initialization and basic properties."""
+        player = real_device_player
+
+        # Test that player is initialized
+        assert player is not None
+        assert player.client is not None
+        assert player.host is not None
+
+        # Test device info access
+        device_info = await player.get_device_info()
+        assert device_info is not None
+        assert device_info.uuid is not None
+        assert device_info.name is not None
+        assert device_info.model is not None
+        assert device_info.firmware is not None
+
+        print("\nPlayer Info:")
+        print(f"  Host: {player.host}")
+        print(f"  Name: {device_info.name}")
+        print(f"  Model: {device_info.model}")
+        print(f"  Firmware: {device_info.firmware}")
+
+    async def test_player_refresh(self, real_device_player, integration_test_marker):
+        """Test Player refresh functionality."""
+        player = real_device_player
+
+        # Initial refresh
+        await player.refresh()
+
+        # Verify state is populated
+        assert player._status_model is not None or player._device_info is not None
+
+        # Test full refresh
+        await player.refresh(full=True)
+
+        # Verify device info is populated after full refresh
+        assert player._device_info is not None
+        assert player._device_info.uuid is not None
+
+    async def test_player_properties_access(self, real_device_player, integration_test_marker):
+        """Test accessing Player properties."""
+        player = real_device_player
+        await player.refresh()
+
+        # Test basic properties (may be None if device is off/idle)
+        # These should not raise errors even if None
+        _ = player.volume_level  # May be None
+        _ = player.is_muted  # May be None
+        _ = player.play_state  # May be None
+        _ = player.source  # May be None
+        _ = player.role  # Should always be available (defaults to "solo")
+
+        # Role should always be available
+        assert player.role in ("solo", "master", "slave")
+
+        # Test device info properties
+        assert player.name is not None
+        assert player.model is not None
+        assert player.firmware is not None
+
+    async def test_player_status_read(self, real_device_player, integration_test_marker):
+        """Test reading player status."""
+        player = real_device_player
+
+        # Get status (always queries device)
+        status = await player.get_status()
+
+        assert status is not None
+        # Status should have at least some fields
+        assert hasattr(status, "volume") or hasattr(status, "play_state") or hasattr(status, "source")
+
+        print("\nPlayer Status:")
+        print(f"  Volume: {getattr(status, 'volume', None)}")
+        print(f"  Play State: {getattr(status, 'play_state', None)}")
+        print(f"  Source: {getattr(status, 'source', None)}")
+
+    async def test_player_volume_read(self, real_device_player, integration_test_marker):
+        """Test reading volume state."""
+        player = real_device_player
+        await player.refresh()
+
+        # Test volume getter (may be None)
+        volume = await player.get_volume()
+        # Volume should be in valid range if not None
+        if volume is not None:
+            assert 0.0 <= volume <= 1.0
+
+        # Test mute getter (may be None)
+        muted = await player.get_muted()
+        # Muted should be bool if not None
+        if muted is not None:
+            assert isinstance(muted, bool)
+
+    async def test_player_volume_controls_safe(self, real_device_player, integration_test_marker):
+        """Test volume controls with safe limits and state restoration."""
+        player = real_device_player
+        await player.refresh()
+
+        # Save initial state
+        initial_volume = await player.get_volume()
+        initial_mute = await player.get_muted()
+
+        # Skip if we can't read initial state
+        if initial_volume is None:
+            pytest.skip("Device does not report volume level")
+
+        try:
+            # Test volume read
+            volume = await player.get_volume()
+            assert volume is not None
+            assert 0.0 <= volume <= 1.0
+
+            # Test safe volume change (max 10%)
+            safe_volume = min(0.10, volume + 0.05) if volume < 0.10 else 0.10
+            await player.set_volume(safe_volume)
+            await asyncio.sleep(0.5)
+
+            new_volume = await player.get_volume()
+            assert new_volume is not None
+            assert abs(new_volume - safe_volume) < 0.05
+
+            # Test mute toggle
+            await player.set_mute(True)
+            await asyncio.sleep(0.5)
+            muted = await player.get_muted()
+            if muted is not None:
+                assert muted is True
+
+            await player.set_mute(False)
+            await asyncio.sleep(0.5)
+            unmuted = await player.get_muted()
+            if unmuted is not None:
+                assert unmuted is False
+
+        finally:
+            # Restore initial state
+            if initial_volume is not None:
+                await player.set_volume(initial_volume)
+            if initial_mute is not None:
+                await player.set_mute(initial_mute)
+            await asyncio.sleep(0.5)
+
+    async def test_player_source_list(self, real_device_player, integration_test_marker):
+        """Test reading available sources."""
+        player = real_device_player
+        await player.refresh(full=True)  # Need full refresh to get device info
+
+        # Get available sources (property, not method)
+        sources = player.available_sources
+        assert sources is not None
+        assert isinstance(sources, list)
+        assert len(sources) > 0
+
+        print("\nAvailable Sources:")
+        for source in sources:
+            print(f"  - {source}")
+
+    async def test_player_audio_output_modes(self, real_device_player, integration_test_marker):
+        """Test reading audio output modes."""
+        player = real_device_player
+        # Do full refresh to ensure device info and capabilities are populated
+        await player.refresh(full=True)
+
+        # Check capabilities first
+        if not player.client.capabilities.get("supports_audio_output", False):
+            pytest.skip("Audio output control not supported on this device (capability check)")
+
+        # Get audio output status
+        try:
+            status = await player.audio.get_audio_output_status()
+            if status is None:
+                pytest.skip("Audio output status not available (device may not support this feature)")
+
+            # Verify status has expected fields
+            assert "mode" in status or "output" in status or "hardware" in status
+
+            # Test that available_output_modes property works
+            available_modes = player.available_output_modes
+            assert isinstance(available_modes, list)
+            # Most devices should have at least one output mode
+            if len(available_modes) > 0:
+                print(f"\nAvailable Audio Output Modes: {available_modes}")
+                print(f"Current Mode: {player.audio_output_mode}")
+
+        except Exception as e:
+            # If we get here, there's an actual error (not just unsupported)
+            pytest.fail(f"Error testing audio output modes: {e}")
+
+    async def test_player_state_caching(self, real_device_player, integration_test_marker):
+        """Test that Player state caching works correctly."""
+        player = real_device_player
+
+        # Initial refresh
+        await player.refresh()
+
+        # Get a property (uses cache)
+        volume1 = player.volume_level
+        device_name1 = player.name
+
+        # Refresh again
+        await player.refresh()
+
+        # Properties should still be accessible (may have changed, but shouldn't error)
+        volume2 = player.volume_level
+        device_name2 = player.name
+
+        # Device name should be consistent (doesn't change)
+        assert device_name1 == device_name2
+
+        # Volume might have changed, but should still be valid if not None
+        if volume1 is not None and volume2 is not None:
+            assert 0.0 <= volume1 <= 1.0
+            assert 0.0 <= volume2 <= 1.0
+
+    async def test_player_eq_read(self, real_device_player, integration_test_marker):
+        """Test reading EQ status and presets."""
+        player = real_device_player
+        # Do full refresh to ensure capabilities are detected
+        await player.refresh(full=True)
+
+        # Check capabilities first
+        if not player.client.capabilities.get("supports_eq", False):
+            pytest.skip("EQ not supported on this device (capability check)")
+
+        try:
+            # Get EQ status (enabled/disabled)
+            eq_enabled = await player.audio.get_eq_status()
+            assert isinstance(eq_enabled, bool)
+
+            # Get current EQ preset
+            current_preset = player.eq_preset
+            # May be None if EQ is disabled or not set
+
+            # Get EQ presets list
+            eq_presets = await player.audio.get_eq_presets()
+            if eq_presets is not None:
+                assert isinstance(eq_presets, list)
+                if len(eq_presets) > 0:
+                    print(f"\nAvailable EQ Presets: {eq_presets}")
+                    print(f"Current EQ Preset: {current_preset}")
+                    print(f"EQ Enabled: {eq_enabled}")
+
+            # Get EQ band values (may fail if EQ not enabled)
+            try:
+                eq_bands = await player.audio.get_eq()
+                if eq_bands is not None:
+                    assert isinstance(eq_bands, dict)
+            except Exception:
+                # EQ bands may not be available if EQ is disabled
+                pass
+
+        except Exception as e:
+            # If we get here, there's an actual error (not just unsupported)
+            pytest.fail(f"Error testing EQ: {e}")
+
+    async def test_player_presets_read(self, real_device_player, integration_test_marker):
+        """Test reading playback presets."""
+        player = real_device_player
+        # Do full refresh to ensure presets are fetched
+        await player.refresh(full=True)
+
+        # Check capabilities first
+        if not player.client.capabilities.get("supports_presets", False):
+            pytest.skip("Presets not supported on this device (capability check)")
+
+        try:
+            # Get presets (may be None if not available or device doesn't have any)
+            presets = player.presets
+            if presets is not None:
+                assert isinstance(presets, list)
+                if len(presets) > 0:
+                    # Verify preset structure
+                    first_preset = presets[0]
+                    assert isinstance(first_preset, dict)
+                    # Presets should have at least a number or name
+                    assert "number" in first_preset or "name" in first_preset
+                    print(f"\nAvailable Presets: {len(presets)} preset(s)")
+                    # Print first few presets
+                    for preset in presets[:3]:
+                        name = preset.get("name", f"Preset {preset.get('number', '?')}")
+                        print(f"  - {name}")
+            else:
+                # Presets may be None if device doesn't have any configured
+                print("\nNo presets configured on this device")
+
+        except Exception as e:
+            # If we get here, there's an actual error (not just unsupported)
+            pytest.fail(f"Error testing presets: {e}")

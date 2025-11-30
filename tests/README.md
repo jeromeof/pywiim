@@ -32,6 +32,54 @@ Integration tests require a real WiiM device on your network. They test actual d
    export WIIM_TEST_HTTPS=true
    ```
 
+### Test Suites
+
+Integration tests are organized into two suites:
+
+#### Core Integration Tests (`test_real_device.py`)
+
+Fast, safe tests that validate basic Player functionality. These are read-only or use minimal state changes with automatic restoration.
+
+**Run core tests:**
+```bash
+pytest tests/integration/test_real_device.py -v
+# Or with marker:
+pytest tests/integration/ -v -m "core"
+```
+
+**What they test:**
+- Device connection and capability detection
+- Player initialization and refresh
+- Property access and state caching
+- Volume/mute reading (safe operations)
+- Source and audio output mode reading
+
+#### Pre-Release Integration Tests (`test_prerelease.py`)
+
+Comprehensive tests that validate all major Player functionality. These tests change device state and restore it afterward. Run these before important releases.
+
+**Run pre-release tests:**
+```bash
+pytest tests/integration/test_prerelease.py -v
+# Or with marker:
+pytest tests/integration/ -v -m "prerelease"
+```
+
+**What they test:**
+- Full playback controls (play/pause/resume/next/previous)
+- Shuffle and repeat controls with state preservation
+- Volume and mute controls with restoration
+- Source switching
+- Audio output mode switching
+- State synchronization and cache consistency
+- Error handling
+
+**Pre-release check script:**
+```bash
+# Run comprehensive pre-release validation
+bash scripts/prerelease-check.sh 192.168.1.100
+```
+
 ### Running Integration Tests
 
 Run all integration tests:
@@ -39,14 +87,24 @@ Run all integration tests:
 pytest tests/integration/ -v
 ```
 
-Run a specific integration test:
+Run only core tests (fast, safe):
 ```bash
-pytest tests/integration/test_real_device.py::TestRealDevice::test_device_connection -v
+pytest tests/integration/ -v -m "core"
+```
+
+Run only pre-release tests (comprehensive):
+```bash
+pytest tests/integration/ -v -m "prerelease"
 ```
 
 Run only fast integration tests (skip slow ones):
 ```bash
 pytest tests/integration/ -v -m "not slow"
+```
+
+Skip destructive tests (ones that change device state):
+```bash
+pytest tests/integration/ -v -m "not destructive"
 ```
 
 ### Multi-Device Group Validation
@@ -76,7 +134,10 @@ This suite:
 ### Test Markers
 
 - `@pytest.mark.integration` - Marks tests as integration tests (requires real device)
+- `@pytest.mark.core` - Marks tests as core integration tests (fast, safe)
+- `@pytest.mark.prerelease` - Marks tests as pre-release integration tests (comprehensive)
 - `@pytest.mark.slow` - Marks tests that take longer to run (may change device state)
+- `@pytest.mark.destructive` - Marks tests that change device state (require restoration)
 
 ### Example Test Session
 
@@ -116,19 +177,50 @@ async def test_my_feature(mock_client):
     assert result == {"status": "ok"}
 ```
 
-### Integration Test Example
+### Integration Test Examples
 
+**Core test (read-only, safe):**
 ```python
 import pytest
-from pywiim.client import WiiMClient
+from pywiim.player import Player
 
 @pytest.mark.integration
+@pytest.mark.core
 @pytest.mark.asyncio
-async def test_my_feature_real_device(real_device_client, integration_test_marker):
-    """Test my feature with real device."""
-    result = await real_device_client.some_method()
+async def test_my_feature_core(real_device_player, integration_test_marker):
+    """Test my feature with real device (safe, read-only)."""
+    player = real_device_player
+    await player.refresh()
     
+    result = await player.some_method()
     assert result is not None
+```
+
+**Pre-release test (comprehensive, with state restoration):**
+```python
+import pytest
+from pywiim.player import Player
+
+@pytest.mark.integration
+@pytest.mark.prerelease
+@pytest.mark.asyncio
+async def test_my_feature_comprehensive(real_device_player, integration_test_marker):
+    """Test my feature comprehensively with state restoration."""
+    player = real_device_player
+    await player.refresh()
+    
+    # Save initial state
+    initial_value = await player.get_some_value()
+    
+    try:
+        # Test feature
+        await player.set_some_value(new_value)
+        result = await player.get_some_value()
+        assert result == new_value
+    finally:
+        # Restore initial state
+        if initial_value is not None:
+            await player.set_some_value(initial_value)
 ```
 
 ## Test Coverage
