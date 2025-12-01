@@ -1,7 +1,7 @@
 """Test media progress tracking on a real device.
 
 This test verifies that media position, duration, and progress tracking work correctly.
-Run with: WIIM_TEST_DEVICE=192.168.1.116 python -m pytest tests/test_media_progress.py -v
+Run with: WIIM_TEST_DEVICE=192.168.1.116 python -m pytest tests/integration/test_media_progress.py -v
 """
 
 from __future__ import annotations
@@ -292,7 +292,7 @@ async def test_media_progress_properties():
 if __name__ == "__main__":
     """Run tests directly for quick debugging."""
     print("Running media progress tests...")
-    print("Note: For full test output, use: pytest tests/test_media_progress.py -v -s")
+    print("Note: For full test output, use: pytest tests/integration/test_media_progress.py -v -s")
 
     async def run_all():
         await test_media_progress_tracking()

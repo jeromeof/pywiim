@@ -18,31 +18,23 @@ Design documentation, architecture decisions, and patterns:
 - **DESIGN_PRINCIPLES.md** - Design principles, goals, and patterns
 - **DEVICE_VARIATIONS.md** - Vendor detection, endpoint abstraction, and device compatibility
 - **STATE_MANAGEMENT.md** - State synchronization, play state identification, position tracking, and caching
-
 - **LESSONS_LEARNED.md** - Key lessons from HA integration
 - **API_DESIGN_PATTERNS.md** - API design patterns and defensive programming
 - **UPNP_INTEGRATION.md** - UPnP integration patterns and architecture
 - **SOURCE_ENUMERATION_VS_SELECTION.md** - Source system documentation
 - **OPERATION_PATTERNS.md** - Operation implementation patterns (trust API, handle preconditions)
 - **PROTOCOL_DETECTION.md** - Protocol/port detection strategy
+- **LINKPLAY_ARCHITECTURE.md** - In-depth analysis of LinkPlay/WiiM streaming architecture
 
 ### 💻 [Development Guides](development/)
 Guides for developers working on the project:
-- **DEVELOPMENT.md** - Development setup, standards, and practices
-- **PROJECT_STRUCTURE.md** - Project organization and structure reference
-- **TESTING_BEST_PRACTICES.md** - Comprehensive testing guide
-- **TESTING_DEVICES.md** - Testing with real devices
+- **DEVELOPMENT.md** - Complete development guide (setup, standards, testing, project structure)
 
 ### 🔌 [Integration Guides](integration/)
 Guides for integrating the library with frameworks:
 - **HA_INTEGRATION.md** - Home Assistant integration guide (polling, session management, UPnP)
 - **API_REFERENCE.md** - Complete API reference
 
-### 🔨 [Working Documents](working/)
-Temporary working documents, analysis, and discussions:
-- **TODO_STATUS.md** - TODO status tracking
-
-**Note**: Working documents are temporary and may be archived or deleted once their purpose is fulfilled.
 
 ## Quick Navigation
 
@@ -62,11 +54,10 @@ Temporary working documents, analysis, and discussions:
 ## Contributing to Documentation
 
 When adding new documentation:
-1. Determine the appropriate category (user/design/development/integration/working)
+1. Determine the appropriate category (user/design/development/integration)
 2. Follow existing documentation style
 3. Update this README if adding new major sections
-4. Move temporary analysis to `working/` directory
-5. Follow naming conventions: Use UPPER_SNAKE_CASE for file names
+4. Follow naming conventions: Use UPPER_SNAKE_CASE for file names
 
 ## Documentation Organization
 
@@ -76,7 +67,4 @@ This documentation is organized by purpose and audience:
 - **Design Documentation** (`design/`): Architecture decisions, design patterns, and technical deep-dives
 - **Development Guides** (`development/`): Setup guides, standards, and practices for contributors
 - **Integration Guides** (`integration/`): Framework-specific integration documentation
-- **Working Documents** (`working/`): Temporary analysis, discussions, and status tracking
-
-**Note**: Working documents are temporary and may be archived or deleted once their purpose is fulfilled.
 

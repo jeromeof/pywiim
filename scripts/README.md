@@ -137,6 +137,9 @@ python scripts/test_my_devices.py 192.168.1.100
 
 # Test multiple devices
 python scripts/test_my_devices.py 192.168.1.100 192.168.1.101
+
+# Debug capability detection (detailed endpoint testing)
+python scripts/test_my_devices.py --debug-capabilities 192.168.1.100
 ```
 
 **Features**:
@@ -145,6 +148,24 @@ python scripts/test_my_devices.py 192.168.1.100 192.168.1.101
 - Detects capabilities
 - Tests basic features
 - Shows summary
+- `--debug-capabilities` flag for detailed capability detection debugging
+
+### `test-group-real-devices.py`
+
+Comprehensive test script for multi-room group functionality against real devices.
+
+**Usage**:
+```bash
+python scripts/test-group-real-devices.py
+```
+
+**Features**:
+- Tests group operations with real devices
+- Tests various master/slave combinations
+- Validates group volume and mute controls
+- Tests group playback controls
+
+**Note**: Edit the `DEVICE_IPS` list in the script to specify your devices.
 
 ### `test-playback-controls.py`
 
@@ -184,24 +205,6 @@ python scripts/interactive-playback-test.py 192.168.1.100
 
 ## Shuffle/Repeat Testing Scripts
 
-### `test-shuffle-repeat-once.py`
-
-Quick non-interactive test of shuffle/repeat controls for the current source.
-
-**Usage**:
-```bash
-python scripts/test-shuffle-repeat-once.py <device_ip> "<content_description>"
-
-# Example:
-python scripts/test-shuffle-repeat-once.py 192.168.1.115 "Spotify Album - Rumors"
-```
-
-**Features**:
-- Quick non-interactive test of current source
-- Tests shuffle and repeat controls
-- Shows library predictions vs actual behavior
-- Restores initial state after testing
-
 ### `test-shuffle-repeat-by-source.py`
 
 Comprehensive interactive testing across multiple sources and content types.
@@ -228,3 +231,14 @@ python scripts/test-shuffle-repeat-by-source.py 192.168.1.100
 7. Press `[q]` to save results and see summary
 
 **Results**: Saved to `tests/shuffle-repeat-results/` with detailed JSON data.
+
+## Debugging Scripts
+
+### `debug/` Directory
+
+Contains debugging scripts for specific features:
+
+- `test_http_volume.py` - Debug HTTP volume responses
+- `test_upnp_volume.py` - Debug UPnP volume implementation
+
+These are development/debugging tools and may not be actively maintained.

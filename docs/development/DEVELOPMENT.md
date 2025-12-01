@@ -1,6 +1,22 @@
 # Development Guide
 
-This document outlines coding standards, best practices, and development guidelines for pywiim.
+This document outlines coding standards, best practices, development guidelines, and testing strategies for pywiim.
+
+## Table of Contents
+
+1. [Development Setup](#development-setup)
+2. [Project Structure](#project-structure)
+3. [Code Style](#code-style)
+4. [File Organization](#file-organization)
+5. [Naming Conventions](#naming-conventions)
+6. [Documentation](#documentation)
+7. [Error Handling](#error-handling)
+8. [Logging](#logging)
+9. [Testing](#testing)
+10. [Async/Await](#asyncawait)
+11. [Capability Detection](#capability-detection)
+12. [Common Patterns](#common-patterns)
+13. [Resources](#resources)
 
 ## Development Setup
 
@@ -221,6 +237,211 @@ pre-commit install
 pre-commit run --all-files
 ```
 
+## Project Structure
+
+### Directory Structure
+
+```
+pywiim/
+├── pywiim/                    # Main package
+│   ├── __init__.py            # Public API exports
+│   ├── client.py              # Main WiiMClient facade
+│   ├── exceptions.py          # Exception classes
+│   ├── models.py              # Pydantic models
+│   ├── capabilities.py        # Capability detection
+│   ├── state.py               # State synchronization
+│   ├── discovery.py           # Discovery module
+│   ├── cli/                   # Command-line tools
+│   │   ├── __init__.py
+│   │   ├── diagnostics.py     # Diagnostic CLI tool
+│   │   ├── discovery_cli.py   # Discovery CLI tool
+│   │   ├── monitor_cli.py     # Real-time monitoring CLI
+│   │   ├── verify_cli.py      # Feature verification CLI
+│   │   ├── group_test_cli.py  # Group testing CLI
+│   │   └── join_test_cli.py   # Join/unjoin testing CLI
+│   ├── api/                   # API mixin modules
+│   │   ├── __init__.py
+│   │   ├── base.py            # Base HTTP client
+│   │   ├── parser.py          # Response parser
+│   │   ├── constants.py       # API constants
+│   │   ├── endpoints.py       # Endpoint abstraction
+│   │   ├── device.py          # Device operations
+│   │   ├── playback.py        # Playback controls
+│   │   ├── group.py           # Multiroom groups
+│   │   ├── eq.py              # Equalizer
+│   │   ├── preset.py          # Presets
+│   │   ├── diagnostics.py    # Diagnostics API
+│   │   ├── bluetooth.py       # Bluetooth
+│   │   ├── audio_settings.py  # Audio settings
+│   │   ├── lms.py             # LMS integration
+│   │   ├── misc.py            # Miscellaneous
+│   │   ├── firmware.py        # Firmware info
+│   │   └── timer.py           # Timer/alarm
+│   └── upnp/                  # UPnP modules
+│       ├── __init__.py
+│       ├── client.py          # UPnP client
+│       └── eventer.py         # UPnP event handler
+│
+├── tests/                     # Test suite
+│   ├── __init__.py
+│   ├── conftest.py            # Pytest fixtures
+│   ├── README.md              # Test documentation
+│   ├── unit/                  # Unit tests (mocked)
+│   │   ├── __init__.py
+│   │   ├── test_client.py
+│   │   └── test_exceptions.py
+│   └── integration/           # Integration tests (real devices)
+│       ├── __init__.py
+│       └── test_real_device.py
+│
+├── docs/                      # Documentation
+│   ├── user/                  # User documentation
+│   │   ├── QUICK_START.md     # Quick start guide
+│   │   ├── EXAMPLES.md        # Code examples
+│   │   └── DISCOVERY.md       # Discovery tool guide
+│   └── integration/           # Integration guides
+│       ├── API_REFERENCE.md   # Complete API reference
+│       └── HA_INTEGRATION.md  # Home Assistant integration
+│
+├── scripts/                   # Utility scripts (optional)
+│   └── test_my_devices.py     # Quick device test script
+│
+├── .github/                   # GitHub configuration (if using)
+│   └── workflows/            # CI/CD workflows
+│
+├── pyproject.toml             # Project configuration
+├── Makefile                   # Development commands
+├── .pre-commit-config.yaml    # Pre-commit hooks
+├── .gitignore                 # Git ignore rules
+├── .gitattributes             # Git attributes
+├── LICENSE                    # License file
+└── README.md                  # Main README
+```
+
+### File Organization Principles
+
+**1. Package Structure (`pywiim/`)**
+
+**Core Modules** (root of package):
+- `client.py` - Main facade (composes all mixins)
+- `exceptions.py` - Exception hierarchy
+- `models.py` - Pydantic models
+- `capabilities.py` - Capability detection
+- `state.py` - State synchronization
+- `discovery.py` - Discovery module
+
+**CLI Tools** (`pywiim/cli/`):
+- `diagnostics.py` - Comprehensive diagnostic tool
+- `discovery_cli.py` - Device discovery tool
+- `monitor_cli.py` - Real-time player monitoring
+- `verify_cli.py` - Feature verification and testing
+- `group_test_cli.py` - Group operations testing
+- `join_test_cli.py` - Join/unjoin operations testing
+
+**API Modules** (`pywiim/api/`):
+- All API mixin modules
+- Base client and parser
+- Constants and endpoints
+
+**UPnP Modules** (`pywiim/upnp/`):
+- UPnP client and event handler
+
+**2. Documentation Structure**
+
+**User Documentation** (`docs/user/`):
+- Quick start guides
+- API reference
+- Code examples
+- Tool documentation
+- Requirements
+
+**Design Documentation** (`docs/design/`):
+- Architecture and design decisions
+- Patterns and best practices
+- Lessons learned
+- Design principles
+
+**Development Guides** (`docs/development/`):
+- Setup instructions
+- Development standards
+- Testing guides
+- Project structure
+
+**Integration Guides** (`docs/integration/`):
+- Framework integration patterns
+- Home Assistant integration
+- Polling architecture
+
+**3. Test Structure**
+
+**Unit Tests** (`tests/unit/`):
+- Mocked tests
+- Fast execution
+- High coverage
+
+**Integration Tests** (`tests/integration/`):
+- Real device tests
+- Marked with `@pytest.mark.slow`
+- Optional execution
+
+**4. Scripts and Tools**
+
+**Utility Scripts** (`scripts/` or root):
+- Quick test scripts
+- Development helpers
+- Not part of package distribution
+
+### Current Organization Status
+
+**Overall Assessment: ✅ Well Organized**
+
+The project follows good Python packaging practices and maintains clear separation of concerns.
+
+**✅ Strengths**
+
+**Package Structure:**
+- Clear module organization: `pywiim/`, `pywiim/api/`, `pywiim/upnp/`
+- Logical grouping: Related functionality grouped together
+- Public API: Clean exports in `__init__.py`
+- Mixin pattern: Well-organized API mixins
+
+**Documentation Structure:**
+- User docs: Organized in `docs/` directory
+- Design docs: Comprehensive design documentation
+- Clear separation: User-facing vs developer-facing docs
+
+**Test Structure:**
+- Unit tests: Separate from integration tests
+- Fixtures: Centralized in `conftest.py`
+- Documentation: Test README explains structure
+
+**Tooling:**
+- CLI tools: Organized in `pywiim/cli/`, properly configured in `pyproject.toml`
+- Code quality: Pre-commit hooks, Makefile
+- Type hints: PEP 561 support (`py.typed`)
+
+**⚠️ Areas for Improvement**
+
+**File Size Compliance:**
+
+Some files exceed recommended limits:
+
+| File | Lines | Limit | Status |
+|------|-------|-------|--------|
+| `api/base.py` | 988 | 600 (hard) | ❌ **Exceeds hard limit** |
+| `upnp/eventer.py` | 618 | 600 (hard) | ❌ **Exceeds hard limit** |
+| `upnp/client.py` | 594 | 600 (hard) | ⚠️ **Close to limit** |
+| `state.py` | 558 | 400 (soft) | ⚠️ **Exceeds soft limit** |
+| `capabilities.py` | 500 | 400 (soft) | ⚠️ **Exceeds soft limit** |
+
+**Recommendations:**
+- `api/base.py`: Consider splitting transport layer from client logic
+- `upnp/eventer.py`: Could extract event parsing to separate module
+- `state.py`: Consider splitting synchronization from state models
+- `capabilities.py`: Could split detection from registry
+
+**Note**: Some files may be acceptable if they're cohesive and difficult to split. Document justification if keeping as-is.
+
 ## Code Style
 
 ### Formatting
@@ -282,31 +503,24 @@ isort pywiim tests
 - **Clear Boundaries**: No circular dependencies
 - **Related Classes**: Can be in same file if closely related
 
-### Directory Structure
-```
-pywiim/
-├── __init__.py          # Public API exports
-├── client.py            # Main client facade
-├── exceptions.py        # Exception classes
-├── models.py            # Pydantic models
-├── capabilities.py      # Capability detection
-├── cli/                 # Command-line tools
-│   ├── diagnostics.py   # Diagnostic tool
-│   ├── discovery_cli.py # Discovery tool
-│   ├── monitor_cli.py   # Monitoring tool
-│   └── ...              # Other CLI tools
-├── api/                 # API modules
-│   ├── base.py          # Base client
-│   ├── parser.py        # Response parser
-│   ├── constants.py     # API constants
-│   └── ...              # Mixin modules
-└── upnp/                # UPnP modules
-    ├── client.py        # UPnP client
-    ├── eventer.py       # Event manager
-    └── state.py         # State management
-```
+### Import Organization
+
+1. Standard library imports
+2. Third-party imports
+3. Local imports (pywiim)
+4. Type-only imports (if using `TYPE_CHECKING`)
 
 ## Naming Conventions
+
+### Files
+- **Modules**: `snake_case.py`
+- **Classes**: `PascalCase`
+- **Functions**: `snake_case`
+- **Constants**: `UPPER_SNAKE_CASE`
+
+### Directories
+- **Packages**: `snake_case` (no underscores per project convention)
+- **Tests**: `tests/` with subdirectories
 
 ### Classes
 - **Style**: PascalCase
@@ -487,6 +701,119 @@ _LOGGER.info(
 
 ## Testing
 
+### Test Organization Strategy
+
+**Directory Structure**
+
+```
+tests/
+├── __init__.py
+├── conftest.py              # Shared fixtures
+├── README.md                # Testing guide
+│
+├── unit/                    # Fast unit tests with mocks
+│   ├── __init__.py
+│   ├── test_client.py       # ✅ Client initialization
+│   ├── test_exceptions.py   # ✅ Exception hierarchy
+│   ├── test_models.py       # ✅ Pydantic models
+│   ├── test_capabilities.py # ✅ Capability detection
+│   ├── test_state.py        # ✅ State synchronization
+│   ├── test_discovery.py    # ✅ Device discovery
+│   ├── test_normalize.py    # ✅ Normalization helpers
+│   ├── test_group_helpers.py # ✅ Group utilities
+│   ├── test_polling.py      # ✅ Polling strategies
+│   ├── test_backoff.py      # ✅ Backoff controllers
+│   ├── test_parser.py       # ✅ Response parsing
+│   ├── test_player.py       # ✅ Player functionality
+│   ├── test_role.py         # ✅ Role management
+│   ├── test_group.py        # ✅ Group functionality
+│   │
+│   ├── api/                 # API mixin tests
+│   │   ├── __init__.py
+│   │   ├── test_base.py     # ✅ Base HTTP client
+│   │   ├── test_parser.py   # ✅ Response parsing
+│   │   ├── test_endpoints.py # ✅ Endpoint abstraction
+│   │   ├── test_device.py   # ✅ Device API
+│   │   ├── test_playback.py # ✅ Playback API
+│   │   ├── test_group.py    # ✅ Group API
+│   │   ├── test_eq.py       # ✅ EQ API
+│   │   ├── test_preset.py   # ✅ Preset API
+│   │   ├── test_bluetooth.py # ✅ Bluetooth API
+│   │   ├── test_audio_settings.py # ✅ Audio settings
+│   │   ├── test_lms.py      # ✅ LMS integration
+│   │   ├── test_misc.py     # ✅ Misc API
+│   │   ├── test_firmware.py # ✅ Firmware API
+│   │   ├── test_timer.py    # ✅ Timer API
+│   │   ├── test_ssl.py      # ✅ SSL/TLS handling
+│   │   └── test_diagnostics.py # ❌ Missing - Diagnostics API
+│   │
+│   └── upnp/                # UPnP tests
+│       ├── test_client.py   # ✅ UPnP client
+│       └── test_eventer.py  # ✅ UPnP event handling
+│
+└── integration/             # Tests with real devices
+    ├── __init__.py
+    └── test_real_device.py  # ✅ Integration tests
+```
+
+### Test Categories and Best Practices
+
+**1. Unit Tests (Fast, Isolated, Mocked)**
+
+**Purpose:** Test individual functions and classes in isolation with mocked dependencies.
+
+**Best Practices:**
+- ✅ Use mocks for all external dependencies (HTTP, UPnP, network)
+- ✅ Test one thing at a time (single responsibility)
+- ✅ Test both success and failure paths
+- ✅ Test edge cases and boundary conditions
+- ✅ Keep tests fast (< 100ms each)
+- ✅ Use descriptive test names: `test_<function>_<scenario>_<expected_result>`
+
+**Example Structure:**
+```python
+@pytest.mark.asyncio
+async def test_set_volume_valid_range(mock_client):
+    """Test setting volume within valid range."""
+    mock_client._request = AsyncMock(return_value={"status": "ok"})
+    
+    await mock_client.set_volume(0.5)
+    
+    mock_client._request.assert_called_once()
+    call_args = mock_client._request.call_args
+    assert "vol" in str(call_args)
+
+@pytest.mark.asyncio
+async def test_set_volume_out_of_range(mock_client):
+    """Test setting volume outside valid range raises error."""
+    with pytest.raises(ValueError, match="Volume must be"):
+        await mock_client.set_volume(1.5)
+```
+
+**2. Integration Tests (Real Devices)**
+
+**Purpose:** Test actual communication with real devices to catch protocol issues.
+
+**Best Practices:**
+- ✅ Use environment variables for device configuration
+- ✅ Skip tests if device not available (don't fail CI)
+- ✅ Mark slow tests that change device state
+- ✅ Restore device state after tests when possible
+- ✅ Test happy paths and common scenarios
+- ✅ Test with different device types (WiiM, Audio Pro, etc.)
+
+**Example Structure:**
+```python
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_get_player_status_real_device(real_device_client, integration_test_marker):
+    """Test getting player status from real device."""
+    status = await real_device_client.get_player_status()
+    
+    assert status is not None
+    assert "play_state" in status or "state" in status
+```
+
 ### Test Structure
 - Mirror source structure in `tests/unit/`
 - Use descriptive test names
@@ -537,6 +864,480 @@ async def test_get_player_status():
         assert status.volume == 50
         mock_request.assert_called_once()
 ```
+
+### Coverage Goals
+
+**Target Coverage Levels:**
+- **Overall Coverage:** 85%+ (aim for 90%+)
+- **Core Modules:** 95%+ (client, base API, models, exceptions)
+- **API Mixins:** 85%+ (all API methods)
+- **Utilities:** 90%+ (helpers, normalization, parsing)
+- **CLI Tools:** 70%+ (lower priority, integration-focused)
+
+**Coverage Exclusions:**
+
+**Acceptable to Exclude:**
+- CLI entry points (`if __name__ == "__main__"`)
+- Deprecated code paths
+- Platform-specific code that can't be tested
+- Integration test fixtures
+
+**Use Coverage Comments:**
+```python
+def some_function():
+    # pragma: no cover - CLI entry point
+    if __name__ == "__main__":
+        main()
+```
+
+### Test Execution Strategy
+
+**Running Tests**
+
+```bash
+# Run all unit tests (fast)
+pytest tests/unit/ -v
+
+# Run all tests with coverage
+pytest tests/unit/ --cov=pywiim --cov-report=html --cov-report=term
+
+# Run integration tests (requires device)
+WIIM_TEST_DEVICE=192.168.1.100 pytest tests/integration/ -v
+
+# Run specific test file
+pytest tests/unit/test_playback.py -v
+
+# Run specific test
+pytest tests/unit/test_playback.py::TestPlaybackAPI::test_play_success -v
+
+# Run tests matching pattern
+pytest tests/unit/ -k "volume" -v
+
+# Run fast tests only (skip slow integration tests)
+pytest tests/ -v -m "not slow"
+```
+
+**CI/CD Integration**
+
+**Recommended CI Strategy:**
+1. **Unit Tests** - Run on every commit (fast, no external dependencies)
+2. **Integration Tests** - Run on PRs and nightly builds (requires device)
+3. **Coverage Reports** - Generate and track coverage trends
+4. **Linting** - Run ruff, mypy, black checks
+
+**Example GitHub Actions:**
+```yaml
+# Run unit tests on every push
+- name: Run unit tests
+  run: pytest tests/unit/ --cov=pywiim --cov-report=xml
+
+# Run integration tests on schedule or manual trigger
+- name: Run integration tests
+  env:
+    WIIM_TEST_DEVICE: ${{ secrets.WIIM_TEST_DEVICE }}
+  run: pytest tests/integration/ -v
+```
+
+### Testing Async Code
+
+**Best Practices for Async Tests:**
+
+1. **Always use `@pytest.mark.asyncio`** for async test functions
+2. **Use `AsyncMock`** for mocking async functions
+3. **Test async context managers** properly
+4. **Handle async cleanup** in fixtures
+5. **Test concurrent operations** when relevant
+
+**Example:**
+```python
+@pytest.mark.asyncio
+async def test_concurrent_requests(mock_client):
+    """Test handling concurrent API requests."""
+    mock_client._request = AsyncMock(return_value={"status": "ok"})
+    
+    # Make concurrent requests
+    results = await asyncio.gather(
+        mock_client.get_player_status(),
+        mock_client.get_device_info_model(),
+        mock_client.get_volume(),
+    )
+    
+    assert len(results) == 3
+    assert mock_client._request.call_count == 3
+```
+
+### Pre-Release Real Device Testing
+
+**Current State**
+
+**✅ What We Have:**
+- **Comprehensive unit tests** with mocks - run in CI/CD for every commit
+- **Minimal integration tests** (`test_real_device.py`) - 4 basic smoke tests
+- **Comprehensive multiroom tests** (`test_multiroom_group.py`) - thorough group testing
+- **CLI verification tool** (`wiim-verify`) - comprehensive but manual
+- **Various test scripts** - for specific features (playback, shuffle/repeat, etc.)
+
+**⚠️ Gaps:**
+- **No Player-level integration tests** - only client-level basic tests
+- **No playback control integration tests** - play/pause/shuffle/repeat only in scripts
+- **No volume/audio integration tests** - only in `wiim-verify` CLI
+- **No source switching integration tests**
+- **No EQ/preset integration tests**
+- **No state management/caching integration tests**
+- **Integration tests not part of release process** - only unit tests run
+
+**Strategy: Two-Tier Approach**
+
+1. **Core Integration Tests** (always run if device available)
+   - Expand `test_real_device.py` with essential Player-level tests
+   - Keep fast, non-destructive tests
+   - Run automatically if `WIIM_TEST_DEVICE` is set
+
+2. **Pre-Release Integration Tests** (optional, before releases)
+   - Comprehensive test suite covering all major features
+   - Can be run manually before important releases
+   - More thorough than core tests, but still automated
+
+**Proposed Test Expansion**
+
+**1. Core Integration Tests (`test_real_device.py`)**
+
+Add these essential tests that should run if a device is available:
+
+```python
+# Player-level basic operations
+- test_player_initialization
+- test_player_refresh
+- test_player_properties_access
+
+# Playback controls (non-destructive)
+- test_playback_state_read
+- test_shuffle_repeat_state_read
+
+# Volume controls (safe - low volume only)
+- test_volume_read
+- test_mute_read
+- test_volume_set_safe (max 10%)
+
+# Source and audio
+- test_source_list
+- test_audio_output_modes
+- test_current_source_read
+
+# State management
+- test_state_caching
+- test_state_refresh
+```
+
+**2. Pre-Release Integration Tests (`test_prerelease.py`)**
+
+Create a new comprehensive test suite for pre-release validation:
+
+```python
+# Comprehensive playback testing
+- test_playback_controls_full (play/pause/stop/resume)
+- test_shuffle_controls_full (with state preservation)
+- test_repeat_controls_full (all modes, state preservation)
+- test_next_previous_track
+
+# Volume and audio
+- test_volume_controls_full (with restoration)
+- test_mute_controls_full
+- test_audio_output_switching
+
+# Source management
+- test_source_switching (if multiple sources available)
+- test_source_specific_features
+
+# EQ and presets (if supported)
+- test_eq_presets
+- test_eq_custom_settings
+- test_preset_playback
+
+# State management
+- test_state_synchronization
+- test_cache_consistency
+- test_upnp_event_integration
+
+# Error handling
+- test_invalid_commands
+- test_network_timeout_handling
+- test_device_unavailable_handling
+```
+
+**When to Run Pre-Release Tests**
+
+**Always Run Before:**
+- **Major releases** (X.0.0) - breaking changes
+- **Minor releases** (X.Y.0) - new features
+- **After significant refactoring** - even for patch releases
+
+**Optional Before:**
+- **Patch releases** - if they touch core functionality
+- **Regular development** - when working on Player/state management
+
+**Not Required:**
+- **Documentation-only releases**
+- **Dependency updates** (unless major)
+- **Minor bug fixes** (unless in critical paths)
+
+**Test Organization**
+
+**Markers for Test Selection:**
+
+```python
+@pytest.mark.integration          # All integration tests
+@pytest.mark.integration.core     # Core tests (fast, safe)
+@pytest.mark.integration.prerelease  # Pre-release tests (comprehensive)
+@pytest.mark.integration.slow     # Slow tests (state changes, delays)
+@pytest.mark.integration.destructive  # Tests that change device state
+```
+
+**Running Tests:**
+
+```bash
+# Core integration tests only (fast)
+pytest tests/integration/ -m "integration.core" -v
+
+# Pre-release tests (comprehensive)
+pytest tests/integration/ -m "integration.prerelease" -v
+
+# All integration tests
+pytest tests/integration/ -v
+
+# Skip slow/destructive tests
+pytest tests/integration/ -m "not slow and not destructive" -v
+```
+
+**Safety Features**
+
+All integration tests should:
+
+1. **Save initial state** before making changes
+2. **Restore state** after tests (in finally blocks)
+3. **Use safe volumes** (max 10-20% during testing)
+4. **Skip gracefully** if device unavailable
+5. **Handle errors** without leaving device in bad state
+6. **Log operations** for debugging
+
+**Example: Expanded Core Test**
+
+```python
+@pytest.mark.integration
+@pytest.mark.integration.core
+@pytest.mark.asyncio
+async def test_player_volume_controls_safe(real_device_client, integration_test_marker):
+    """Test volume controls with safe limits and state restoration."""
+    from pywiim.player import Player
+    
+    player = Player(real_device_client)
+    await player.refresh()
+    
+    # Save initial state
+    initial_volume = await player.get_volume()
+    initial_mute = await player.get_muted()
+    
+    try:
+        # Test volume read
+        volume = await player.get_volume()
+        assert volume is not None
+        assert 0.0 <= volume <= 1.0
+        
+        # Test safe volume change (max 10%)
+        safe_volume = min(0.10, volume + 0.05) if volume < 0.10 else 0.10
+        await player.set_volume(safe_volume)
+        await asyncio.sleep(0.5)
+        
+        new_volume = await player.get_volume()
+        assert abs(new_volume - safe_volume) < 0.05
+        
+        # Test mute toggle
+        await player.set_mute(True)
+        await asyncio.sleep(0.5)
+        assert await player.get_muted() is True
+        
+        await player.set_mute(False)
+        await asyncio.sleep(0.5)
+        assert await player.get_muted() is False
+        
+    finally:
+        # Restore initial state
+        await player.set_volume(initial_volume)
+        await player.set_mute(initial_mute)
+        await asyncio.sleep(0.5)
+```
+
+### Testing Against Real Devices
+
+**Quick Test Script**
+
+We've included a simple test script to quickly test your devices:
+
+```bash
+# Test a single device
+python scripts/test_my_devices.py 192.168.1.100
+
+# Test multiple devices
+python scripts/test_my_devices.py 192.168.1.100 192.168.1.101
+```
+
+This script will:
+- Connect to each device
+- Get device information
+- Detect capabilities
+- Test basic features
+- Show a summary
+
+**Full Diagnostic Tool**
+
+For comprehensive device analysis:
+
+```bash
+# Run full diagnostics (using console script)
+wiim-diagnostics 192.168.1.100
+
+# Or using Python module
+python -m pywiim.cli.diagnostics 192.168.1.100
+
+# Save report to file
+wiim-diagnostics 192.168.1.100 --output device-report.json
+
+# Verbose output
+wiim-diagnostics 192.168.1.100 --verbose
+```
+
+**Integration Tests**
+
+Run the full integration test suite:
+
+```bash
+# Set device IP
+export WIIM_TEST_DEVICE=192.168.1.100
+
+# Run all integration tests
+pytest tests/integration/ -v
+
+# Run specific test
+pytest tests/integration/test_real_device.py::TestRealDevice::test_device_connection -v
+
+# Skip slow tests (ones that change device state)
+pytest tests/integration/ -v -m "not slow"
+```
+
+**Finding Your Device IP**
+
+**Method 1: Router Admin Panel**
+- Log into your router's admin panel
+- Look for connected devices
+- Find your WiiM device by name
+
+**Method 2: Network Scan**
+```bash
+# Using nmap (if installed)
+nmap -sn 192.168.1.0/24 | grep -B 2 "WiiM"
+
+# Or use the discovery example in docs/EXAMPLES.md
+```
+
+**Method 3: Device Display**
+- Some WiiM devices show their IP on the display
+- Check the device's network settings menu
+
+**Testing Different Device Types**
+
+**WiiM Devices (Pro, Mini, Amp, Ultra)**
+```bash
+# Standard HTTP
+python scripts/test_my_devices.py 192.168.1.100
+
+# Should work with default settings
+```
+
+**Audio Pro Devices**
+```bash
+# May require HTTPS on port 4443
+wiim-diagnostics 192.168.1.100 --port 4443
+
+# Or test with HTTPS
+python -c "
+import asyncio
+from pywiim import WiiMClient
+
+async def test():
+    client = WiiMClient('192.168.1.100', port=4443)
+    info = await client.get_device_info_model()
+    print(f'Device: {info.name}')
+    await client.close()
+
+asyncio.run(test())
+"
+```
+
+**Arylic Devices**
+```bash
+# Should work with standard HTTP
+python scripts/test_my_devices.py 192.168.1.100
+```
+
+**Common Issues**
+
+**Connection Timeout**
+
+If you get timeout errors:
+- Verify the IP address is correct
+- Check device is on the same network
+- Try increasing timeout:
+  ```python
+  client = WiiMClient("192.168.1.100", timeout=10.0)
+  ```
+
+**HTTPS Required**
+
+Some devices require HTTPS:
+```python
+client = WiiMClient("192.168.1.100", port=443)
+```
+
+**Port Issues**
+
+Try different ports:
+- 80 (HTTP)
+- 443 (HTTPS)
+- 4443 (Audio Pro MkII HTTPS)
+- 8443 (Alternative HTTPS)
+
+**Test Checklist**
+
+When testing a new device, check:
+
+- [ ] Device info retrieval
+- [ ] Capability detection
+- [ ] Player status
+- [ ] Volume control
+- [ ] Playback control (play/pause/stop)
+- [ ] Presets (if supported)
+- [ ] EQ (if supported)
+- [ ] Multiroom (if supported)
+- [ ] Bluetooth (if supported)
+- [ ] Audio settings (if supported)
+
+**Sharing Test Results**
+
+If you find issues or want to share test results:
+
+1. Run diagnostics:
+   ```bash
+   wiim-diagnostics <device_ip> --output report.json
+   ```
+
+2. Share the `report.json` file
+
+3. Include:
+   - Device model
+   - Firmware version
+   - What worked
+   - What didn't work
+   - Error messages
 
 ## Async/Await
 
@@ -627,4 +1428,3 @@ def apply_state_update(self, changes: dict[str, Any]) -> bool:
 - [Ruff Documentation](https://docs.astral.sh/ruff/)
 - [mypy Documentation](https://mypy.readthedocs.io/)
 - [pytest Documentation](https://docs.pytest.org/)
-

@@ -3,16 +3,83 @@
 
 Usage:
     python test_my_devices.py <device_ip> [<device_ip2> ...]
+    python test_my_devices.py --debug-capabilities <device_ip>
 
 Example:
+    python test_my_devices.py 192.168.1.100
     python test_my_devices.py 192.168.1.100 192.168.1.101
+    python test_my_devices.py --debug-capabilities 192.168.1.100
 """
 
+import argparse
 import asyncio
 import sys
 from typing import Any
 
 from pywiim import WiiMClient
+
+
+async def test_device_capabilities_debug(ip: str) -> None:
+    """Debug capability detection for a device."""
+    print(f"\n{'='*60}")
+    print(f"Testing capabilities for: {ip}")
+    print(f"{'='*60}")
+
+    client = WiiMClient(ip, timeout=5.0)
+
+    try:
+        # Detect capabilities
+        print(f"\n1. Detecting capabilities...")
+        await client._detect_capabilities()
+
+        print(f"\n2. Detected capabilities:")
+        caps = client.capabilities
+        print(f"   vendor: {caps.get('vendor')}")
+        print(f"   audio_pro_generation: {caps.get('audio_pro_generation')}")
+        print(f"   supports_player_status_ex: {caps.get('supports_player_status_ex')}")
+        print(f"   status_endpoint: {caps.get('status_endpoint')}")
+        print(f"   device_type: {caps.get('device_type')}")
+        print(f"   firmware: {caps.get('firmware_version')}")
+
+        # Test getPlayerStatusEx directly
+        print(f"\n3. Testing getPlayerStatusEx directly...")
+        try:
+            raw = await client._request("/httpapi.asp?command=getPlayerStatusEx")
+            if isinstance(raw, dict):
+                volume = raw.get("volume")
+                print(f"   ✅ getPlayerStatusEx works! volume: {volume}")
+            else:
+                print(f"   ⚠️  getPlayerStatusEx returned non-dict: {type(raw)}")
+        except Exception as err:
+            print(f"   ❌ getPlayerStatusEx failed: {err}")
+
+        # Test getStatusEx
+        print(f"\n4. Testing getStatusEx...")
+        try:
+            raw = await client._request("/httpapi.asp?command=getStatusEx")
+            if isinstance(raw, dict):
+                volume = raw.get("volume")
+                print(f"   getStatusEx volume: {volume}")
+            else:
+                print(f"   ⚠️  getStatusEx returned non-dict: {type(raw)}")
+        except Exception as err:
+            print(f"   ❌ getStatusEx failed: {err}")
+
+        # Check what get_player_status actually uses
+        print(f"\n5. What get_player_status() uses:")
+        status = await client.get_player_status()
+        volume = status.get("volume")
+        print(f"   volume from get_player_status(): {volume}")
+
+        print(f"\n✅ Test completed for {ip}")
+
+    except Exception as err:
+        print(f"\n❌ Error testing {ip}: {err}")
+        import traceback
+
+        traceback.print_exc()
+    finally:
+        await client.close()
 
 
 async def test_device(ip: str) -> dict[str, Any]:
@@ -138,14 +205,33 @@ async def test_device(ip: str) -> dict[str, Any]:
 
 async def main():
     """Main test function."""
-    if len(sys.argv) < 2:
-        print("Usage: python test_my_devices.py <device_ip> [<device_ip2> ...]")
-        print("\nExample:")
-        print("  python test_my_devices.py 192.168.1.100")
-        print("  python test_my_devices.py 192.168.1.100 192.168.1.101")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Test pywiim against real devices",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--debug-capabilities",
+        action="store_true",
+        help="Debug capability detection (detailed endpoint testing)",
+    )
+    parser.add_argument(
+        "device_ips",
+        nargs="+",
+        help="Device IP address(es) to test",
+    )
 
-    device_ips = sys.argv[1:]
+    args = parser.parse_args()
+
+    # Debug capabilities mode
+    if args.debug_capabilities:
+        if len(args.device_ips) > 1:
+            print("⚠️  Debug mode only supports one device at a time")
+            sys.exit(1)
+        await test_device_capabilities_debug(args.device_ips[0])
+        return
+
+    # Normal test mode
+    device_ips = args.device_ips
 
     print(f"\n🧪 Testing {len(device_ips)} device(s)...")
     print(f"   Devices: {', '.join(device_ips)}\n")
@@ -191,4 +277,3 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n\n⚠️  Test interrupted by user")
         sys.exit(1)
-

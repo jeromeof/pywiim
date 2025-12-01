@@ -7,21 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Script cleanup and consolidation**
+  - Removed duplicate `test-shuffle-repeat-once.py` (functionality covered by `test-playback-controls.py`)
+  - Merged `debug_capabilities.py` into `test_my_devices.py` with `--debug-capabilities` flag
+  - Updated scripts documentation to reflect changes
+
 ## [2.1.26] - 2025-11-30
 
 ### Fixed
 - **wmrm_version compatibility check now compares major versions only**
-  - Changed compatibility check from exact version match to major version comparison
-  - Devices with same major version but different minor versions can now group together (e.g., 4.2 and 4.3 are compatible)
-  - Devices with different major versions are still correctly rejected (e.g., 2.0 cannot join 4.x)
-  - Updated error messages to clarify that major versions must match
-  - **Impact**: Devices on the same subnet with compatible major versions can now group together
-  - **Related**: Fixes issue where devices with wmrm_version 4.2 and 4.3 were incorrectly rejected
-
-### Changed
-- **Group test script now keeps volumes at 0 during testing**
-  - Modified `test-group-real-devices.py` to use volume 0.0 instead of higher volumes
-  - Prevents accidental audio output during testing
 
 ## [2.1.25] - 2025-11-30
 
@@ -976,7 +971,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - **USB/Local**: WiiM device is control point; full API control (subject to ~1000-2000 track RAM queue limit on A98 hardware)
   - The `setPlayerCmd:loopmode` endpoint in LinkPlay HTTP API is functional ONLY when device acts as control point
   - Sending shuffle/repeat commands to AirPlay or Spotify sessions either fails silently or updates a local register that has no effect on actual playback
-  - See `docs/technical/LINKPLAY_ARCHITECTURE.md` for comprehensive analysis of transport protocols and hardware constraints
+  - See `docs/design/LINKPLAY_ARCHITECTURE.md` for comprehensive analysis of transport protocols and hardware constraints
   - Use `shuffle_supported` / `repeat_supported` to check before reading these properties
   - **BREAKING: set_shuffle() and set_repeat() now raise WiiMError for external sources**
   - Previously would send commands that did nothing or failed silently

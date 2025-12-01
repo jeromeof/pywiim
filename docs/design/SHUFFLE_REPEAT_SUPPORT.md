@@ -142,7 +142,7 @@ source .venv/bin/activate
 python scripts/test-shuffle-repeat-by-source.py <device_ip>
 ```
 
-See: `docs/testing/SHUFFLE_REPEAT_TESTING_GUIDE.md`
+See test script: `scripts/test-shuffle-repeat-by-source.py`
 
 ### What to Test
 
@@ -309,7 +309,7 @@ After systematic testing:
 - CHANGELOG entries: v2.1.2, v2.1.1, v1.0.71
 - GitHub Issue #111: Shuffle/repeat broken
 - Design doc: `docs/design/API_DESIGN_PATTERNS.md`
-- Testing guide: `docs/testing/SHUFFLE_REPEAT_TESTING_GUIDE.md`
+- Test script: `scripts/test-shuffle-repeat-by-source.py`
 - Test script: `scripts/test-shuffle-repeat-by-source.py`
 - LinkPlay architecture: CHANGELOG v1.0.71 technical background
 

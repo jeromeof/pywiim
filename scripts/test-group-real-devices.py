@@ -16,7 +16,6 @@ from pywiim import WiiMClient
 from pywiim.exceptions import WiiMError
 from pywiim.player import Player
 
-
 # Device IPs to test
 DEVICE_IPS = [
     "192.168.1.115",
@@ -181,12 +180,7 @@ async def test_group_all_players(players: dict[str, Player]) -> TestResult:
         result.add_detail(f"  slave1 in all_players: {slave1 in all_players}")
         result.add_detail(f"  slave2 in all_players: {slave2 in all_players}")
 
-        if (
-            len(all_players) == 3
-            and all_players[0] == master
-            and slave1 in all_players
-            and slave2 in all_players
-        ):
+        if len(all_players) == 3 and all_players[0] == master and slave1 in all_players and slave2 in all_players:
             result.success()
         else:
             result.fail("all_players property failed")
@@ -318,12 +312,7 @@ async def test_disband(players: dict[str, Player]) -> TestResult:
         result.add_detail(f"  slave2.group is None: {slave2.group is None}")
         result.add_detail(f"  len(group.slaves) == 0: {len(group.slaves) == 0}")
 
-        if (
-            master.group is None
-            and slave1.group is None
-            and slave2.group is None
-            and len(group.slaves) == 0
-        ):
+        if master.group is None and slave1.group is None and slave2.group is None and len(group.slaves) == 0:
             result.success()
         else:
             result.fail("Disband failed")
@@ -775,4 +764,3 @@ if __name__ == "__main__":
 
         traceback.print_exc()
         sys.exit(1)
-

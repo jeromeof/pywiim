@@ -399,18 +399,16 @@ See [API Reference](docs/integration/API_REFERENCE.md) for complete Player API d
   - Source-aware shuffle/repeat control
 - [API Reference](docs/integration/API_REFERENCE.md) - Complete API documentation
 
-### Technical Documentation
-- [LinkPlay Architecture](docs/technical/LINKPLAY_ARCHITECTURE.md) - **In-depth analysis of LinkPlay/WiiM streaming architecture**
+### Design Documentation
+- [Architecture & Data Flow](docs/design/ARCHITECTURE_DATA_FLOW.md) - System architecture
+- [State Management](docs/design/STATE_MANAGEMENT.md) - State synchronization patterns
+- [Operation Patterns](docs/design/OPERATION_PATTERNS.md) - Common operation patterns
+- [LinkPlay Architecture](docs/design/LINKPLAY_ARCHITECTURE.md) - **In-depth analysis of LinkPlay/WiiM streaming architecture**
   - "Split Brain" control authority model
   - Transport protocol analysis (AirPlay, Spotify, USB, Bluetooth)
   - Hardware constraints (A98 SoM, RAM limits, queue management)
   - Why shuffle/repeat controls work differently for different sources
   - Integration strategies for automation systems
-
-### Design Documentation
-- [Architecture & Data Flow](docs/design/ARCHITECTURE_DATA_FLOW.md) - System architecture
-- [State Management](docs/design/STATE_MANAGEMENT.md) - State synchronization patterns
-- [Operation Patterns](docs/design/OPERATION_PATTERNS.md) - Common operation patterns
 
 ## Development Setup
 
