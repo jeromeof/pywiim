@@ -50,6 +50,14 @@
 - When testing with Python/pywiim, the library handles HTTPS automatically
 - Remember: We've tested this many times - use HTTPS by default
 
+## Testing Against Real Devices
+
+- **If unsure about device or API behavior, ask to test against real-world devices**
+  - Don't assume behavior based on documentation or code alone
+  - Real devices may behave differently than expected
+  - When uncertain about how a device or API endpoint behaves, request testing against actual hardware
+  - This ensures accurate implementation and prevents incorrect assumptions
+
 ## File Organization
 
 - **Test files go in `tests/` directory** - Never put test files in the root directory

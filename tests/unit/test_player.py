@@ -175,6 +175,29 @@ class TestPlayerRefresh:
         assert player._last_refresh is not None
 
     @pytest.mark.asyncio
+    async def test_refresh_preserves_optimistic_source_when_mode_0(self, mock_client):
+        """Test that refresh preserves optimistic source when device reports mode=0 (Issue #138)."""
+        from pywiim.models import DeviceInfo, PlayerStatus
+        from pywiim.player import Player
+
+        # Set up player with optimistic source (e.g., from set_source("bluetooth"))
+        player = Player(mock_client)
+        player._status_model = PlayerStatus(source="bluetooth", play_state="idle")
+        player._device_info = DeviceInfo(uuid="test-uuid", name="Test Device")
+
+        # Simulate device reporting mode=0 (idle) - parser correctly doesn't set source="idle"
+        # but also doesn't set source at all (source=None)
+        new_status = PlayerStatus(play_state="idle", volume=50, mute=False)  # No source field
+        mock_client.get_player_status_model = AsyncMock(return_value=new_status)
+        mock_client.get_device_info_model = AsyncMock(return_value=player._device_info)
+
+        await player.refresh()
+
+        # Optimistic source should be preserved even though new status doesn't have one
+        assert player._status_model.source == "bluetooth"
+        assert player._status_model.play_state == "idle"
+
+    @pytest.mark.asyncio
     async def test_refresh_with_audio_output(self, mock_aiohttp_session):
         """Test refresh with audio output status."""
         from pywiim.client import WiiMClient

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.27] - 2025-12-01
+
+### Fixed
+- **Bluetooth source no longer reverts to "Idle" when no device connected (Issue #138)**
+  - Fixed issue where selecting Bluetooth source would switch correctly but then revert to "Idle" after a few seconds
+  - Root cause: When device reports `mode=0` (idle) without a source field, refresh() was replacing the optimistic source with None
+  - Solution: Preserve existing optimistic source when new status doesn't have one (e.g., when mode=0 is correctly ignored)
+  - The source now remains "bluetooth" even when device is idle and no BT device is connected
+  - Prevents source from being cleared when device reports idle state without a source field
+
 ### Changed
 - **Script cleanup and consolidation**
   - Removed duplicate `test-shuffle-repeat-once.py` (functionality covered by `test-playback-controls.py`)

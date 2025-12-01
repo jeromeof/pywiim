@@ -643,6 +643,13 @@ class StateManager:
                 self.player._upnp_health_tracker.on_poll_update(poll_state)
 
             # Update cached models
+            # Preserve optimistic source if new status doesn't have one (e.g., when mode=0 is ignored)
+            # This prevents optimistic sources set by set_source() from being cleared when device reports mode=0
+            # See: https://github.com/mjcumming/wiim/issues/138
+            if status and not status.source and self.player._status_model and self.player._status_model.source:
+                # Preserve existing source - device may have reported mode=0 which correctly doesn't set source="idle"
+                # but we should keep the optimistic source that was set by set_source()
+                status.source = self.player._status_model.source
             self.player._status_model = status
             if self.player._status_model and self.player._status_model.source == "multiroom":
                 # We don't fetch master name for slaves anymore - handled by Master
