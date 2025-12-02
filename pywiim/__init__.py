@@ -57,7 +57,7 @@ from .polling import PollingStrategy, TrackChangeDetector, fetch_parallel
 from .role import RoleDetectionResult, detect_role
 from .state import GroupStateSynchronizer, StateSynchronizer
 
-__version__ = "2.1.29"
+__version__ = "2.1.30"
 __all__ = [
     # Main client
     "WiiMClient",

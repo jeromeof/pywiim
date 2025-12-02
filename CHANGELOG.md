@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.30] - 2025-12-02
+
+### Fixed
+- **Codecov configuration** - Exclude `scripts/` and `tests/` directories from patch coverage requirements
+  - Scripts are manual test tools, not library code requiring unit test coverage
+  - Fixes codecov/patch check failures when adding new scripts
+
 ## [2.1.29] - 2025-12-02
 
 ### Added
