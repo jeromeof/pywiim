@@ -1030,9 +1030,10 @@ class TestPlayerPlaybackControl:
     @pytest.mark.asyncio
     async def test_get_queue_browse_failure(self, mock_client):
         """Test get_queue when browse fails."""
+        from async_upnp_client.exceptions import UpnpError
+
         from pywiim.player import Player
         from pywiim.upnp.client import UpnpClient
-        from async_upnp_client.exceptions import UpnpError
 
         mock_upnp_client = MagicMock(spec=UpnpClient)
         mock_upnp_client.browse_queue = AsyncMock(side_effect=UpnpError("Browse failed"))
