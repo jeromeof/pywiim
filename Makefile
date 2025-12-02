@@ -32,7 +32,10 @@ check:
 	@echo "2. Linting with Ruff..."
 	ruff check pywiim tests || (echo "❌ Linting failed!" && exit 1)
 	@echo "✅ Linting OK"
-	@echo "3. Running unit tests..."
+	@echo "3. Type checking with mypy..."
+	mypy pywiim || (echo "❌ Type check failed!" && exit 1)
+	@echo "✅ Type check OK"
+	@echo "4. Running unit tests..."
 	pytest tests/unit/ -x --tb=short -q
 	@echo "✅ All checks passed!"
 
