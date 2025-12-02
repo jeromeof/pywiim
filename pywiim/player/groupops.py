@@ -387,6 +387,9 @@ class GroupOperations:
 
         # Pass master device info to join_slave() for WiFi Direct mode detection
         master_device_info = master._device_info
+        master_ssid: str | None = None
+        master_wifi_channel: int | None = None
+
         if master_device_info is None:
             _LOGGER.warning(
                 "Master device info not available for %s - join_slave() will use default router-based mode. "
@@ -394,15 +397,58 @@ class GroupOperations:
                 master.host,
             )
         else:
+            # For Gen1 devices (wmrm_version 2.0), we need SSID and WiFi channel for WiFi Direct mode
+            # If not already available in device_info, fetch them from the master device
+            # This follows the pattern from the old Linkplay integration
+            needs_wifi_direct = master_wmrm == "2.0" or (
+                master_wmrm is None and master_device_info.firmware and master_device_info.firmware < "4.2.8020"
+            )
+
+            if needs_wifi_direct:
+                ssid_from_info = master_device_info.ssid
+                channel_from_info = master_device_info.wifi_channel
+
+                if not ssid_from_info:
+                    # SSID not in DeviceInfo - fetch it from the master device's API
+                    # This is critical for Gen1 devices where DeviceInfo might not have ssid
+                    _LOGGER.debug(
+                        "Gen1 device detected but SSID not in DeviceInfo - fetching from master device %s",
+                        master.host,
+                    )
+                    try:
+                        master_ssid, master_wifi_channel = await master.client.get_wifi_direct_info()
+                        _LOGGER.debug(
+                            "Fetched WiFi Direct info from master: ssid=%s, channel=%s",
+                            master_ssid,
+                            master_wifi_channel,
+                        )
+                    except Exception as e:
+                        _LOGGER.warning(
+                            "Failed to fetch WiFi Direct info from master %s: %s",
+                            master.host,
+                            e,
+                        )
+                else:
+                    _LOGGER.debug(
+                        "Using SSID from DeviceInfo: ssid=%s, channel=%s",
+                        ssid_from_info,
+                        channel_from_info,
+                    )
+
             _LOGGER.debug(
                 "Passing master device info to join_slave(): wmrm_version=%s, firmware=%s, ssid=%s, channel=%s",
                 master_device_info.wmrm_version or "unknown",
                 master_device_info.firmware or "unknown",
-                master_device_info.ssid or "unknown",
-                master_device_info.wifi_channel or "unknown",
+                master_ssid or master_device_info.ssid or "unknown",
+                master_wifi_channel or master_device_info.wifi_channel or "unknown",
             )
 
-        await self.player.client.join_slave(master.host, master_device_info=master_device_info)
+        await self.player.client.join_slave(
+            master.host,
+            master_device_info=master_device_info,
+            master_ssid=master_ssid,
+            master_wifi_channel=master_wifi_channel,
+        )
 
         # CRITICAL: join_slave() always returns "OK" even when it fails
         # Refresh slave to verify the join actually worked by checking if device became a slave

@@ -2598,7 +2598,12 @@ class TestPlayerMediaMetadata:
         assert master.group is not None
         assert slave in master.group.slaves
         mock_client.create_group.assert_called_once()
-        mock_client.join_slave.assert_called_once_with(master.host, master_device_info=master._device_info)
+        mock_client.join_slave.assert_called_once_with(
+            master.host,
+            master_device_info=master._device_info,
+            master_ssid=None,
+            master_wifi_channel=None,
+        )
 
     @pytest.mark.asyncio
     async def test_leave_group_group_none(self, mock_client):
@@ -3106,7 +3111,12 @@ class TestPlayerGroupOperations:
         assert slave.group == group
         assert slave in group.slaves
         # Verify join_slave was called with master host and device info
-        slave_client.join_slave.assert_called_once_with(master.host, master_device_info=master._device_info)
+        slave_client.join_slave.assert_called_once_with(
+            master.host,
+            master_device_info=master._device_info,
+            master_ssid=None,
+            master_wifi_channel=None,
+        )
 
     @pytest.mark.asyncio
     async def test_leave_group_as_slave(self, mock_client, mock_player_status):
@@ -3338,7 +3348,12 @@ class TestPlayerGroupOperations:
         assert slave.group == group
         assert slave in group.slaves
         # Verify join_slave was called with master host and device info
-        slave_client.join_slave.assert_called_once_with(master.host, master_device_info=master._device_info)
+        slave_client.join_slave.assert_called_once_with(
+            master.host,
+            master_device_info=master._device_info,
+            master_ssid=None,
+            master_wifi_channel=None,
+        )
 
     @pytest.mark.asyncio
     async def test_join_group_wmrm_version_compatible_minor_difference(
@@ -3402,7 +3417,12 @@ class TestPlayerGroupOperations:
         assert slave.group == group
         assert slave in group.slaves
         # Verify join_slave was called with master host and device info
-        slave_client.join_slave.assert_called_once_with(master.host, master_device_info=master._device_info)
+        slave_client.join_slave.assert_called_once_with(
+            master.host,
+            master_device_info=master._device_info,
+            master_ssid=None,
+            master_wifi_channel=None,
+        )
 
     async def test_join_group_wmrm_version_incompatible_pre_check(
         self, mock_client, mock_aiohttp_session, mock_capabilities
@@ -3521,7 +3541,12 @@ class TestPlayerGroupOperations:
 
         # Should have attempted to join (but it failed)
         # Note: join_slave was called with the original master device info (before refresh updated it)
-        slave_client.join_slave.assert_called_once_with(master.host, master_device_info=original_master_device_info)
+        slave_client.join_slave.assert_called_once_with(
+            master.host,
+            master_device_info=original_master_device_info,
+            master_ssid=None,
+            master_wifi_channel=None,
+        )
 
     @pytest.mark.asyncio
     async def test_join_group_wmrm_version_missing_warning(
@@ -3581,7 +3606,12 @@ class TestPlayerGroupOperations:
         await slave.join_group(master)
 
         # Verify join was attempted
-        slave_client.join_slave.assert_called_once_with(master.host, master_device_info=master._device_info)
+        slave_client.join_slave.assert_called_once_with(
+            master.host,
+            master_device_info=master._device_info,
+            master_ssid=None,
+            master_wifi_channel=None,
+        )
 
     @pytest.mark.asyncio
     async def test_join_group_wifi_direct_mode_gen1(
@@ -3657,7 +3687,12 @@ class TestPlayerGroupOperations:
         assert slave in group.slaves
 
         # Verify join_slave was called with master host and device info
-        slave_client.join_slave.assert_called_once_with(master.host, master_device_info=master._device_info)
+        slave_client.join_slave.assert_called_once_with(
+            master.host,
+            master_device_info=master._device_info,
+            master_ssid=None,
+            master_wifi_channel=None,
+        )
 
         # Note: The actual WiFi Direct mode command format is tested in test_group.py::test_join_slave_wifi_direct_mode
 
@@ -3731,7 +3766,12 @@ class TestPlayerGroupOperations:
         await slave.join_group(master)
 
         # Verify join_slave was called (should fall back to router-based mode)
-        slave_client.join_slave.assert_called_once_with(master.host, master_device_info=master._device_info)
+        slave_client.join_slave.assert_called_once_with(
+            master.host,
+            master_device_info=master._device_info,
+            master_ssid=None,
+            master_wifi_channel=None,
+        )
 
 
 class TestPlayerReboot:

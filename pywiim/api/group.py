@@ -105,6 +105,71 @@ class GroupAPI:
     _group_slaves: list[str] = []
 
     # ------------------------------------------------------------------
+    # WiFi Direct helpers (for Gen1 devices)
+    # ------------------------------------------------------------------
+
+    async def get_wifi_direct_info(self) -> tuple[str | None, int | None]:
+        """Get SSID and WiFi channel for WiFi Direct multiroom mode.
+
+        This method fetches the SSID and WiFi channel from the device's
+        status endpoint, following the pattern from the old Linkplay
+        integration. Gen1 devices (wmrm_version 2.0) require this info
+        for WiFi Direct multiroom joining.
+
+        The old Linkplay code:
+        - Uses getStatus for HTTP devices, getStatusEx for HTTPS
+        - Gets ssid (lowercase) and WifiChannel (PascalCase) fields
+        - SSID is returned as plain text (caller must hex-encode)
+
+        Returns:
+            Tuple of (ssid, wifi_channel). Either may be None if not available.
+        """
+        import logging
+
+        _logger = logging.getLogger(__name__)
+
+        ssid: str | None = None
+        wifi_channel: int | None = None
+
+        # Try getStatusEx first (primary endpoint for modern devices)
+        try:
+            response = await self._request("/httpapi.asp?command=getStatusEx")  # type: ignore[attr-defined]
+            if isinstance(response, dict):
+                ssid = response.get("ssid")
+                wifi_channel = response.get("WifiChannel")
+                if ssid or wifi_channel:
+                    _logger.debug(
+                        "get_wifi_direct_info: Got from getStatusEx: ssid=%s, channel=%s",
+                        ssid,
+                        wifi_channel,
+                    )
+                    return ssid, wifi_channel
+        except Exception as e:
+            _logger.debug("get_wifi_direct_info: getStatusEx failed: %s", e)
+
+        # Try getStatus as fallback (used by old Linkplay code for HTTP devices)
+        try:
+            response = await self._request("/httpapi.asp?command=getStatus")  # type: ignore[attr-defined]
+            if isinstance(response, dict):
+                ssid = response.get("ssid")
+                wifi_channel = response.get("WifiChannel")
+                if ssid or wifi_channel:
+                    _logger.debug(
+                        "get_wifi_direct_info: Got from getStatus: ssid=%s, channel=%s",
+                        ssid,
+                        wifi_channel,
+                    )
+                    return ssid, wifi_channel
+        except Exception as e:
+            _logger.debug("get_wifi_direct_info: getStatus failed: %s", e)
+
+        _logger.warning(
+            "get_wifi_direct_info: Could not get SSID/WifiChannel from device. "
+            "WiFi Direct multiroom joining may fail for Gen1 devices."
+        )
+        return None, None
+
+    # ------------------------------------------------------------------
     # Status helpers
     # ------------------------------------------------------------------
 
@@ -216,7 +281,13 @@ class GroupAPI:
         self._group_master = None
         self._group_slaves = []
 
-    async def join_slave(self, master_ip: str, master_device_info: DeviceInfo | None = None) -> None:
+    async def join_slave(
+        self,
+        master_ip: str,
+        master_device_info: DeviceInfo | None = None,
+        master_ssid: str | None = None,
+        master_wifi_channel: int | None = None,
+    ) -> None:
         """Join the group hosted by *master_ip*.
 
         Supports both router-based and WiFi Direct modes:
@@ -228,6 +299,10 @@ class GroupAPI:
             master_device_info: Optional device info for the master device.
                 If provided, used to determine join mode (WiFi Direct vs router-based).
                 If None, defaults to router-based mode.
+            master_ssid: Optional SSID for WiFi Direct mode (overrides device_info.ssid).
+                Used when SSID is fetched separately from getStatus endpoint.
+            master_wifi_channel: Optional WiFi channel for WiFi Direct mode.
+                Used when channel is fetched separately from getStatus endpoint.
 
         Raises:
             WiiMError: If the request fails.
@@ -241,47 +316,40 @@ class GroupAPI:
 
         if use_wifi_direct:
             # WiFi Direct mode for Gen1/legacy devices
-            if master_device_info is None:
+            # Get SSID and WiFi channel - prefer explicit parameters, then device_info
+            ssid = master_ssid or (master_device_info.ssid if master_device_info else None) or ""
+            wifi_channel = master_wifi_channel or (master_device_info.wifi_channel if master_device_info else None) or 1
+
+            if not ssid:
                 _logger.warning(
-                    "WiFi Direct mode requested but master_device_info is None - cannot get SSID/channel. "
-                    "Falling back to router-based mode."
+                    "WiFi Direct mode required but SSID not available from master device %s. "
+                    "Falling back to router-based mode. This may fail for Gen1 devices. "
+                    "Ensure master device has ssid field in getStatusEx response.",
+                    master_ip,
                 )
                 use_wifi_direct = False
             else:
-                # Get SSID and WiFi channel from master device
-                ssid = master_device_info.ssid or ""
-                wifi_channel = master_device_info.wifi_channel or 1
-
-                if not ssid:
-                    _logger.warning(
-                        "WiFi Direct mode requested but SSID not available from master device %s (%s). "
-                        "Falling back to router-based mode. This may fail for Gen1 devices.",
-                        master_device_info.name or "unknown",
-                        master_device_info.model or "unknown",
+                # Encode SSID as hex (as done in old Linkplay library)
+                try:
+                    ssid_hex = binascii.hexlify(ssid.encode("utf-8")).decode()
+                    _logger.info(
+                        "Using WiFi Direct mode for Gen1 device join: master=%s (%s), "
+                        "ssid=%s (hex=%s), channel=%s, wmrm_version=%s, firmware=%s",
+                        master_ip,
+                        master_device_info.name if master_device_info else "unknown",
+                        ssid,
+                        ssid_hex,
+                        wifi_channel,
+                        master_device_info.wmrm_version if master_device_info else "unknown",
+                        master_device_info.firmware if master_device_info else "unknown",
+                    )
+                    command = f"ConnectMasterAp:ssid={ssid_hex}:ch={wifi_channel}:auth=OPEN:encry=NONE:pwd=:chext=0"
+                except Exception as e:
+                    _logger.error(
+                        "Failed to encode SSID for WiFi Direct mode: %s. Falling back to router-based mode.",
+                        e,
                     )
                     use_wifi_direct = False
-                else:
-                    # Encode SSID as hex (as done in old library)
-                    try:
-                        ssid_hex = binascii.hexlify(ssid.encode("utf-8")).decode()
-                        _logger.info(
-                            "Using WiFi Direct mode for Gen1 device join: master=%s (%s), "
-                            "ssid=%s (hex=%s), channel=%s, wmrm_version=%s, firmware=%s",
-                            master_ip,
-                            master_device_info.name or "unknown",
-                            ssid,
-                            ssid_hex,
-                            wifi_channel,
-                            master_device_info.wmrm_version or "unknown",
-                            master_device_info.firmware or "unknown",
-                        )
-                        command = f"ConnectMasterAp:ssid={ssid_hex}:ch={wifi_channel}:auth=OPEN:encry=NONE:pwd=:chext=0"
-                    except Exception as e:
-                        _logger.error(
-                            "Failed to encode SSID for WiFi Direct mode: %s. Falling back to router-based mode.",
-                            e,
-                        )
-                        use_wifi_direct = False
 
         if not use_wifi_direct:
             # Router-based mode (default for modern devices)

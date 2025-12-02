@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.31] - 2025-12-02
+
+### Fixed
+- **Gen1 WiFi Direct multiroom grouping now works correctly**
+  - Added `get_wifi_direct_info()` method to fetch SSID and WiFi channel from device API
+  - Follows the pattern from the old Linkplay integration (tries both `getStatusEx` and `getStatus` endpoints)
+  - `join_group()` now automatically fetches SSID/channel from master device when Gen1 detected
+  - Fixes issue where Gen1 devices (Audio Pro Gen1, legacy LinkPlay with `wmrm_version=2.0`) could not join groups
+  - The previous implementation relied on DeviceInfo having `ssid` field populated, which may not be the case for all devices
+  - Now explicitly fetches the WiFi Direct info when needed, ensuring WiFi Direct mode works for Gen1 devices
+
 ## [2.1.30] - 2025-12-02
 
 ### Fixed
