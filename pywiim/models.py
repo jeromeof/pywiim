@@ -165,6 +165,10 @@ class PlayerStatus(_WiimBase):
     repeat: str | None = Field(None, alias="repeat")
     shuffle: str | None = Field(None, alias="shuffle")
 
+    # Queue/playlist information
+    queue_count: int | None = Field(None, alias="plicount")  # Total tracks in queue
+    queue_position: int | None = Field(None, alias="plicurr")  # Current track position in queue
+
     # Group/multiroom fields (sometimes in status payload)
     group: str | None = None
     master_uuid: str | None = None

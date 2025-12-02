@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.28] - 2025-12-02
+
+### Added
+- **Queue Management Methods** 
+  - `play_queue(queue_position)` - Start playing from a specific queue position
+  - `remove_from_queue(queue_position)` - Remove item at position from queue
+  - `clear_queue()` - Remove all items from queue
+  - All methods use UPnP AVTransport actions (requires `supports_queue_add`)
+
+- **Device Capability Properties** 
+  - Added boolean properties for checking feature support before calling methods
+  - HTTP API capabilities: `supports_eq`, `supports_presets`, `supports_audio_output`, `supports_metadata`, `supports_alarms`, `supports_sleep_timer`, `supports_led_control`, `supports_enhanced_grouping`
+  - UPnP capabilities: `supports_upnp`, `supports_queue_browse`, `supports_queue_add`, `supports_queue_count`
+  - Cleaner than dict access: `player.supports_eq` instead of `player.client.capabilities.get("supports_eq")`
+
+- **Convenience Property**
+  - `player.device_name` - Direct access to device name (shortcut for `player.device_info.name`)
+
+### Changed
+- **`get_queue()` return format** now matches Home Assistant standards:
+  - `media_content_id` instead of `uri` (HA standard field name)
+  - Added `position` field (0-based index in queue)
+  - Added `duration` field (track length in seconds, parsed from DIDL-Lite)
+  - Existing fields: `title`, `artist`, `album`, `image_url`
+
+### Documentation
+- Added `docs/integration/HA_CAPABILITIES.md` - Comprehensive guide for Home Assistant integration
+  - Capability property reference
+  - Queue operation examples
+  - Service registration patterns
+
 ## [2.1.27] - 2025-12-01
 
 ### Fixed

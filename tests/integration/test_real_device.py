@@ -221,7 +221,7 @@ class TestRealDeviceCore:
         await player.refresh(full=True)
 
         # Check capabilities first
-        if not player.client.capabilities.get("supports_audio_output", False):
+        if not player.supports_audio_output:
             pytest.skip("Audio output control not supported on this device (capability check)")
 
         # Get audio output status
@@ -278,7 +278,7 @@ class TestRealDeviceCore:
         await player.refresh(full=True)
 
         # Check capabilities first
-        if not player.client.capabilities.get("supports_eq", False):
+        if not player.supports_eq:
             pytest.skip("EQ not supported on this device (capability check)")
 
         try:
@@ -319,7 +319,7 @@ class TestRealDeviceCore:
         await player.refresh(full=True)
 
         # Check capabilities first
-        if not player.client.capabilities.get("supports_presets", False):
+        if not player.supports_presets:
             pytest.skip("Presets not supported on this device (capability check)")
 
         try:

@@ -24,6 +24,15 @@ class PlayerProperties:
         """
         self.player = player
 
+    # === Device Info ===
+
+    @property
+    def device_name(self) -> str | None:
+        """Device name from cached device info."""
+        if self.player._device_info is None:
+            return None
+        return self.player._device_info.name
+
     # === Volume and Mute ===
 
     @property
@@ -188,6 +197,32 @@ class PlayerProperties:
     def media_image_url(self) -> str | None:
         """Media image URL from cached status."""
         return self._status_field("entity_picture", "cover_url")
+
+    @property
+    def queue_count(self) -> int | None:
+        """Total number of tracks in queue (from HTTP API plicount field)."""
+        if self.player._status_model is None:
+            return None
+        count = getattr(self.player._status_model, "queue_count", None)
+        if count is not None:
+            try:
+                return int(count)
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    @property
+    def queue_position(self) -> int | None:
+        """Current track position in queue (from HTTP API plicurr field)."""
+        if self.player._status_model is None:
+            return None
+        position = getattr(self.player._status_model, "queue_position", None)
+        if position is not None:
+            try:
+                return int(position)
+            except (TypeError, ValueError):
+                return None
+        return None
 
     @property
     def media_sample_rate(self) -> int | None:
@@ -964,3 +999,100 @@ class PlayerProperties:
         if not self.player._upnp_health_tracker:
             return None
         return self.player._upnp_health_tracker.miss_rate
+
+    # === Device Capabilities ===
+    # These properties expose device capabilities for integrations (e.g., Home Assistant)
+    # to check feature support before calling methods. Follows SoCo pattern.
+
+    @property
+    def supports_eq(self) -> bool:
+        """Whether EQ control is supported."""
+        if not self.player.client:
+            return False
+        return self.player.client.capabilities.get("supports_eq", False)
+
+    @property
+    def supports_presets(self) -> bool:
+        """Whether preset/favorites are supported."""
+        if not self.player.client:
+            return False
+        return self.player.client.capabilities.get("supports_presets", False)
+
+    @property
+    def supports_audio_output(self) -> bool:
+        """Whether audio output mode control is supported."""
+        if not self.player.client:
+            return False
+        return self.player.client.capabilities.get("supports_audio_output", False)
+
+    @property
+    def supports_metadata(self) -> bool:
+        """Whether metadata retrieval (getMetaInfo) is supported."""
+        if not self.player.client:
+            return False
+        return self.player.client.capabilities.get("supports_metadata", False)
+
+    @property
+    def supports_alarms(self) -> bool:
+        """Whether alarm clock feature is supported."""
+        if not self.player.client:
+            return False
+        return self.player.client.capabilities.get("supports_alarms", False)
+
+    @property
+    def supports_sleep_timer(self) -> bool:
+        """Whether sleep timer feature is supported."""
+        if not self.player.client:
+            return False
+        return self.player.client.capabilities.get("supports_sleep_timer", False)
+
+    @property
+    def supports_led_control(self) -> bool:
+        """Whether LED control is supported."""
+        if not self.player.client:
+            return False
+        return self.player.client.capabilities.get("supports_led_control", False)
+
+    @property
+    def supports_enhanced_grouping(self) -> bool:
+        """Whether enhanced multiroom grouping features are supported."""
+        if not self.player.client:
+            return False
+        return self.player.client.capabilities.get("supports_enhanced_grouping", False)
+
+    # === UPnP Capabilities ===
+    # These are determined at runtime based on UPnP client initialization
+
+    @property
+    def supports_upnp(self) -> bool:
+        """Whether UPnP client is available for events and transport control."""
+        return self.player._upnp_client is not None
+
+    @property
+    def supports_queue_browse(self) -> bool:
+        """Whether full queue retrieval is available (UPnP ContentDirectory).
+
+        Only available on WiiM Amp and Ultra when a USB drive is connected.
+        Most WiiM devices (Mini, Pro, Pro Plus) do not support this.
+        """
+        if not self.player._upnp_client:
+            return False
+        return self.player._upnp_client.content_directory is not None
+
+    @property
+    def supports_queue_add(self) -> bool:
+        """Whether adding items to queue is supported (UPnP AVTransport).
+
+        Available on most devices with UPnP support.
+        """
+        if not self.player._upnp_client:
+            return False
+        return self.player._upnp_client.av_transport is not None
+
+    @property
+    def supports_queue_count(self) -> bool:
+        """Whether queue count/position is available (HTTP API).
+
+        Always True - available via plicount/plicurr in getPlayerStatus.
+        """
+        return True

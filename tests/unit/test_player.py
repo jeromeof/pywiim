@@ -858,6 +858,311 @@ class TestPlayerPlaybackControl:
         # The UPnP path doesn't call client.play_url()
 
     @pytest.mark.asyncio
+    async def test_get_queue_no_upnp(self, mock_client):
+        """Test get_queue without UPnP client raises error."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+
+        with pytest.raises(WiiMError, match="requires UPnP client"):
+            await player.get_queue()
+
+    @pytest.mark.asyncio
+    async def test_get_queue_with_upnp(self, mock_client):
+        """Test get_queue with UPnP client."""
+        from pywiim.player import Player
+        from pywiim.upnp.client import UpnpClient
+
+        mock_upnp_client = MagicMock(spec=UpnpClient)
+        mock_upnp_client.browse_queue = AsyncMock(
+            return_value={
+                "Result": (
+                    '<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" '
+                    'xmlns:dc="http://purl.org/dc/elements/1.1/" '
+                    'xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">'
+                    "<item>"
+                    '<res duration="0:03:45">http://example.com/song1.mp3</res>'
+                    "<dc:title>Song 1</dc:title>"
+                    "<upnp:artist>Artist 1</upnp:artist>"
+                    "<upnp:album>Album 1</upnp:album>"
+                    "</item>"
+                    "<item>"
+                    '<res duration="0:04:20">http://example.com/song2.mp3</res>'
+                    "<dc:title>Song 2</dc:title>"
+                    "<upnp:artist>Artist 2</upnp:artist>"
+                    "</item>"
+                    "</DIDL-Lite>"
+                ),
+                "NumberReturned": 2,
+                "TotalMatches": 2,
+                "UpdateID": 1,
+            }
+        )
+
+        player = Player(mock_client, upnp_client=mock_upnp_client)
+        queue = await player.get_queue()
+
+        assert len(queue) == 2
+        # First item
+        assert queue[0]["media_content_id"] == "http://example.com/song1.mp3"
+        assert queue[0]["title"] == "Song 1"
+        assert queue[0]["artist"] == "Artist 1"
+        assert queue[0]["album"] == "Album 1"
+        assert queue[0]["position"] == 0
+        assert queue[0]["duration"] == 225  # 3:45 = 225 seconds
+        # Second item
+        assert queue[1]["media_content_id"] == "http://example.com/song2.mp3"
+        assert queue[1]["title"] == "Song 2"
+        assert queue[1]["artist"] == "Artist 2"
+        assert queue[1]["position"] == 1
+        assert queue[1]["duration"] == 260  # 4:20 = 260 seconds
+
+        mock_upnp_client.browse_queue.assert_called_once_with(
+            object_id="Q:0",
+            starting_index=0,
+            requested_count=0,
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_queue_with_custom_object_id(self, mock_client):
+        """Test get_queue with custom object ID."""
+        from pywiim.player import Player
+        from pywiim.upnp.client import UpnpClient
+
+        mock_upnp_client = MagicMock(spec=UpnpClient)
+        mock_upnp_client.browse_queue = AsyncMock(
+            return_value={
+                "Result": '<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/"></DIDL-Lite>',
+                "NumberReturned": 0,
+                "TotalMatches": 0,
+                "UpdateID": 1,
+            }
+        )
+
+        player = Player(mock_client, upnp_client=mock_upnp_client)
+        queue = await player.get_queue(object_id="Q:1", starting_index=10, requested_count=50)
+
+        assert len(queue) == 0
+        mock_upnp_client.browse_queue.assert_called_once_with(
+            object_id="Q:1",
+            starting_index=10,
+            requested_count=50,
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_queue_empty(self, mock_client):
+        """Test get_queue with empty queue."""
+        from pywiim.player import Player
+        from pywiim.upnp.client import UpnpClient
+
+        mock_upnp_client = MagicMock(spec=UpnpClient)
+        mock_upnp_client.browse_queue = AsyncMock(
+            return_value={
+                "Result": '<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/"></DIDL-Lite>',
+                "NumberReturned": 0,
+                "TotalMatches": 0,
+                "UpdateID": 1,
+            }
+        )
+
+        player = Player(mock_client, upnp_client=mock_upnp_client)
+        queue = await player.get_queue()
+
+        assert len(queue) == 0
+
+    @pytest.mark.asyncio
+    async def test_get_queue_with_image_url(self, mock_client):
+        """Test get_queue with album art."""
+        from pywiim.player import Player
+        from pywiim.upnp.client import UpnpClient
+
+        mock_upnp_client = MagicMock(spec=UpnpClient)
+        mock_upnp_client.browse_queue = AsyncMock(
+            return_value={
+                "Result": (
+                    '<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" '
+                    'xmlns:dc="http://purl.org/dc/elements/1.1/" '
+                    'xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">'
+                    "<item>"
+                    "<res>http://example.com/song.mp3</res>"
+                    "<dc:title>Song</dc:title>"
+                    "<upnp:albumArtURI>http://example.com/art.jpg</upnp:albumArtURI>"
+                    "</item>"
+                    "</DIDL-Lite>"
+                ),
+                "NumberReturned": 1,
+                "TotalMatches": 1,
+                "UpdateID": 1,
+            }
+        )
+
+        player = Player(mock_client, upnp_client=mock_upnp_client)
+        queue = await player.get_queue()
+
+        assert len(queue) == 1
+        assert queue[0]["media_content_id"] == "http://example.com/song.mp3"
+        assert queue[0]["title"] == "Song"
+        assert queue[0]["image_url"] == "http://example.com/art.jpg"
+        assert queue[0]["position"] == 0
+
+    @pytest.mark.asyncio
+    async def test_get_queue_invalid_xml(self, mock_client):
+        """Test get_queue with invalid XML (should return empty list)."""
+        from pywiim.player import Player
+        from pywiim.upnp.client import UpnpClient
+
+        mock_upnp_client = MagicMock(spec=UpnpClient)
+        mock_upnp_client.browse_queue = AsyncMock(
+            return_value={
+                "Result": "<invalid>not valid XML",
+                "NumberReturned": 0,
+                "TotalMatches": 0,
+                "UpdateID": 1,
+            }
+        )
+
+        player = Player(mock_client, upnp_client=mock_upnp_client)
+        queue = await player.get_queue()
+
+        # Should handle gracefully and return empty list
+        assert len(queue) == 0
+
+    @pytest.mark.asyncio
+    async def test_get_queue_browse_failure(self, mock_client):
+        """Test get_queue when browse fails."""
+        from pywiim.player import Player
+        from pywiim.upnp.client import UpnpClient
+        from async_upnp_client.exceptions import UpnpError
+
+        mock_upnp_client = MagicMock(spec=UpnpClient)
+        mock_upnp_client.browse_queue = AsyncMock(side_effect=UpnpError("Browse failed"))
+
+        player = Player(mock_client, upnp_client=mock_upnp_client)
+
+        with pytest.raises(WiiMError, match="Failed to get queue"):
+            await player.get_queue()
+
+    @pytest.mark.asyncio
+    async def test_play_queue_no_upnp(self, mock_client):
+        """Test play_queue without UPnP client."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+
+        with pytest.raises(WiiMError, match="requires UPnP client"):
+            await player.play_queue(0)
+
+    @pytest.mark.asyncio
+    async def test_play_queue_success(self, mock_client):
+        """Test play_queue with UPnP client."""
+        from pywiim.player import Player
+        from pywiim.upnp.client import UpnpClient
+
+        mock_upnp_client = MagicMock(spec=UpnpClient)
+        mock_upnp_client.async_call_action = AsyncMock(return_value={})
+
+        player = Player(mock_client, upnp_client=mock_upnp_client)
+        await player.play_queue(5)
+
+        # Should call Seek with TRACK_NR unit (1-based, so position 5 becomes 6)
+        mock_upnp_client.async_call_action.assert_called_once_with(
+            "av_transport",
+            "Seek",
+            {
+                "InstanceID": 0,
+                "Unit": "TRACK_NR",
+                "Target": "6",  # 0-based position 5 becomes 1-based track 6
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_play_queue_invalid_position(self, mock_client):
+        """Test play_queue with invalid position."""
+        from pywiim.player import Player
+        from pywiim.upnp.client import UpnpClient
+
+        mock_upnp_client = MagicMock(spec=UpnpClient)
+        player = Player(mock_client, upnp_client=mock_upnp_client)
+
+        with pytest.raises(WiiMError, match="Invalid queue position"):
+            await player.play_queue(-1)
+
+    @pytest.mark.asyncio
+    async def test_remove_from_queue_no_upnp(self, mock_client):
+        """Test remove_from_queue without UPnP client."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+
+        with pytest.raises(WiiMError, match="requires UPnP client"):
+            await player.remove_from_queue(0)
+
+    @pytest.mark.asyncio
+    async def test_remove_from_queue_success(self, mock_client):
+        """Test remove_from_queue with UPnP client."""
+        from pywiim.player import Player
+        from pywiim.upnp.client import UpnpClient
+
+        mock_upnp_client = MagicMock(spec=UpnpClient)
+        mock_upnp_client.async_call_action = AsyncMock(return_value={})
+
+        player = Player(mock_client, upnp_client=mock_upnp_client)
+        await player.remove_from_queue(3)
+
+        # Should call RemoveTrackFromQueue with ObjectID (1-based)
+        mock_upnp_client.async_call_action.assert_called_once_with(
+            "av_transport",
+            "RemoveTrackFromQueue",
+            {
+                "InstanceID": 0,
+                "ObjectID": "Q:0/4",  # 0-based position 3 becomes 1-based track 4
+                "UpdateID": 0,
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_remove_from_queue_invalid_position(self, mock_client):
+        """Test remove_from_queue with invalid position."""
+        from pywiim.player import Player
+        from pywiim.upnp.client import UpnpClient
+
+        mock_upnp_client = MagicMock(spec=UpnpClient)
+        player = Player(mock_client, upnp_client=mock_upnp_client)
+
+        with pytest.raises(WiiMError, match="Invalid queue position"):
+            await player.remove_from_queue(-1)
+
+    @pytest.mark.asyncio
+    async def test_clear_queue_no_upnp(self, mock_client):
+        """Test clear_queue without UPnP client."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+
+        with pytest.raises(WiiMError, match="requires UPnP client"):
+            await player.clear_queue()
+
+    @pytest.mark.asyncio
+    async def test_clear_queue_success(self, mock_client):
+        """Test clear_queue with UPnP client."""
+        from pywiim.player import Player
+        from pywiim.upnp.client import UpnpClient
+
+        mock_upnp_client = MagicMock(spec=UpnpClient)
+        mock_upnp_client.async_call_action = AsyncMock(return_value={})
+
+        player = Player(mock_client, upnp_client=mock_upnp_client)
+        await player.clear_queue()
+
+        mock_upnp_client.async_call_action.assert_called_once_with(
+            "av_transport",
+            "RemoveAllTracksFromQueue",
+            {
+                "InstanceID": 0,
+            },
+        )
+
+    @pytest.mark.asyncio
     async def test_play_notification(self, mock_client):
         """Test play notification command."""
         from pywiim.models import DeviceInfo, PlayerStatus
@@ -3636,3 +3941,185 @@ class TestPlayerBluetoothOutputs:
 
         with pytest.raises(ValueError, match="Bluetooth device 'Unknown Device' not found"):
             await player.select_output("BT: Unknown Device")
+
+
+class TestPlayerCapabilities:
+    """Tests for Player capability properties (SoCo-style pattern)."""
+
+    @pytest.fixture
+    def mock_client(self, mock_aiohttp_session):
+        """Create a mock WiiM client."""
+        from pywiim.client import WiiMClient
+
+        client = WiiMClient("192.168.1.100", session=mock_aiohttp_session)
+        client._capabilities = {
+            "supports_eq": True,
+            "supports_presets": True,
+            "supports_audio_output": True,
+            "supports_metadata": True,
+            "supports_alarms": True,
+            "supports_sleep_timer": True,
+            "supports_led_control": True,
+            "supports_enhanced_grouping": True,
+        }
+        return client
+
+    def test_supports_eq(self, mock_client):
+        """Test supports_eq property."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        assert player.supports_eq is True
+
+        mock_client._capabilities["supports_eq"] = False
+        assert player.supports_eq is False
+
+    def test_supports_presets(self, mock_client):
+        """Test supports_presets property."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        assert player.supports_presets is True
+
+        mock_client._capabilities["supports_presets"] = False
+        assert player.supports_presets is False
+
+    def test_supports_audio_output(self, mock_client):
+        """Test supports_audio_output property."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        assert player.supports_audio_output is True
+
+        mock_client._capabilities["supports_audio_output"] = False
+        assert player.supports_audio_output is False
+
+    def test_supports_metadata(self, mock_client):
+        """Test supports_metadata property."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        assert player.supports_metadata is True
+
+        mock_client._capabilities["supports_metadata"] = False
+        assert player.supports_metadata is False
+
+    def test_supports_alarms(self, mock_client):
+        """Test supports_alarms property."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        assert player.supports_alarms is True
+
+        mock_client._capabilities["supports_alarms"] = False
+        assert player.supports_alarms is False
+
+    def test_supports_sleep_timer(self, mock_client):
+        """Test supports_sleep_timer property."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        assert player.supports_sleep_timer is True
+
+        mock_client._capabilities["supports_sleep_timer"] = False
+        assert player.supports_sleep_timer is False
+
+    def test_supports_led_control(self, mock_client):
+        """Test supports_led_control property."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        assert player.supports_led_control is True
+
+        mock_client._capabilities["supports_led_control"] = False
+        assert player.supports_led_control is False
+
+    def test_supports_enhanced_grouping(self, mock_client):
+        """Test supports_enhanced_grouping property."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        assert player.supports_enhanced_grouping is True
+
+        mock_client._capabilities["supports_enhanced_grouping"] = False
+        assert player.supports_enhanced_grouping is False
+
+    def test_supports_queue_count(self, mock_client):
+        """Test supports_queue_count property (always True)."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        # Always True - available via HTTP API plicount/plicurr
+        assert player.supports_queue_count is True
+
+    def test_supports_upnp_without_client(self, mock_client):
+        """Test supports_upnp when UPnP client is not available."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        # No UPnP client by default
+        assert player.supports_upnp is False
+        assert player.supports_queue_browse is False
+        assert player.supports_queue_add is False
+
+    def test_supports_upnp_with_client(self, mock_client):
+        """Test supports_upnp when UPnP client is available."""
+        from unittest.mock import MagicMock
+
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+
+        # Mock UPnP client with services
+        mock_upnp = MagicMock()
+        mock_upnp.av_transport = MagicMock()
+        mock_upnp.content_directory = None  # No ContentDirectory
+
+        player._upnp_client = mock_upnp
+
+        assert player.supports_upnp is True
+        assert player.supports_queue_add is True  # AVTransport available
+        assert player.supports_queue_browse is False  # No ContentDirectory
+
+    def test_supports_queue_browse_with_content_directory(self, mock_client):
+        """Test supports_queue_browse when ContentDirectory is available."""
+        from unittest.mock import MagicMock
+
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+
+        # Mock UPnP client with ContentDirectory
+        mock_upnp = MagicMock()
+        mock_upnp.av_transport = MagicMock()
+        mock_upnp.content_directory = MagicMock()  # ContentDirectory available
+
+        player._upnp_client = mock_upnp
+
+        assert player.supports_queue_browse is True
+
+    def test_capabilities_defaults_to_false(self, mock_client):
+        """Test capability properties default to False when not set."""
+        from pywiim.player import Player
+
+        # Create player with empty capabilities
+        mock_client._capabilities = {}
+        player = Player(mock_client)
+
+        # All HTTP-based capabilities should return False when not set
+        assert player.supports_eq is False
+        assert player.supports_presets is False
+        assert player.supports_audio_output is False
+        assert player.supports_metadata is False
+        assert player.supports_alarms is False
+        assert player.supports_sleep_timer is False
+        assert player.supports_led_control is False
+        assert player.supports_enhanced_grouping is False
+
+        # UPnP capabilities (no UPnP client)
+        assert player.supports_upnp is False
+        assert player.supports_queue_browse is False
+        assert player.supports_queue_add is False
+
+        # Queue count is always True (HTTP API)
+        assert player.supports_queue_count is True

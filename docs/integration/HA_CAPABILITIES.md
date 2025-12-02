@@ -1,0 +1,290 @@
+# Home Assistant Integration: Capability Properties
+
+This document describes how to use pywiim's capability properties in a Home Assistant integration.
+
+## Overview
+
+pywiim exposes device capabilities as **boolean properties** on the `Player` class. This allows integrations to check feature support before calling methods, enabling proper UI rendering and avoiding errors.
+
+## Available Capability Properties
+
+### HTTP API Capabilities
+
+These capabilities are detected via endpoint probing during device initialization:
+
+| Property | Description | Default |
+|----------|-------------|---------|
+| `player.supports_eq` | EQ control (presets, bands) | Varies |
+| `player.supports_presets` | Playback presets/favorites | Varies |
+| `player.supports_audio_output` | Audio output mode control | Varies |
+| `player.supports_metadata` | Metadata retrieval (getMetaInfo) | Varies |
+| `player.supports_alarms` | Alarm clock feature | WiiM only |
+| `player.supports_sleep_timer` | Sleep timer feature | WiiM only |
+| `player.supports_led_control` | LED control | Varies |
+| `player.supports_enhanced_grouping` | Enhanced multiroom features | WiiM only |
+
+### UPnP Capabilities
+
+These capabilities depend on UPnP client initialization and service availability:
+
+| Property | Description | Notes |
+|----------|-------------|-------|
+| `player.supports_upnp` | UPnP client is available | Requires `upnp_client` parameter |
+| `player.supports_queue_browse` | Full queue retrieval (ContentDirectory) | WiiM Amp/Ultra + USB only |
+| `player.supports_queue_add` | Add items to queue (AVTransport) | Most devices with UPnP |
+| `player.supports_queue_count` | Queue count/position (HTTP API) | Always `True` |
+
+## Usage in Home Assistant
+
+### Checking Capabilities
+
+```python
+from homeassistant.components.media_player import MediaPlayerEntityFeature
+
+class WiiMMediaPlayer(MediaPlayerEntity):
+    """WiiM media player entity."""
+
+    def __init__(self, player: Player) -> None:
+        self._player = player
+
+    @property
+    def supported_features(self) -> MediaPlayerEntityFeature:
+        """Return supported features based on device capabilities."""
+        features = (
+            MediaPlayerEntityFeature.PLAY
+            | MediaPlayerEntityFeature.PAUSE
+            | MediaPlayerEntityFeature.STOP
+            | MediaPlayerEntityFeature.VOLUME_SET
+            | MediaPlayerEntityFeature.VOLUME_MUTE
+        )
+
+        # Queue capabilities
+        if self._player.supports_queue_add:
+            features |= MediaPlayerEntityFeature.PLAY_MEDIA
+
+        if self._player.supports_queue_browse:
+            features |= MediaPlayerEntityFeature.BROWSE_MEDIA
+
+        # EQ/Audio features
+        if self._player.supports_eq:
+            # Enable EQ-related services
+            pass
+
+        if self._player.supports_presets:
+            features |= MediaPlayerEntityFeature.SELECT_SOURCE  # For preset selection
+
+        return features
+```
+
+### Queue Information
+
+```python
+@property
+def queue_position(self) -> int | None:
+    """Return current position in queue (1-based)."""
+    # Always available via HTTP API
+    return self._player.queue_position
+
+@property
+def queue_size(self) -> int | None:
+    """Return total items in queue."""
+    # Always available via HTTP API
+    return self._player.queue_count
+
+async def async_get_queue(self) -> list[dict] | None:
+    """Get full queue contents if supported."""
+    if not self._player.supports_queue_browse:
+        return None
+    
+    try:
+        return await self._player.get_queue()
+    except Exception:
+        return None
+```
+
+### Conditional Service Registration
+
+```python
+async def async_setup_entry(hass, entry, async_add_entities):
+    """Set up WiiM media player."""
+    player = hass.data[DOMAIN][entry.entry_id]
+    
+    # Register base entity
+    entity = WiiMMediaPlayer(player)
+    async_add_entities([entity])
+    
+    # Register optional services based on capabilities
+    if player.supports_eq:
+        async_register_eq_services(hass, player)
+    
+    if player.supports_alarms:
+        async_register_alarm_services(hass, player)
+    
+    if player.supports_sleep_timer:
+        async_register_sleep_timer_service(hass, player)
+```
+
+### Entity Attributes
+
+```python
+@property
+def extra_state_attributes(self) -> dict[str, Any]:
+    """Return entity state attributes."""
+    attrs = {
+        "queue_position": self._player.queue_position,
+        "queue_count": self._player.queue_count,
+    }
+    
+    # Add capability flags for debugging/automations
+    attrs["capabilities"] = {
+        "eq": self._player.supports_eq,
+        "presets": self._player.supports_presets,
+        "audio_output": self._player.supports_audio_output,
+        "queue_browse": self._player.supports_queue_browse,
+        "queue_add": self._player.supports_queue_add,
+        "alarms": self._player.supports_alarms,
+        "upnp": self._player.supports_upnp,
+    }
+    
+    return attrs
+```
+
+## Queue Operations
+
+### Queue Methods
+
+| Method | Description | Requirements |
+|--------|-------------|--------------|
+| `get_queue()` | Get queue contents with metadata | `supports_queue_browse` |
+| `play_queue(position)` | Play from queue position | `supports_queue_add` |
+| `add_to_queue(url)` | Add to end of queue | `supports_queue_add` |
+| `insert_next(url)` | Insert after current track | `supports_queue_add` |
+| `remove_from_queue(position)` | Remove item at position | `supports_queue_add` |
+| `clear_queue()` | Remove all items | `supports_queue_add` |
+
+### Queue Item Format (`get_queue()` return)
+
+```python
+[
+    {
+        "media_content_id": "http://example.com/song.mp3",  # HA standard field
+        "title": "Song Title",
+        "artist": "Artist Name",
+        "album": "Album Name",
+        "duration": 240,      # Duration in seconds
+        "position": 0,        # 0-based index in queue
+        "image_url": "http://example.com/art.jpg",  # Album art (optional)
+    },
+    # ... more items
+]
+```
+
+### Adding to Queue (requires `supports_queue_add`)
+
+```python
+async def async_play_media(
+    self,
+    media_type: str,
+    media_id: str,
+    enqueue: MediaPlayerEnqueue | None = None,
+    **kwargs,
+) -> None:
+    """Play media or add to queue."""
+    if enqueue == MediaPlayerEnqueue.ADD and self._player.supports_queue_add:
+        await self._player.add_to_queue(media_id)
+    elif enqueue == MediaPlayerEnqueue.NEXT and self._player.supports_queue_add:
+        await self._player.insert_next(media_id)
+    else:
+        # Play immediately
+        await self._player.play_url(media_id)
+```
+
+### Playing from Queue Position
+
+```python
+# Service: wiim.play_queue
+async def async_play_queue(self, queue_position: int = 0) -> None:
+    """Start playing from a specific queue position."""
+    if not self._player.supports_queue_add:
+        raise HomeAssistantError("Queue playback not supported")
+    await self._player.play_queue(queue_position)
+```
+
+### Removing from Queue
+
+```python
+# Service: wiim.remove_from_queue
+async def async_remove_from_queue(self, queue_position: int = 0) -> None:
+    """Remove item from queue at position."""
+    if not self._player.supports_queue_add:
+        raise HomeAssistantError("Queue management not supported")
+    await self._player.remove_from_queue(queue_position)
+
+# Service: wiim.clear_queue
+async def async_clear_queue(self) -> None:
+    """Clear all items from queue."""
+    if not self._player.supports_queue_add:
+        raise HomeAssistantError("Queue management not supported")
+    await self._player.clear_queue()
+```
+
+### Browsing Queue (requires `supports_queue_browse`)
+
+```python
+async def async_browse_media(
+    self,
+    media_content_type: str | None = None,
+    media_content_id: str | None = None,
+) -> BrowseMedia:
+    """Browse media library or queue."""
+    if media_content_id == "queue" and self._player.supports_queue_browse:
+        queue_items = await self._player.get_queue()
+        return BrowseMedia(
+            media_class=MediaClass.PLAYLIST,
+            media_content_id="queue",
+            media_content_type="playlist",
+            title="Queue",
+            can_play=False,
+            can_expand=True,
+            children=[
+                BrowseMedia(
+                    media_class=MediaClass.TRACK,
+                    media_content_id=item["media_content_id"],
+                    media_content_type="music",
+                    title=item.get("title", "Unknown"),
+                    thumbnail=item.get("image_url"),
+                )
+                for item in queue_items
+            ],
+        )
+    # ... handle other browse requests
+```
+
+## Best Practices
+
+1. **Always check capabilities before calling methods** - Prevents errors and provides better UX.
+
+2. **Use queue_count/queue_position even without queue_browse** - These are always available via HTTP API.
+
+3. **UPnP client is optional** - The Player works without UPnP, but some features require it.
+
+4. **Capabilities are detected at runtime** - They may change if the device configuration changes.
+
+5. **Cache capability checks** - Properties read from cached state, so they're fast to access.
+
+## Migration from Dict-based Capabilities
+
+If you were previously using the dict-based pattern:
+
+```python
+# Old pattern (still works but deprecated)
+if player.client.capabilities.get("supports_eq", False):
+    ...
+
+# New pattern (preferred)
+if player.supports_eq:
+    ...
+```
+
+The new properties are cleaner, provide better IDE support.
+

@@ -217,6 +217,107 @@ class Player(PlayerBase):
         """Insert URL after current track (requires UPnP client)."""
         await self._media_ctrl.insert_next(url, metadata)
 
+    async def get_queue(
+        self,
+        object_id: str = "Q:0",
+        starting_index: int = 0,
+        requested_count: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Get current queue contents (requires UPnP client with ContentDirectory service).
+
+        **Note on Queue Information:**
+        - **Queue count and position**: Available via HTTP API (`plicount`, `plicurr` in getPlayerStatus)
+        - **Full queue contents**: Requires UPnP ContentDirectory service (see availability below)
+
+        **ContentDirectory Availability:**
+        ContentDirectory service is only available on:
+        - WiiM Amp (when USB drive is connected)
+        - WiiM Ultra (when USB drive is connected)
+
+        Other WiiM devices (Mini, Pro, Pro Plus) do not expose ContentDirectory service
+        as they function only as UPnP renderers, not media servers.
+
+        Args:
+            object_id: Queue object ID (default "Q:0" for standard queue)
+            starting_index: Starting index for pagination (0 = first item)
+            requested_count: Number of items to retrieve (0 = all available)
+
+        Returns:
+            List of queue item dictionaries, each containing:
+            - media_content_id: Media URI (HA standard field name)
+            - title: Track title (if available)
+            - artist: Artist name (if available)
+            - album: Album name (if available)
+            - duration: Duration in seconds (if available)
+            - position: Position in queue (0-based index)
+            - image_url: Album art URL (if available)
+
+        Raises:
+            WiiMError: If UPnP client is not available, ContentDirectory service is not
+                available, or queue retrieval fails
+
+        Example:
+            ```python
+            queue = await player.get_queue()
+            for item in queue:
+                print(f"{item['position']}: {item.get('title', 'Unknown')} - {item.get('artist', 'Unknown')}")
+            ```
+        """
+        return await self._media_ctrl.get_queue(object_id, starting_index, requested_count)
+
+    async def play_queue(self, queue_position: int = 0) -> None:
+        """Start playing from the queue at a specific position.
+
+        Uses UPnP AVTransport Seek action with TRACK_NR unit to jump to queue position.
+
+        Args:
+            queue_position: 0-based index in queue to start playing (default: 0)
+
+        Raises:
+            WiiMError: If UPnP client is not available, queue position is invalid,
+                or the seek action fails
+
+        Example:
+            ```python
+            await player.play_queue(5)  # Play from position 5 in queue
+            ```
+        """
+        await self._media_ctrl.play_queue(queue_position)
+
+    async def remove_from_queue(self, queue_position: int = 0) -> None:
+        """Remove an item from the queue at a specific position.
+
+        Uses UPnP AVTransport RemoveTrackFromQueue action.
+
+        Args:
+            queue_position: 0-based index in queue to remove (default: 0)
+
+        Raises:
+            WiiMError: If UPnP client is not available, queue position is invalid,
+                or the remove action fails
+
+        Example:
+            ```python
+            await player.remove_from_queue(3)  # Remove item at position 3
+            ```
+        """
+        await self._media_ctrl.remove_from_queue(queue_position)
+
+    async def clear_queue(self) -> None:
+        """Clear all items from the queue.
+
+        Uses UPnP AVTransport RemoveAllTracksFromQueue action.
+
+        Raises:
+            WiiMError: If UPnP client is not available or the action fails
+
+        Example:
+            ```python
+            await player.clear_queue()  # Remove all items from queue
+            ```
+        """
+        await self._media_ctrl.clear_queue()
+
     async def play_preset(self, preset: int) -> None:
         """Play a preset by number."""
         await self._media_ctrl.play_preset(preset)
@@ -460,6 +561,11 @@ class Player(PlayerBase):
     # === Properties (read-only) ===
 
     @property
+    def device_name(self) -> str | None:
+        """Device name from cached device info."""
+        return self._properties.device_name
+
+    @property
     def volume_level(self) -> float | None:
         """Current volume level (0.0-1.0) from cached status."""
         return self._properties.volume_level
@@ -503,6 +609,16 @@ class Player(PlayerBase):
     def media_image_url(self) -> str | None:
         """Media image URL from cached status."""
         return self._properties.media_image_url
+
+    @property
+    def queue_count(self) -> int | None:
+        """Total number of tracks in queue (from HTTP API plicount field)."""
+        return self._properties.queue_count
+
+    @property
+    def queue_position(self) -> int | None:
+        """Current track position in queue (from HTTP API plicurr field)."""
+        return self._properties.queue_position
 
     @property
     def media_sample_rate(self) -> int | None:
@@ -713,6 +829,82 @@ class Player(PlayerBase):
             Fraction of changes missed by UPnP (0.0 to 1.0), or None if UPnP not enabled.
         """
         return self._properties.upnp_miss_rate
+
+    # === Device Capabilities ===
+    # These properties expose device capabilities for integrations (e.g., Home Assistant)
+    # to check feature support before calling methods. Follows SoCo pattern.
+
+    @property
+    def supports_eq(self) -> bool:
+        """Whether EQ control is supported."""
+        return self._properties.supports_eq
+
+    @property
+    def supports_presets(self) -> bool:
+        """Whether preset/favorites are supported."""
+        return self._properties.supports_presets
+
+    @property
+    def supports_audio_output(self) -> bool:
+        """Whether audio output mode control is supported."""
+        return self._properties.supports_audio_output
+
+    @property
+    def supports_metadata(self) -> bool:
+        """Whether metadata retrieval (getMetaInfo) is supported."""
+        return self._properties.supports_metadata
+
+    @property
+    def supports_alarms(self) -> bool:
+        """Whether alarm clock feature is supported."""
+        return self._properties.supports_alarms
+
+    @property
+    def supports_sleep_timer(self) -> bool:
+        """Whether sleep timer feature is supported."""
+        return self._properties.supports_sleep_timer
+
+    @property
+    def supports_led_control(self) -> bool:
+        """Whether LED control is supported."""
+        return self._properties.supports_led_control
+
+    @property
+    def supports_enhanced_grouping(self) -> bool:
+        """Whether enhanced multiroom grouping features are supported."""
+        return self._properties.supports_enhanced_grouping
+
+    # === UPnP Capabilities ===
+
+    @property
+    def supports_upnp(self) -> bool:
+        """Whether UPnP client is available for events and transport control."""
+        return self._properties.supports_upnp
+
+    @property
+    def supports_queue_browse(self) -> bool:
+        """Whether full queue retrieval is available (UPnP ContentDirectory).
+
+        Only available on WiiM Amp and Ultra when a USB drive is connected.
+        Most WiiM devices (Mini, Pro, Pro Plus) do not support this.
+        """
+        return self._properties.supports_queue_browse
+
+    @property
+    def supports_queue_add(self) -> bool:
+        """Whether adding items to queue is supported (UPnP AVTransport).
+
+        Available on most devices with UPnP support.
+        """
+        return self._properties.supports_queue_add
+
+    @property
+    def supports_queue_count(self) -> bool:
+        """Whether queue count/position is available (HTTP API).
+
+        Always True - available via plicount/plicurr in getPlayerStatus.
+        """
+        return self._properties.supports_queue_count
 
     @property
     def audio(self) -> AudioConfiguration:

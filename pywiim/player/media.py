@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Literal
+from html import unescape
+from typing import TYPE_CHECKING, Any, Literal
+from xml.etree import ElementTree as ET
 
 from ..exceptions import WiiMError
 
@@ -365,3 +367,356 @@ class MediaControl:
         # Call callback to notify state change
         if self.player._on_state_changed:
             self.player._on_state_changed()
+
+    @staticmethod
+    def _is_valid_url(url: str) -> bool:
+        """Check if string is a valid HTTP/HTTPS URL.
+
+        Args:
+            url: URL string to validate
+
+        Returns:
+            True if valid URL, False otherwise
+        """
+        if not url or not isinstance(url, str):
+            return False
+        url_lower = url.lower().strip()
+        return url_lower.startswith(("http://", "https://"))
+
+    def _parse_queue_items(self, didl_xml: str, starting_index: int = 0) -> list[dict[str, Any]]:
+        """Parse DIDL-Lite XML to extract queue items.
+
+        Follows SoCo pattern: Parses multiple items from queue Browse response.
+
+        Args:
+            didl_xml: DIDL-Lite XML string containing queue items
+            starting_index: Starting index for position calculation
+
+        Returns:
+            List of queue item dictionaries with:
+            - media_content_id: Media URI (HA standard field name)
+            - title: Track title (if available)
+            - artist: Artist name (if available)
+            - album: Album name (if available)
+            - duration: Duration in seconds (if available)
+            - position: Position in queue (0-based index)
+            - image_url: Album art URL (if available)
+        """
+        items: list[dict[str, Any]] = []
+
+        if not didl_xml or didl_xml.strip() == "":
+            return items
+
+        try:
+            # Unescape HTML entities (e.g., &lt; becomes <)
+            didl_xml = unescape(didl_xml)
+
+            # Parse XML
+            root = ET.fromstring(didl_xml)
+
+            # Define namespaces (both standard and LinkPlay-specific)
+            namespaces = {
+                "dc": "http://purl.org/dc/elements/1.1/",
+                "upnp": "urn:schemas-upnp-org:metadata-1-0/upnp/",
+                "song": "www.linkplay.com/song/",
+                "": "urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/",
+            }
+
+            # Find all item elements
+            item_elements = root.findall(".//item", namespaces)
+            if not item_elements:
+                # Try without namespace
+                item_elements = root.findall(".//item")
+
+            for idx, item in enumerate(item_elements):
+                queue_item: dict[str, Any] = {
+                    "position": starting_index + idx,  # 0-based position in queue
+                }
+
+                # Extract URI from res element (res contains the media URL)
+                res_elem = item.find(".//{urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/}res")
+                if res_elem is None:
+                    # Try without namespace
+                    res_elem = item.find(".//res")
+
+                if res_elem is not None and res_elem.text:
+                    queue_item["media_content_id"] = res_elem.text.strip()
+
+                    # Extract duration from res element's duration attribute
+                    # Format is typically "H:MM:SS" or "H:MM:SS.mmm"
+                    duration_str = res_elem.get("duration")
+                    if duration_str:
+                        duration_seconds = self._parse_duration(duration_str)
+                        if duration_seconds is not None:
+                            queue_item["duration"] = duration_seconds
+                else:
+                    # Fallback: check for res attribute on item
+                    res_attr = item.get("res")
+                    if res_attr:
+                        queue_item["media_content_id"] = res_attr.strip()
+
+                # Extract title (dc:title)
+                title_elem = item.find("dc:title", namespaces)
+                if title_elem is None:
+                    title_elem = item.find(".//{http://purl.org/dc/elements/1.1/}title")
+                if title_elem is not None and title_elem.text:
+                    queue_item["title"] = title_elem.text.strip()
+
+                # Extract artist (upnp:artist or dc:creator)
+                artist_elem = item.find("upnp:artist", namespaces)
+                if artist_elem is None:
+                    artist_elem = item.find(".//{urn:schemas-upnp-org:metadata-1-0/upnp/}artist")
+                if artist_elem is None:
+                    artist_elem = item.find("dc:creator", namespaces)
+                if artist_elem is None:
+                    artist_elem = item.find(".//{http://purl.org/dc/elements/1.1/}creator")
+                if artist_elem is not None and artist_elem.text:
+                    queue_item["artist"] = artist_elem.text.strip()
+
+                # Extract album (upnp:album)
+                album_elem = item.find("upnp:album", namespaces)
+                if album_elem is None:
+                    album_elem = item.find(".//{urn:schemas-upnp-org:metadata-1-0/upnp/}album")
+                if album_elem is not None and album_elem.text:
+                    queue_item["album"] = album_elem.text.strip()
+
+                # Extract album art URI (upnp:albumArtURI)
+                art_elem = item.find("upnp:albumArtURI", namespaces)
+                if art_elem is None:
+                    art_elem = item.find(".//{urn:schemas-upnp-org:metadata-1-0/upnp/}albumArtURI")
+                if art_elem is not None and art_elem.text:
+                    image_url = art_elem.text.strip()
+                    # Validate URL: must be valid http/https and not placeholder values
+                    if image_url and image_url != "un_known" and self._is_valid_url(image_url):
+                        queue_item["image_url"] = image_url
+
+                # Only add item if it has at least a media_content_id
+                if queue_item.get("media_content_id"):
+                    items.append(queue_item)
+
+        except ET.ParseError as err:
+            _LOGGER.warning("Failed to parse queue DIDL-Lite XML: %s", err)
+        except Exception as err:
+            _LOGGER.warning("Error parsing queue items: %s", err)
+
+        return items
+
+    def _parse_duration(self, duration_str: str) -> int | None:
+        """Parse UPnP duration string to seconds.
+
+        Args:
+            duration_str: Duration in format "H:MM:SS" or "H:MM:SS.mmm"
+
+        Returns:
+            Duration in seconds, or None if parsing fails
+        """
+        if not duration_str:
+            return None
+
+        try:
+            # Remove milliseconds if present
+            if "." in duration_str:
+                duration_str = duration_str.split(".")[0]
+
+            parts = duration_str.split(":")
+            if len(parts) == 3:
+                hours, minutes, seconds = int(parts[0]), int(parts[1]), int(parts[2])
+                return hours * 3600 + minutes * 60 + seconds
+            elif len(parts) == 2:
+                minutes, seconds = int(parts[0]), int(parts[1])
+                return minutes * 60 + seconds
+            elif len(parts) == 1:
+                return int(parts[0])
+        except (ValueError, TypeError):
+            pass
+
+        return None
+
+    async def get_queue(
+        self,
+        object_id: str = "Q:0",
+        starting_index: int = 0,
+        requested_count: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Get current queue contents (requires UPnP client with ContentDirectory service).
+
+        Follows SoCo pattern: Uses ContentDirectory Browse action to retrieve queue.
+
+        **Note on Queue Information:**
+        - **Queue count and position**: Available via HTTP API (`plicount`, `plicurr` in getPlayerStatus)
+        - **Full queue contents**: Requires UPnP ContentDirectory service (see availability below)
+
+        **ContentDirectory Availability:**
+        ContentDirectory service is only available on:
+        - WiiM Amp (when USB drive is connected)
+        - WiiM Ultra (when USB drive is connected)
+
+        Other WiiM devices (Mini, Pro, Pro Plus) do not expose ContentDirectory service
+        as they function only as UPnP renderers, not media servers.
+
+        Args:
+            object_id: Queue object ID (default "Q:0" for standard queue)
+            starting_index: Starting index for pagination (0 = first item)
+            requested_count: Number of items to retrieve (0 = all available)
+
+        Returns:
+            List of queue item dictionaries, each containing:
+            - media_content_id: Media URI (HA standard field name)
+            - title: Track title (if available)
+            - artist: Artist name (if available)
+            - album: Album name (if available)
+            - duration: Duration in seconds (if available)
+            - position: Position in queue (0-based index)
+            - image_url: Album art URL (if available)
+
+        Raises:
+            WiiMError: If UPnP client is not available, ContentDirectory service is not
+                available, or queue retrieval fails
+        """
+        if not self.player._upnp_client:
+            raise WiiMError("Queue retrieval requires UPnP client.")
+
+        try:
+            # Browse queue using ContentDirectory service
+            result = await self.player._upnp_client.browse_queue(
+                object_id=object_id,
+                starting_index=starting_index,
+                requested_count=requested_count,
+            )
+
+            # Parse DIDL-Lite XML response
+            didl_xml = result.get("Result", "")
+            items = self._parse_queue_items(didl_xml, starting_index)
+
+            _LOGGER.debug(
+                "Retrieved %d queue items from %s (total: %d)",
+                len(items),
+                self.player.host,
+                result.get("TotalMatches", len(items)),
+            )
+
+            return items
+
+        except Exception as err:
+            _LOGGER.warning("Failed to get queue from %s: %s", self.player.host, err)
+            raise WiiMError(f"Failed to get queue: {err}") from err
+
+    async def play_queue(self, queue_position: int = 0) -> None:
+        """Start playing from the queue at a specific position.
+
+        Uses UPnP AVTransport Seek action with TRACK_NR unit to jump to queue position.
+
+        Args:
+            queue_position: 0-based index in queue to start playing (default: 0)
+
+        Raises:
+            WiiMError: If UPnP client is not available, queue position is invalid,
+                or the seek action fails
+        """
+        if not self.player._upnp_client:
+            raise WiiMError("Queue playback requires UPnP client.")
+
+        if queue_position < 0:
+            raise WiiMError(f"Invalid queue position: {queue_position} (must be >= 0)")
+
+        try:
+            # Use Seek with TRACK_NR unit to jump to queue position
+            # UPnP uses 1-based track numbers, so add 1 to 0-based position
+            await self.player._upnp_client.async_call_action(
+                "av_transport",
+                "Seek",
+                {
+                    "InstanceID": 0,
+                    "Unit": "TRACK_NR",
+                    "Target": str(queue_position + 1),  # UPnP uses 1-based index
+                },
+            )
+
+            _LOGGER.debug(
+                "Started playback from queue position %d on %s",
+                queue_position,
+                self.player.host,
+            )
+
+        except Exception as err:
+            _LOGGER.warning(
+                "Failed to play queue position %d on %s: %s",
+                queue_position,
+                self.player.host,
+                err,
+            )
+            raise WiiMError(f"Failed to play queue position {queue_position}: {err}") from err
+
+    async def remove_from_queue(self, queue_position: int = 0) -> None:
+        """Remove an item from the queue at a specific position.
+
+        Uses UPnP AVTransport RemoveTrackFromQueue action.
+
+        Args:
+            queue_position: 0-based index in queue to remove (default: 0)
+
+        Raises:
+            WiiMError: If UPnP client is not available, queue position is invalid,
+                or the remove action fails
+        """
+        if not self.player._upnp_client:
+            raise WiiMError("Queue management requires UPnP client.")
+
+        if queue_position < 0:
+            raise WiiMError(f"Invalid queue position: {queue_position} (must be >= 0)")
+
+        try:
+            # RemoveTrackFromQueue uses ObjectID which is typically "Q:0/position"
+            # UPnP uses 1-based track numbers
+            object_id = f"Q:0/{queue_position + 1}"
+
+            await self.player._upnp_client.async_call_action(
+                "av_transport",
+                "RemoveTrackFromQueue",
+                {
+                    "InstanceID": 0,
+                    "ObjectID": object_id,
+                    "UpdateID": 0,
+                },
+            )
+
+            _LOGGER.debug(
+                "Removed item at queue position %d from %s",
+                queue_position,
+                self.player.host,
+            )
+
+        except Exception as err:
+            _LOGGER.warning(
+                "Failed to remove queue position %d from %s: %s",
+                queue_position,
+                self.player.host,
+                err,
+            )
+            raise WiiMError(f"Failed to remove queue position {queue_position}: {err}") from err
+
+    async def clear_queue(self) -> None:
+        """Clear all items from the queue.
+
+        Uses UPnP AVTransport RemoveAllTracksFromQueue action.
+
+        Raises:
+            WiiMError: If UPnP client is not available or the action fails
+        """
+        if not self.player._upnp_client:
+            raise WiiMError("Queue management requires UPnP client.")
+
+        try:
+            await self.player._upnp_client.async_call_action(
+                "av_transport",
+                "RemoveAllTracksFromQueue",
+                {
+                    "InstanceID": 0,
+                },
+            )
+
+            _LOGGER.debug("Cleared queue on %s", self.player.host)
+
+        except Exception as err:
+            _LOGGER.warning("Failed to clear queue on %s: %s", self.player.host, err)
+            raise WiiMError(f"Failed to clear queue: {err}") from err

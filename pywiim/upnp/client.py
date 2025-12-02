@@ -50,6 +50,7 @@ class UpnpClient:
         self._dmr_device: DmrDevice | None = None  # DmrDevice wrapper for subscriptions (DLNA pattern)
         self._av_transport_service: Any | None = None
         self._rendering_control_service: Any | None = None
+        self._content_directory_service: Any | None = None
         self._notify_server: AiohttpNotifyServer | None = None
         self._internal_session: ClientSession | None = None  # Session we created internally (only if needed)
 
@@ -135,6 +136,19 @@ class UpnpClient:
             # Get RenderingControl service
             self._rendering_control_service = self._device.service("urn:schemas-upnp-org:service:RenderingControl:1")
 
+            # Get ContentDirectory service (for queue browsing) - optional
+            try:
+                self._content_directory_service = self._device.service(
+                    "urn:schemas-upnp-org:service:ContentDirectory:1"
+                )
+            except KeyError:
+                # ContentDirectory is optional - not all devices support it
+                self._content_directory_service = None
+                _LOGGER.debug(
+                    "Device %s does not advertise ContentDirectory service - queue retrieval will not be available",
+                    self.host,
+                )
+
             if not self._av_transport_service:
                 _LOGGER.warning(
                     "⚠️  Device %s does not advertise AVTransport service - UPnP eventing may not work",
@@ -145,12 +159,18 @@ class UpnpClient:
                     "⚠️  Device %s does not advertise RenderingControl service - UPnP volume events may not work",
                     self.host,
                 )
+            if not self._content_directory_service:
+                _LOGGER.info(
+                    "ℹ️  Device %s does not advertise ContentDirectory service - queue retrieval will not be available",
+                    self.host,
+                )
 
             _LOGGER.info(
-                "✅ UPnP client initialized for %s: AVTransport=%s, RenderingControl=%s",
+                "✅ UPnP client initialized for %s: AVTransport=%s, RenderingControl=%s, ContentDirectory=%s",
                 self.host,
                 self._av_transport_service is not None,
                 self._rendering_control_service is not None,
+                self._content_directory_service is not None,
             )
 
         except TimeoutError as err:
@@ -354,6 +374,11 @@ class UpnpClient:
         return self._rendering_control_service
 
     @property
+    def content_directory(self) -> Any:
+        """Get ContentDirectory service."""
+        return self._content_directory_service
+
+    @property
     def notify_server(self) -> AiohttpNotifyServer:
         """Get notify server instance."""
         if self._notify_server is None:
@@ -385,6 +410,7 @@ class UpnpClient:
         service_attr_map = {
             "avtransport": "_av_transport_service",
             "renderingcontrol": "_rendering_control_service",
+            "contentdirectory": "_content_directory_service",
         }
         service_attr = service_attr_map.get(service_name.lower())
         if not service_attr:
@@ -615,14 +641,17 @@ class UpnpClient:
         """Call UPnP service action.
 
         Args:
-            service_name: Name of service ("AVTransport" or "RenderingControl")
-            action: Action name (e.g., "Play", "Pause", "SetVolume")
+            service_name: Name of service ("AVTransport", "RenderingControl", or "ContentDirectory")
+            action: Action name (e.g., "Play", "Pause", "SetVolume", "Browse")
             arguments: Action arguments
 
         Returns:
             Action response as dict
         """
-        service = getattr(self, f"_{service_name.lower().replace(' ', '_')}_service")
+        # Normalize service name for attribute lookup
+        service_name_lower = service_name.lower().replace(" ", "_")
+        service_attr = f"_{service_name_lower}_service"
+        service = getattr(self, service_attr, None)
         if not service:
             raise UpnpError(f"Service {service_name} not available")
 
@@ -918,3 +947,58 @@ class UpnpClient:
             del result["errors"]
 
         return result
+
+    async def browse_queue(
+        self,
+        object_id: str = "Q:0",
+        starting_index: int = 0,
+        requested_count: int = 0,
+    ) -> dict[str, Any]:
+        """Browse queue contents via ContentDirectory Browse action.
+
+        Follows SoCo pattern: Uses Browse action to retrieve queue items.
+        ObjectID "Q:0" is the standard queue identifier (Sonos uses this).
+
+        **Availability Note:**
+        ContentDirectory service is only available on:
+        - WiiM Amp (when USB drive is connected)
+        - WiiM Ultra (when USB drive is connected)
+
+        Other WiiM devices do not expose ContentDirectory service.
+
+        Args:
+            object_id: Queue object ID (default "Q:0" for standard queue)
+            starting_index: Starting index for pagination (0 = first item)
+            requested_count: Number of items to retrieve (0 = all available)
+
+        Returns:
+            Dictionary with:
+            - Result: DIDL-Lite XML string containing queue items
+            - NumberReturned: Number of items returned
+            - TotalMatches: Total number of items in queue
+            - UpdateID: Update ID for change detection
+
+        Raises:
+            UpnpError: If ContentDirectory service is not available or action fails
+        """
+        if not self._content_directory_service:
+            raise UpnpError("ContentDirectory service not available")
+
+        try:
+            result = await self.async_call_action(
+                "ContentDirectory",
+                "Browse",
+                {
+                    "ObjectID": object_id,
+                    "BrowseFlag": "BrowseDirectChildren",
+                    "Filter": "*",  # Get all properties
+                    "StartingIndex": starting_index,
+                    "RequestedCount": requested_count,
+                    "SortCriteria": "",  # Default sorting
+                },
+            )
+            _LOGGER.debug("Browse queue result for %s: %d items", self.host, result.get("NumberReturned", 0))
+            return result
+        except Exception as err:
+            _LOGGER.warning("Browse queue failed for %s: %s", self.host, err)
+            raise UpnpError(f"Browse queue failed: {err}") from err
