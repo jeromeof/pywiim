@@ -1,4 +1,4 @@
-.PHONY: help format lint typecheck test clean install dev-install
+.PHONY: help format lint typecheck test clean install dev-install check
 
 help:
 	@echo "Available targets:"
@@ -6,6 +6,7 @@ help:
 	@echo "  make lint        - Lint code with Ruff"
 	@echo "  make typecheck   - Type check with mypy"
 	@echo "  make test        - Run tests with pytest"
+	@echo "  make check       - Run all CI checks (format check + lint + test)"
 	@echo "  make clean       - Clean build artifacts"
 	@echo "  make install     - Install package"
 	@echo "  make dev-install - Install package with dev dependencies"
@@ -22,6 +23,18 @@ lint:
 typecheck:
 	@echo "Type checking with mypy..."
 	mypy pywiim
+
+check:
+	@echo "Running all CI checks..."
+	@echo "1. Checking import sorting..."
+	isort pywiim tests --check-only --diff || (echo "❌ Import sorting failed! Run 'make format' to fix." && exit 1)
+	@echo "✅ Import sorting OK"
+	@echo "2. Linting with Ruff..."
+	ruff check pywiim tests || (echo "❌ Linting failed!" && exit 1)
+	@echo "✅ Linting OK"
+	@echo "3. Running unit tests..."
+	pytest tests/unit/ -x --tb=short -q
+	@echo "✅ All checks passed!"
 
 test:
 	@echo "Running tests with pytest..."
