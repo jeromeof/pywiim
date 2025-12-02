@@ -1009,56 +1009,56 @@ class PlayerProperties:
         """Whether EQ control is supported."""
         if not self.player.client:
             return False
-        return self.player.client.capabilities.get("supports_eq", False)
+        return bool(self.player.client.capabilities.get("supports_eq", False))
 
     @property
     def supports_presets(self) -> bool:
         """Whether preset/favorites are supported."""
         if not self.player.client:
             return False
-        return self.player.client.capabilities.get("supports_presets", False)
+        return bool(self.player.client.capabilities.get("supports_presets", False))
 
     @property
     def supports_audio_output(self) -> bool:
         """Whether audio output mode control is supported."""
         if not self.player.client:
             return False
-        return self.player.client.capabilities.get("supports_audio_output", False)
+        return bool(self.player.client.capabilities.get("supports_audio_output", False))
 
     @property
     def supports_metadata(self) -> bool:
         """Whether metadata retrieval (getMetaInfo) is supported."""
         if not self.player.client:
             return False
-        return self.player.client.capabilities.get("supports_metadata", False)
+        return bool(self.player.client.capabilities.get("supports_metadata", False))
 
     @property
     def supports_alarms(self) -> bool:
         """Whether alarm clock feature is supported."""
         if not self.player.client:
             return False
-        return self.player.client.capabilities.get("supports_alarms", False)
+        return bool(self.player.client.capabilities.get("supports_alarms", False))
 
     @property
     def supports_sleep_timer(self) -> bool:
         """Whether sleep timer feature is supported."""
         if not self.player.client:
             return False
-        return self.player.client.capabilities.get("supports_sleep_timer", False)
+        return bool(self.player.client.capabilities.get("supports_sleep_timer", False))
 
     @property
     def supports_led_control(self) -> bool:
         """Whether LED control is supported."""
         if not self.player.client:
             return False
-        return self.player.client.capabilities.get("supports_led_control", False)
+        return bool(self.player.client.capabilities.get("supports_led_control", False))
 
     @property
     def supports_enhanced_grouping(self) -> bool:
         """Whether enhanced multiroom grouping features are supported."""
         if not self.player.client:
             return False
-        return self.player.client.capabilities.get("supports_enhanced_grouping", False)
+        return bool(self.player.client.capabilities.get("supports_enhanced_grouping", False))
 
     # === UPnP Capabilities ===
     # These are determined at runtime based on UPnP client initialization
