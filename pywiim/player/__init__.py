@@ -187,7 +187,12 @@ class Player(PlayerBase):
         await self._media_ctrl.seek(position)
 
     async def play_url(self, url: str, enqueue: Literal["add", "next", "replace", "play"] = "replace") -> None:
-        """Play a URL directly with optional enqueue support."""
+        """Play a URL directly with optional enqueue support.
+
+        Note: This is a fire-and-forget API. Invalid URLs won't raise exceptions.
+        Check play_state after a few seconds to verify playback started.
+        See MediaControl.play_url() for full documentation.
+        """
         await self._media_ctrl.play_url(url, enqueue)
 
     async def play_playlist(self, playlist_url: str) -> None:

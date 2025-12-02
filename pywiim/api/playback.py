@@ -330,11 +330,17 @@ class PlaybackAPI:
     async def play_url(self, url: str) -> None:
         """Play a URL directly.
 
+        Note: This is a fire-and-forget API. The device accepts URLs without
+        validation - invalid, unreachable, or non-audio URLs won't cause errors.
+        The device attempts playback asynchronously and may end up in 'pause'
+        or 'idle' state if playback fails.
+
         Args:
-            url: URL to play.
+            url: URL to play (http/https to audio file or stream).
 
         Raises:
-            WiiMError: If the request fails.
+            WiiMError: If the HTTP request to the device fails (network error).
+                Does NOT raise for invalid/unreachable media URLs.
         """
         encoded = quote(url, safe=":/?&=#%")
         await self._request(f"{API_ENDPOINT_PLAY_URL}{encoded}")  # type: ignore[attr-defined]

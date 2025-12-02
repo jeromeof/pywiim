@@ -1187,6 +1187,54 @@ Queue management methods will raise `WiiMError` if:
 
 Announcement playback will attempt state restoration even if playback fails. Expected warnings (e.g., streaming service source restore) are logged but don't raise exceptions.
 
+#### Fire-and-Forget URL Playback
+
+**Important:** The `play_url()` method uses a fire-and-forget API. The LinkPlay device accepts URLs without validation, meaning:
+
+- **Invalid URLs don't raise exceptions** - non-existent domains, 404 errors, wrong protocols (ftp://), empty strings, or non-audio files are all accepted by the API
+- **Device attempts playback asynchronously** - the API returns immediately before verifying if the URL is actually playable
+- **Failed playback results in 'pause' or 'idle' state** - the device will try to play and silently fail if the URL doesn't work
+
+##### What Works Without Errors
+
+| URL Type | API Response | Device State |
+|----------|-------------|--------------|
+| Non-existent domain | ✅ Accepted | `pause` |
+| 404 Not Found | ✅ Accepted | `pause` |
+| Invalid protocol (ftp://) | ✅ Accepted | `pause` |
+| Empty string | ✅ Accepted | `pause` |
+| Non-audio file (.txt, .html) | ✅ Accepted | `idle` |
+
+##### Detecting Playback Failures
+
+If your integration needs to verify playback actually started, check the state after a delay:
+
+```python
+async def async_play_media(
+    self,
+    media_type: str,
+    media_id: str,
+    **kwargs: Any,
+) -> None:
+    """Play media with optional failure detection."""
+    await self.coordinator.player.play_url(media_id)
+    
+    # Optional: Verify playback started
+    await asyncio.sleep(3)  # Give device time to attempt playback
+    await self.coordinator.async_refresh()
+    
+    if self.coordinator.player.play_state not in ("play", "playing"):
+        _LOGGER.warning(
+            "Playback may have failed for URL: %s (state: %s)",
+            media_id,
+            self.coordinator.player.play_state,
+        )
+        # Optionally raise an error for the UI
+        # raise HomeAssistantError(f"Failed to play: {media_id}")
+```
+
+**Note:** Adding verification introduces a 3+ second delay. Most integrations skip this and rely on the user to notice if playback doesn't start. The pywiim library intentionally does not include built-in verification to keep the API fast and simple.
+
 **Best Practice:** Check for UPnP client availability before enabling queue features:
 
 ```python

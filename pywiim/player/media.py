@@ -248,9 +248,28 @@ class MediaControl:
     async def play_url(self, url: str, enqueue: Literal["add", "next", "replace", "play"] = "replace") -> None:
         """Play a URL directly with optional enqueue support.
 
+        **Note: Fire-and-Forget API**
+
+        The LinkPlay API accepts URLs without validation. This method returns
+        successfully even if the URL is invalid, unreachable, or not an audio file.
+        The device will attempt to play asynchronously and may end up in 'pause'
+        or 'idle' state if playback fails.
+
+        To verify playback actually started, wait a few seconds after calling
+        this method, then check `player.play_state`. If it's 'pause' or 'idle'
+        instead of 'play', the URL likely failed.
+
         Args:
-            url: URL to play.
-            enqueue: How to enqueue the media.
+            url: URL to play. Supports http/https URLs to audio files or streams.
+            enqueue: How to enqueue the media:
+                - "replace" (default): Replace current playback with URL
+                - "play": Same as replace
+                - "add": Add to end of queue (requires UPnP client)
+                - "next": Insert after current track (requires UPnP client)
+
+        Raises:
+            WiiMError: If enqueue='add' or 'next' and UPnP client is not available.
+                Note: Does NOT raise for invalid/unreachable URLs.
         """
         # Call API (raises on failure)
         if enqueue in ("add", "next"):
