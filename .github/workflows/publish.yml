@@ -1,16 +1,16 @@
-name: Publish to PyPI
+name: Release and Publish
 
 on:
   push:
     tags:
-      - 'v*'  # Trigger on version tags like v1.0.14
+      - 'v*'  # Trigger on version tags like v2.1.28
 
 jobs:
-  publish:
+  release:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      id-token: write
+      contents: write  # Required for creating releases
+      id-token: write  # Required for PyPI trusted publishing
     
     steps:
     - uses: actions/checkout@v4
@@ -29,6 +29,31 @@ jobs:
     - name: Build package
       run: |
         python -m build
+    
+    - name: Extract release notes from CHANGELOG
+      id: changelog
+      run: |
+        # Extract notes for this version from CHANGELOG.md
+        VERSION=${GITHUB_REF_NAME#v}
+        echo "Extracting notes for version $VERSION"
+        # Get content between this version header and the next version header
+        NOTES=$(awk "/^## \[$VERSION\]/{flag=1; next} /^## \[/{flag=0} flag" CHANGELOG.md)
+        # Handle multi-line output
+        echo "notes<<EOF" >> $GITHUB_OUTPUT
+        echo "$NOTES" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+    
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        name: Release ${{ github.ref_name }}
+        body: ${{ steps.changelog.outputs.notes }}
+        draft: false
+        prerelease: false
+        files: |
+          dist/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
     - name: Publish to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
