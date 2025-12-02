@@ -13,6 +13,10 @@ coverage:
         target: 55%  # Current patch: 58.85%, gradually increasing
         threshold: 1%
 
+ignore:
+  - "scripts/**/*"  # Manual test scripts don't need unit test coverage
+  - "tests/**/*"    # Test files themselves
+
 flags:
   unittests:
     paths:
