@@ -671,9 +671,10 @@ async def _async_update_data(self):
         "volume_level": self.player.volume_level,
         "is_muted": self.player.is_muted,
         "play_state": self.player.play_state,
-        "media_title": self.player.media_title,
+        "media_title": self.player.media_title,  # Falls back to URL filename
         "media_artist": self.player.media_artist,
         "media_album": self.player.media_album,
+        "media_content_id": self.player.media_content_id,  # URL if playing from play_url()
         "media_image_url": self.player.media_image_url,
         "media_position": self.player.media_position,
         "media_duration": self.player.media_duration,

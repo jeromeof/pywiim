@@ -259,6 +259,8 @@ class MediaControl:
             await self._enqueue_via_upnp(url, enqueue)  # type: ignore[arg-type]
         else:
             await self.player.client.play_url(url)
+            # Track URL for media_title fallback (only for replace/play modes)
+            self.player._last_played_url = url
 
         # Call callback to notify state change
         if self.player._on_state_changed:

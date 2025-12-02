@@ -118,8 +118,38 @@ class PlayerProperties:
 
     @property
     def media_title(self) -> str | None:
-        """Current track title from cached status."""
-        return self._status_field("title")
+        """Current track title from cached status.
+
+        Falls back to extracting filename from last played URL if device
+        doesn't report a title (common with direct URL playback).
+        """
+        title = self._status_field("title")
+        if title:
+            return title
+
+        # Fallback: extract filename from last played URL
+        url = self.player._last_played_url
+        if url:
+            from urllib.parse import unquote, urlparse
+
+            try:
+                parsed = urlparse(url)
+                path = parsed.path
+                if path:
+                    # Get the last path segment
+                    filename = path.rsplit("/", 1)[-1]
+                    if filename:
+                        # Decode URL-encoded characters
+                        filename = unquote(filename)
+                        # Remove query parameters if they snuck in
+                        if "?" in filename:
+                            filename = filename.split("?", 1)[0]
+                        if filename:
+                            return filename
+            except Exception:
+                pass  # Don't let URL parsing errors break title retrieval
+
+        return None
 
     @property
     def media_artist(self) -> str | None:
@@ -130,6 +160,18 @@ class PlayerProperties:
     def media_album(self) -> str | None:
         """Current track album from cached status."""
         return self._status_field("album", "album_name")
+
+    @property
+    def media_content_id(self) -> str | None:
+        """Current media content identifier (URL if playing from URL).
+
+        Returns the URL that was passed to play_url() when playing URL-based media.
+        This is useful for Home Assistant integration to expose the current media source.
+
+        Note: Only populated for URL-based playback initiated via play_url().
+        Other sources (Spotify, Bluetooth, etc.) will return None.
+        """
+        return self.player._last_played_url
 
     @property
     def media_duration(self) -> int | None:

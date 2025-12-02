@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`media_content_id` property** - Returns the URL when playing media via `play_url()`
+  - Useful for Home Assistant integration to expose `media_content_id` entity attribute
+  - Returns `None` for non-URL sources (Spotify, Bluetooth, etc.)
+
+- **`media_title` URL fallback** - Extracts filename from URL when device doesn't report a title
+  - Common with direct URL playback where device doesn't parse metadata
+  - Examples: `SoundHelix-Song-1.mp3` from `https://example.com/SoundHelix-Song-1.mp3`
+  - URL-decodes special characters (e.g., `%20` → space)
+  - Falls back only when device title is empty/unknown
+
 ## [2.1.28] - 2025-12-02
 
 ### Added

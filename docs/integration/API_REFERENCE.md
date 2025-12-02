@@ -425,9 +425,10 @@ player.volume_level  # float | None (0.0-1.0)
 player.is_muted  # bool | None
 player.play_state  # str | None ("play", "pause", "idle", "load")
 player.source  # str | None
-player.media_title  # str | None
+player.media_title  # str | None (falls back to URL filename if no title)
 player.media_artist  # str | None
 player.media_album  # str | None
+player.media_content_id  # str | None (URL if playing from play_url())
 player.media_image_url  # str | None (cover art URL)
 player.media_sample_rate  # int | None (Hz)
 player.media_bit_depth  # int | None (bits)

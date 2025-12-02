@@ -596,6 +596,11 @@ class Player(PlayerBase):
         return self._properties.media_album
 
     @property
+    def media_content_id(self) -> str | None:
+        """Current media content identifier (URL if playing from URL)."""
+        return self._properties.media_content_id
+
+    @property
     def media_duration(self) -> int | None:
         """Current track duration in seconds from cached status."""
         return self._properties.media_duration
