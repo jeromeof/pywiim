@@ -372,7 +372,7 @@ class FeatureTester:
             try:
                 await self.player.refresh()
                 original_play_state = self.player.play_state
-                was_playing = original_play_state in ["play", "playing"]
+                was_playing = self.player.is_playing
                 if was_playing:
                     # Try to stop playback to allow source switching
                     try:

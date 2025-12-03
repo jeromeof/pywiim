@@ -317,7 +317,7 @@ class PlayerMonitor:
                 # Role is updated by player.refresh() via _synchronize_group_state()
                 # Use player.role as source of truth (computed from group object)
                 role = self.player.role
-                is_playing = self.player.play_state in ("play", "playing")
+                is_playing = self.player.is_playing
 
                 # Check UPnP health using change-based detection
                 upnp_working = False
@@ -376,7 +376,7 @@ class PlayerMonitor:
                     current_role = self.player.role
 
                 # Log position/progress if playing
-                if self.player.play_state in ("play", "playing") and self.player.media_position is not None:
+                if self.player.is_playing and self.player.media_position is not None:
                     position = self.player.media_position
                     duration = self.player.media_duration
                     if duration and duration > 0:
@@ -617,19 +617,20 @@ class PlayerMonitor:
         print()
 
         # ===== PLAYBACK STATUS =====
-        play_state = self.player.play_state or "unknown"
-        if play_state == "play":
+        # Use normalized state property for clean display
+        state = self.player.state  # "playing", "paused", "idle", or "buffering"
+        if state == "playing":
             state_icon = "▶️"
             state_text = "PLAYING"
-        elif play_state == "pause":
+        elif state == "paused":
             state_icon = "⏸️"
             state_text = "PAUSED"
-        elif play_state == "stop":
+        elif state == "buffering":
+            state_icon = "⏳"
+            state_text = "BUFFERING"
+        else:  # idle
             state_icon = "⏹️"
-            state_text = "STOPPED"
-        else:
-            state_icon = "⏺️"
-            state_text = play_state.upper()
+            state_text = "IDLE"
 
         volume = self.player.volume_level
         volume_str = f"{volume:.0%}" if volume is not None else "?"
@@ -1223,16 +1224,16 @@ class PlayerMonitor:
         # Build status line
         status_parts = []
 
-        # Play state
-        play_state = self.player.play_state or "unknown"
-        if play_state == "play":
+        # Play state - use normalized state property
+        state = self.player.state  # "playing", "paused", "idle", or "buffering"
+        if state == "playing":
             status_parts.append("▶️  PLAYING")
-        elif play_state == "pause":
+        elif state == "paused":
             status_parts.append("⏸️  PAUSED")
-        elif play_state == "stop":
-            status_parts.append("⏹️  STOPPED")
-        else:
-            status_parts.append(f"⏺️  {play_state.upper()}")
+        elif state == "buffering":
+            status_parts.append("⏳  BUFFERING")
+        else:  # idle
+            status_parts.append("⏹️  IDLE")
 
         # Volume
         volume = self.player.volume_level
