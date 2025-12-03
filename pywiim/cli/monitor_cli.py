@@ -1048,84 +1048,47 @@ class PlayerMonitor:
                 for line in group_lines:
                     print(line)
                 print()
+
+        # ===== GROUP DEBUG INFO =====
+        # Show compact grouping debug info (useful for troubleshooting role detection)
+        debug_parts = []
+
+        # Group field from device_info (0=solo, non-0=in group)
+        if self.player.device_info:
+            group_val = self.player.device_info.group
+            debug_parts.append(f"group={group_val}")
+
+        # Multiroom version (wmrm protocol version)
+        if self.last_multiroom:
+            wmrm_ver = self.last_multiroom.get("wmrm_version", "?")
+            slaves_count = self.last_multiroom.get("slaves", 0)
+            debug_parts.append(f"slaves={slaves_count}")
+            debug_parts.append(f"wmrm={wmrm_ver}")
+
+        # Master info (only shown if slave)
+        if role == "slave":
+            if self.player.device_info:
+                master_ip = self.player.device_info.master_ip or "?"
+                debug_parts.append(f"master_ip={master_ip}")
+            if self.player.group and self.player.group.master:
+                debug_parts.append(f"master_name={self.player.group.master.name or self.player.group.master.host}")
+
+        # Slave list (only shown if master with slaves)
+        if role == "master":
+            if self.last_group_info and self.last_group_info.slave_hosts:
+                slaves_str = ", ".join(self.last_group_info.slave_hosts[:3])
+                if len(self.last_group_info.slave_hosts) > 3:
+                    slaves_str += f" +{len(self.last_group_info.slave_hosts) - 3}"
+                debug_parts.append(f"slave_hosts=[{slaves_str}]")
+
+        # Player group object status
+        if self.player.group:
+            debug_parts.append(f"group_obj=linked({self.player.group.size})")
         else:
-            # Show debug info when detected as solo (for troubleshooting)
-            debug_lines = []
-            debug_lines.append(f"🔍 Debug ({role} detected):")
+            debug_parts.append("group_obj=None")
 
-            # Always show multiroom data (even if None/empty)
-            if self.last_multiroom:
-                slaves_data = self.last_multiroom.get("slaves", "N/A")
-                slave_list = self.last_multiroom.get("slave_list", "N/A")
-                master_field = self.last_multiroom.get("master", "N/A")
-                debug_lines.append(f"   multiroom.slaves: {slaves_data} (type: {type(slaves_data).__name__})")
-                debug_lines.append(f"   multiroom.slave_list: {slave_list}")
-                debug_lines.append(f"   multiroom.master: {master_field}")
-                debug_lines.append(f"   multiroom (full): {self.last_multiroom}")
-            else:
-                debug_lines.append("   multiroom: None (not fetched or empty)")
-
-            # Show device_info
-            if self.player.device_info:
-                group_field = self.player.device_info.group or "N/A"
-                master_uuid = self.player.device_info.master_uuid or "N/A"
-                master_ip = self.player.device_info.master_ip or "N/A"
-                debug_lines.append(f"   device_info.group: {group_field}")
-                debug_lines.append(f"   device_info.master_uuid: {master_uuid}")
-                debug_lines.append(f"   device_info.master_ip: {master_ip}")
-            else:
-                debug_lines.append("   device_info: None")
-
-            # Show group object info (Player manages this)
-            if self.player.group:
-                debug_lines.append(f"   group.size: {self.player.group.size}")
-                debug_lines.append(f"   group.master: {self.player.group.master.host}")
-                debug_lines.append(f"   group.slaves: {[s.host for s in self.player.group.slaves]}")
-            else:
-                debug_lines.append("   group: None (solo)")
-
-            for line in debug_lines:
-                print(line)
-            print()
-
-        # Show debug info for master/slave roles (for troubleshooting)
-        if role != "solo":
-            debug_lines = []
-            debug_lines.append(f"🔍 Debug ({role} detected):")
-
-            # Always show multiroom data (even if None/empty)
-            if self.last_multiroom:
-                slaves_data = self.last_multiroom.get("slaves", "N/A")
-                slave_list = self.last_multiroom.get("slave_list", "N/A")
-                master_field = self.last_multiroom.get("master", "N/A")
-                debug_lines.append(f"   multiroom.slaves: {slaves_data} (type: {type(slaves_data).__name__})")
-                debug_lines.append(f"   multiroom.slave_list: {slave_list}")
-                debug_lines.append(f"   multiroom.master: {master_field}")
-                debug_lines.append(f"   multiroom (full): {self.last_multiroom}")
-            else:
-                debug_lines.append("   multiroom: None (not fetched or empty)")
-
-            # Show device_info
-            if self.player.device_info:
-                group_field = self.player.device_info.group or "N/A"
-                master_uuid = self.player.device_info.master_uuid or "N/A"
-                master_ip = self.player.device_info.master_ip or "N/A"
-                debug_lines.append(f"   device_info.group: {group_field}")
-                debug_lines.append(f"   device_info.master_uuid: {master_uuid}")
-                debug_lines.append(f"   device_info.master_ip: {master_ip}")
-            else:
-                debug_lines.append("   device_info: None")
-
-            # Show group object info (Player manages this)
-            if self.player.group:
-                debug_lines.append(f"   group.size: {self.player.group.size}")
-                debug_lines.append(f"   group.master: {self.player.group.master.host}")
-                debug_lines.append(f"   group.slaves: {[s.host for s in self.player.group.slaves]}")
-            else:
-                debug_lines.append("   group: None")
-
-            for line in debug_lines:
-                print(line)
+        if debug_parts:
+            print(f"🔍 {role.upper()}: {' | '.join(debug_parts)}")
             print()
 
         # ===== NETWORK INFO =====
