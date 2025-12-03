@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.36] - 2025-12-03
+
+### Documentation
+- Removed client-level API Mixins section from API reference - users should use Player class, not client methods directly
+- Updated usage examples to demonstrate Player pattern instead of raw WiiMClient
+- Clarified WiiMClient is low-level and primarily for internal use
+
 ## [2.1.35] - 2025-12-03
 
 ### Added
