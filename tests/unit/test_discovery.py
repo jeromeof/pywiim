@@ -13,7 +13,9 @@ from pywiim.discovery import (
     DiscoveredDevice,
     discover_devices,
     discover_via_ssdp,
+    is_known_linkplay,
     is_likely_non_linkplay,
+    is_linkplay_device,
     validate_device,
 )
 from pywiim.exceptions import WiiMError
@@ -176,14 +178,16 @@ class TestValidateDevice:
         mock_client.get_player_status = AsyncMock()
         mock_client.close = AsyncMock()
 
-        with patch("pywiim.discovery.WiiMClient", return_value=mock_client):
-            validated = await validate_device(device)
+        # Mock is_linkplay_device to return True (device responds to LinkPlay API)
+        with patch("pywiim.discovery.is_linkplay_device", return_value=True):
+            with patch("pywiim.discovery.WiiMClient", return_value=mock_client):
+                validated = await validate_device(device)
 
-            assert validated.validated is True
-            assert validated.name == "Test Device"
-            assert validated.model == "WiiM Pro"
-            assert validated.vendor == "wiim"
-            mock_client.close.assert_called_once()
+                assert validated.validated is True
+                assert validated.name == "Test Device"
+                assert validated.model == "WiiM Pro"
+                assert validated.vendor == "wiim"
+                mock_client.close.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_validate_device_already_validated(self):
@@ -196,7 +200,7 @@ class TestValidateDevice:
 
     @pytest.mark.asyncio
     async def test_validate_device_validation_failure(self):
-        """Test device validation failure."""
+        """Test device validation failure during full validation phase."""
         device = DiscoveredDevice(ip="192.168.1.100", port=80, protocol="http")
 
         mock_client = MagicMock()
@@ -204,21 +208,74 @@ class TestValidateDevice:
         mock_client._detect_capabilities = AsyncMock(side_effect=WiiMError("Connection failed"))
         mock_client.close = AsyncMock()
 
-        with patch("pywiim.discovery.WiiMClient", return_value=mock_client):
+        # Device passes LinkPlay probe but fails full validation
+        with patch("pywiim.discovery.is_linkplay_device", return_value=True):
+            with patch("pywiim.discovery.WiiMClient", return_value=mock_client):
+                validated = await validate_device(device)
+
+                assert validated.validated is False
+                mock_client.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_validate_device_not_linkplay(self):
+        """Test validation skips non-LinkPlay devices (e.g., Samsung TV, Sonos)."""
+        device = DiscoveredDevice(ip="192.168.1.100", port=80, protocol="http")
+
+        # Device does NOT respond to LinkPlay API (e.g., Samsung TV)
+        with patch("pywiim.discovery.is_linkplay_device", return_value=False):
             validated = await validate_device(device)
 
+            # Should return immediately without attempting full validation
             assert validated.validated is False
-            mock_client.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_validate_device_fast_path_known_linkplay(self):
+        """Test validation uses fast path for known LinkPlay devices (skips API probe)."""
+        # Device with WiiM in SSDP SERVER header
+        device = DiscoveredDevice(
+            ip="192.168.1.100",
+            port=80,
+            protocol="http",
+            ssdp_response={"SERVER": "Linux UPnP/1.0 WiiM/4.8.5"},
+        )
+        mock_device_info = DeviceInfo(
+            uuid="test-uuid",
+            name="WiiM Device",
+            model="WiiM Mini",
+            firmware="4.8.5",
+            mac="AA:BB:CC:DD:EE:FF",
+        )
+
+        mock_client = MagicMock()
+        mock_client.host = "192.168.1.100"
+        mock_client.port = 80
+        mock_client.capabilities = {"vendor": "wiim"}
+        mock_client._detect_capabilities = AsyncMock()
+        mock_client.get_device_info_model = AsyncMock(return_value=mock_device_info)
+        mock_client.get_player_status = AsyncMock()
+        mock_client.close = AsyncMock()
+
+        # is_linkplay_device should NOT be called because we use the fast path
+        with patch("pywiim.discovery.is_linkplay_device") as mock_probe:
+            with patch("pywiim.discovery.WiiMClient", return_value=mock_client):
+                validated = await validate_device(device)
+
+                assert validated.validated is True
+                assert validated.name == "WiiM Device"
+                # Fast path should skip the API probe
+                mock_probe.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_validate_device_client_creation_failure(self):
         """Test device validation when client creation fails."""
         device = DiscoveredDevice(ip="192.168.1.100", port=80, protocol="http")
 
-        with patch("pywiim.discovery.WiiMClient", side_effect=Exception("Failed")):
-            validated = await validate_device(device)
+        # Device passes LinkPlay probe but client creation fails
+        with patch("pywiim.discovery.is_linkplay_device", return_value=True):
+            with patch("pywiim.discovery.WiiMClient", side_effect=Exception("Failed")):
+                validated = await validate_device(device)
 
-            assert validated.validated is False
+                assert validated.validated is False
 
 
 class TestDiscoverDevices:
@@ -404,3 +461,167 @@ class TestIsLikelyNonLinkplay:
         assert is_likely_non_linkplay({"st": "urn:schemas-upnp-org:device:ZonePlayer:1"}) is True
         # Neither
         assert is_likely_non_linkplay({"SERVER": "Linux", "st": "upnp:rootdevice"}) is False
+
+    def test_samsung_server_header(self):
+        """Test Samsung device identified by SERVER header."""
+        ssdp_response = {"SERVER": "Samsung/1.0 UPnP/1.0"}
+        assert is_likely_non_linkplay(ssdp_response) is True
+
+    def test_samsung_sec_hhp_header(self):
+        """Test Samsung device identified by SEC_HHP pattern."""
+        ssdp_response = {"SERVER": "SEC_HHP_[TV] Samsung Q60 Series"}
+        assert is_likely_non_linkplay(ssdp_response) is True
+
+    def test_samsung_st_header(self):
+        """Test Samsung device identified by ST header."""
+        ssdp_response = {"st": "urn:samsung.com:device:RemoteControlReceiver:1"}
+        assert is_likely_non_linkplay(ssdp_response) is True
+
+    def test_smartthings_server_header(self):
+        """Test SmartThings device identified by SERVER header."""
+        ssdp_response = {"SERVER": "SmartThings/1.0 UPnP/1.0"}
+        assert is_likely_non_linkplay(ssdp_response) is True
+
+
+class TestIsKnownLinkplay:
+    """Test is_known_linkplay fast-path function."""
+
+    def test_wiim_server_header(self):
+        """Test WiiM device identified by SERVER header."""
+        ssdp_response = {"SERVER": "Linux UPnP/1.0 WiiM/4.8.5"}
+        assert is_known_linkplay(ssdp_response) is True
+
+    def test_linkplay_server_header(self):
+        """Test LinkPlay device identified by SERVER header."""
+        ssdp_response = {"SERVER": "Linux/5.10.0 Linkplay/2.0"}
+        assert is_known_linkplay(ssdp_response) is True
+
+    def test_arylic_server_header(self):
+        """Test Arylic device identified by SERVER header (if exposed).
+
+        Note: Many Arylic devices use generic 'Linux' headers, so this pattern
+        may not match in practice. They'll still work via the API probe.
+        """
+        ssdp_response = {"SERVER": "Linux UPnP/1.0 Arylic/3.2.1"}
+        assert is_known_linkplay(ssdp_response) is True
+
+    def test_audio_pro_server_header(self):
+        """Test Audio Pro device identified by SERVER header."""
+        ssdp_response = {"SERVER": "Linux UPnP/1.0 Audio Pro/1.5"}
+        assert is_known_linkplay(ssdp_response) is True
+
+    def test_ieast_server_header(self):
+        """Test iEAST device identified by SERVER header."""
+        ssdp_response = {"SERVER": "Linux UPnP/1.0 iEAST/2.0"}
+        assert is_known_linkplay(ssdp_response) is True
+
+    def test_generic_linux_not_known(self):
+        """Test generic Linux device is NOT identified as known LinkPlay."""
+        ssdp_response = {"SERVER": "Linux/5.15.0 UPnP/1.0"}
+        assert is_known_linkplay(ssdp_response) is False
+
+    def test_empty_response_not_known(self):
+        """Test empty response is not identified as known LinkPlay."""
+        assert is_known_linkplay({}) is False
+        assert is_known_linkplay(None) is False  # type: ignore[arg-type]
+
+    def test_case_insensitive_matching(self):
+        """Test pattern matching is case insensitive."""
+        assert is_known_linkplay({"SERVER": "linux upnp/1.0 wiim/4.8.5"}) is True
+        assert is_known_linkplay({"SERVER": "LINUX UPNP/1.0 WIIM/4.8.5"}) is True
+
+    def test_sonos_not_known_linkplay(self):
+        """Test Sonos device is NOT identified as known LinkPlay."""
+        ssdp_response = {"SERVER": "Linux UPnP/1.0 Sonos/70.1"}
+        assert is_known_linkplay(ssdp_response) is False
+
+    def test_samsung_not_known_linkplay(self):
+        """Test Samsung device is NOT identified as known LinkPlay."""
+        ssdp_response = {"SERVER": "Samsung/1.0 UPnP/1.0"}
+        assert is_known_linkplay(ssdp_response) is False
+
+
+class TestIsLinkplayDevice:
+    """Test is_linkplay_device probe function."""
+
+    @pytest.mark.asyncio
+    async def test_linkplay_device_responds(self):
+        """Test device that responds to getStatusEx is identified as LinkPlay."""
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={"project": "WiiM_Mini", "uuid": "123"})
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            result = await is_linkplay_device("192.168.1.100")
+            assert result is True
+
+    @pytest.mark.asyncio
+    async def test_non_linkplay_device_no_response(self):
+        """Test device that doesn't respond is not identified as LinkPlay."""
+        import aiohttp
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(side_effect=aiohttp.ClientError("Connection refused"))
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            result = await is_linkplay_device("192.168.1.100")
+            assert result is False
+
+    @pytest.mark.asyncio
+    async def test_non_linkplay_device_non_json_response(self):
+        """Test device that returns non-JSON is not identified as LinkPlay."""
+        import json
+
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(side_effect=json.JSONDecodeError("", "", 0))
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            result = await is_linkplay_device("192.168.1.100")
+            assert result is False
+
+    @pytest.mark.asyncio
+    async def test_device_returns_empty_dict(self):
+        """Test device that returns empty dict is not identified as LinkPlay."""
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={})  # Empty dict
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            result = await is_linkplay_device("192.168.1.100")
+            assert result is False
+
+    @pytest.mark.asyncio
+    async def test_device_timeout(self):
+        """Test device that times out is not identified as LinkPlay."""
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(side_effect=TimeoutError())
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            result = await is_linkplay_device("192.168.1.100")
+            assert result is False

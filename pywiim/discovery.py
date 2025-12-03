@@ -8,9 +8,13 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import json
 import logging
+import ssl
 from dataclasses import dataclass
 from typing import Any
+
+import aiohttp
 
 try:
     from async_upnp_client.search import async_search
@@ -25,7 +29,33 @@ __all__ = [
     "DiscoveredDevice",
     "discover_devices",
     "discover_via_ssdp",
+    "is_known_linkplay",
+    "is_linkplay_device",
     "validate_device",
+]
+
+# Known LinkPlay/WiiM server patterns (devices we're CERTAIN are LinkPlay)
+# These patterns are specific to LinkPlay devices that identify themselves in SSDP.
+# If a device matches these patterns, we can skip the API probe and go directly
+# to full validation - saves time and network calls.
+#
+# NOTE: Many LinkPlay devices (Arylic, Audio Pro) use GENERIC "Linux" headers
+# and will NOT match these patterns. That's okay - they'll go through the API probe.
+# Only add patterns here that are CONFIRMED to appear in real SSDP responses.
+KNOWN_LINKPLAY_SERVER_PATTERNS = [
+    # CONFIRMED patterns (from real device SSDP responses):
+    "WiiM",  # WiiM devices: "Linux UPnP/1.0 WiiM/4.8.5"
+    "Linkplay",  # Some devices include "Linkplay" in SERVER header
+    "LinkPlay",  # Case variant
+    # SPECULATIVE patterns (may work, needs confirmation from real devices):
+    # Many of these devices use generic "Linux" headers, so they may not match.
+    # If a device doesn't match, it just goes through the API probe (still works).
+    "Arylic",  # Arylic devices - UNCONFIRMED if they expose this in SSDP
+    "iEAST",  # iEAST/Muzo devices - UNCONFIRMED if they expose this in SSDP
+    "Audio Pro",  # Audio Pro devices - likely use generic "Linux" headers
+    "AudioPro",  # Audio Pro variant
+    "Muzo",  # Muzo devices (LinkPlay OEM)
+    # Add more as we discover them from real device SSDP responses
 ]
 
 # Known non-LinkPlay server patterns (ONLY devices we're CERTAIN are not LinkPlay)
@@ -39,6 +69,9 @@ NON_LINKPLAY_SERVER_PATTERNS = [
     "MINT-X",  # Sony devices - definitely not LinkPlay
     "KnOS",  # Kodi/OSMC - definitely not LinkPlay
     "Sonos",  # Sonos devices - definitely not LinkPlay
+    "Samsung",  # Samsung TVs and devices - definitely not LinkPlay
+    "SEC_HHP",  # Samsung Electronics pattern - definitely not LinkPlay
+    "SmartThings",  # Samsung SmartThings - definitely not LinkPlay
     # Add more ONLY if we're 100% certain they're not LinkPlay-compatible
     # DO NOT add generic patterns like "Linux" - Audio Pro uses this!
 ]
@@ -52,6 +85,8 @@ NON_LINKPLAY_ST_PATTERNS = [
     "urn:schemas-upnp-org:service:GroupRenderingControl",  # Sonos service - definitely not LinkPlay
     "urn:roku-com:device",  # Roku devices - definitely not LinkPlay
     "urn:dial-multiscreen-org:device:dial",  # DIAL protocol (Chromecast, etc.) - definitely not LinkPlay
+    "urn:samsung.com:device",  # Samsung devices - definitely not LinkPlay
+    "urn:samsung.com:service",  # Samsung services - definitely not LinkPlay
     # Add more ONLY if we're 100% certain they're not LinkPlay-compatible
 ]
 
@@ -230,18 +265,149 @@ async def discover_via_ssdp(
     return devices
 
 
+async def is_linkplay_device(
+    host: str,
+    port: int = 80,
+    timeout: float = 3.0,
+) -> bool:
+    """Quick check if a device responds to LinkPlay API endpoints.
+
+    Tries standard LinkPlay endpoints (getStatusEx, getStatus). If ANY returns
+    valid JSON, the device is confirmed as LinkPlay-compatible.
+
+    This is the definitive test - Samsung TVs, Sonos, and other non-LinkPlay
+    devices will NOT respond to /httpapi.asp?command=getStatusEx with valid JSON.
+
+    Args:
+        host: Device IP address
+        port: HTTP port (default 80)
+        timeout: Request timeout in seconds
+
+    Returns:
+        True if device responds to LinkPlay endpoints with valid JSON, False otherwise
+    """
+    # Standard LinkPlay endpoints to try (in order of preference)
+    endpoints = [
+        "/httpapi.asp?command=getStatusEx",  # Modern devices
+        "/httpapi.asp?command=getStatus",  # Fallback/legacy
+    ]
+
+    # Create SSL context that accepts self-signed certs (WiiM uses these)
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+
+    connector = aiohttp.TCPConnector(ssl=ssl_context)
+    client_timeout = aiohttp.ClientTimeout(total=timeout)
+
+    try:
+        async with aiohttp.ClientSession(connector=connector, timeout=client_timeout) as session:
+            for endpoint in endpoints:
+                # Try HTTPS first (WiiM default), then HTTP
+                for protocol in ["https", "http"]:
+                    try:
+                        url = f"{protocol}://{host}:{port}{endpoint}"
+                        async with session.get(url) as resp:
+                            if resp.status == 200:
+                                try:
+                                    data = await resp.json()
+                                    # Valid LinkPlay response = non-empty dict
+                                    if isinstance(data, dict) and len(data) > 0:
+                                        _LOGGER.debug(
+                                            "LinkPlay device confirmed at %s via %s (keys: %s)",
+                                            host,
+                                            endpoint,
+                                            list(data.keys())[:5],  # Log first 5 keys
+                                        )
+                                        return True
+                                except (json.JSONDecodeError, aiohttp.ContentTypeError):
+                                    # Not JSON = not LinkPlay
+                                    _LOGGER.debug(
+                                        "Device %s responded to %s but not with JSON",
+                                        host,
+                                        endpoint,
+                                    )
+                                    continue
+                    except TimeoutError:
+                        _LOGGER.debug(
+                            "Timeout probing %s://%s:%d%s",
+                            protocol,
+                            host,
+                            port,
+                            endpoint,
+                        )
+                        continue
+                    except aiohttp.ClientError as e:
+                        _LOGGER.debug(
+                            "Connection error probing %s://%s:%d%s: %s",
+                            protocol,
+                            host,
+                            port,
+                            endpoint,
+                            e,
+                        )
+                        continue
+                    except Exception as e:
+                        _LOGGER.debug(
+                            "Error probing %s://%s:%d%s: %s",
+                            protocol,
+                            host,
+                            port,
+                            endpoint,
+                            e,
+                        )
+                        continue
+    except Exception as e:
+        _LOGGER.debug("Failed to create session for probing %s: %s", host, e)
+
+    _LOGGER.debug("Device %s does not respond to LinkPlay API endpoints", host)
+    return False
+
+
 async def validate_device(device: DiscoveredDevice) -> DiscoveredDevice:
     """Validate a discovered device by querying its API.
+
+    Uses a three-phase approach:
+    1. Fast path: Check if device identified itself as LinkPlay in SSDP (skip probe)
+    2. Quick probe: Check if device responds to LinkPlay endpoints at all
+    3. Full validation: Get device info and capabilities
+
+    This prevents non-LinkPlay devices (Samsung TV, Sonos, etc.) from
+    being incorrectly validated or causing repeated connection attempts.
 
     Args:
         device: Device to validate
 
     Returns:
-        Updated device with full information
+        Updated device with full information (validated=True if successful)
     """
     if device.validated:
         return device
 
+    # Phase 1: Fast path - did device identify itself as LinkPlay in SSDP?
+    # If so, skip the API probe entirely - we know it's LinkPlay
+    skip_probe = False
+    if device.ssdp_response and is_known_linkplay(device.ssdp_response):
+        _LOGGER.debug(
+            "Device %s identified as LinkPlay via SSDP - skipping API probe",
+            device.ip,
+        )
+        skip_probe = True
+
+    # Phase 2: Quick probe - does device respond to LinkPlay API at all?
+    # This is fast and definitive - non-LinkPlay devices fail here immediately
+    # Skip this if we already know it's LinkPlay from SSDP
+    if not skip_probe:
+        if not await is_linkplay_device(device.ip, device.port, timeout=3.0):
+            _LOGGER.debug(
+                "Skipping %s - does not respond to LinkPlay API (not a WiiM/LinkPlay device)",
+                device.ip,
+            )
+            return device  # validated stays False
+
+    _LOGGER.debug("Device %s confirmed as LinkPlay, proceeding with full validation", device.ip)
+
+    # Phase 2: Full validation - get device info and capabilities
     try:
         # Use discovered protocol to set initial protocol priority
         # This ensures we try the discovered protocol first (e.g., HTTP for port 49152)
@@ -301,7 +467,7 @@ async def validate_device(device: DiscoveredDevice) -> DiscoveredDevice:
 
         except Exception as e:
             await client.close()
-            _LOGGER.debug("Validation failed for %s: %s", device.ip, e)
+            _LOGGER.debug("Full validation failed for %s: %s", device.ip, e)
 
     except Exception as e:
         _LOGGER.debug("Could not validate device %s: %s", device.ip, e)
@@ -468,4 +634,37 @@ def is_likely_non_linkplay(ssdp_response: dict[str, Any]) -> bool:
             return True
 
     # No matching patterns - can't filter, must validate
+    return False
+
+
+def is_known_linkplay(ssdp_response: dict[str, Any]) -> bool:
+    """Check if device is DEFINITELY a LinkPlay device based on SSDP headers.
+
+    This is the positive counterpart to is_likely_non_linkplay(). If this returns
+    True, we can skip the API probe and go directly to full validation - the device
+    has identified itself as LinkPlay/WiiM in its SSDP response.
+
+    Args:
+        ssdp_response: SSDP response dictionary containing headers
+
+    Returns:
+        True if device is DEFINITELY a LinkPlay device (skip API probe)
+        False if we need to probe to determine
+    """
+    if not ssdp_response:
+        return False
+
+    # Check SERVER header for known LinkPlay patterns
+    server = ssdp_response.get("SERVER", "") or ssdp_response.get("server", "")
+    if server:
+        server_upper = server.upper()
+        for pattern in KNOWN_LINKPLAY_SERVER_PATTERNS:
+            if pattern.upper() in server_upper:
+                _LOGGER.debug(
+                    "Device identified as LinkPlay via SSDP SERVER header: %s (matched: %s)",
+                    server,
+                    pattern,
+                )
+                return True
+
     return False

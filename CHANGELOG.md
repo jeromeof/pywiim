@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.32] - 2025-12-02
+
+### Added
+- **Enhanced device discovery validation** (GitHub Issue #141)
+  - Added three-tier validation to prevent non-LinkPlay devices (Samsung TV, Sonos) from being incorrectly discovered
+  - **Tier 1**: SSDP pattern filtering - immediately rejects known non-LinkPlay devices (Sonos, Samsung, Chromecast, Denon-Heos, SmartThings, Roku)
+  - **Tier 2**: Known LinkPlay fast path - devices with "WiiM" or "Linkplay" in SERVER header skip API probe
+  - **Tier 3**: API probe - tries `getStatusEx`/`getStatus` endpoints to definitively confirm LinkPlay compatibility
+  
+- **New discovery functions**:
+  - `is_linkplay_device(host, port, timeout)` - Quick probe to check if device responds to LinkPlay API
+  - `is_known_linkplay(ssdp_response)` - Check if SSDP response identifies a known LinkPlay device
+
+- **Samsung device filtering** - Added Samsung patterns to SSDP filters:
+  - SERVER patterns: `Samsung`, `SEC_HHP`, `SmartThings`
+  - ST patterns: `urn:samsung.com:device`, `urn:samsung.com:service`
+
+### Documentation
+- **Comprehensive LinkPlay ecosystem documentation** in `docs/user/DISCOVERY.md`:
+  - Documented the "white label" challenge (Arylic/Audio Pro use generic Linux headers)
+  - Explained the "Wiimu" namespace (`urn:schemas-wiimu-com:service:PlayQueue:1`) as the definitive identifier
+  - Documented manufacturer field mappings (WiiM → Linkplay, Arylic → Rakoit, etc.)
+  - Clarified that mDNS/TCP discovery is legacy and not used
+  - Hardware generation differences (MIPS vs ARM architectures)
+
 ## [2.1.31] - 2025-12-02
 
 ### Fixed

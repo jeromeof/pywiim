@@ -94,6 +94,124 @@ devices = await scan_network(
 )
 ```
 
+## LinkPlay Device Identification
+
+### The LinkPlay Ecosystem
+
+LinkPlay Technology Inc. is a Shanghai-based ODM (Original Design Manufacturer) that provides the silicon and software stack for a vast array of networked audio devices. While these devices are sold under different brands, they share a common firmware architecture:
+
+| Brand | Manufacturer Field | Notes |
+|-------|-------------------|-------|
+| **WiiM** | `Linkplay Technology Inc.` | First-party LinkPlay brand |
+| **Arylic** | `Rakoit Technology(SZ) Co., Ltd.` | Rakoit is the hardware manufacturing arm |
+| **Audio Pro** | `Audio Pro` | Swedish audio company using LinkPlay modules |
+| **iEAST** | `iEAST` | Budget-friendly LinkPlay devices |
+| **Muzo** | `Muzo` | Often shares iEAST/Rakoit identifiers |
+
+### The "White Label" Challenge
+
+Identifying LinkPlay devices on a network is challenging because manufacturers customize the SSDP/UPnP headers to maintain brand identity. The "LinkPlay" name is often scrubbed from user-facing metadata.
+
+**Why this matters**: When SSDP discovers devices, it finds ALL UPnP devices on the network - including Samsung TVs, Sonos speakers, Chromecast, and other non-LinkPlay devices that we need to filter out.
+
+### Network Discovery Identifiers
+
+LinkPlay devices can be identified through several network protocols:
+
+#### SSDP Headers
+
+| Header | LinkPlay Pattern | Non-LinkPlay Examples |
+|--------|-----------------|----------------------|
+| `SERVER` | `Linux/x.x UPnP/1.0...` (generic) | `Sonos/70.1`, `Samsung/1.0` |
+| `ST` | `urn:schemas-upnp-org:device:MediaRenderer:1` | `urn:schemas-upnp-org:device:ZonePlayer:1` (Sonos) |
+| `LOCATION` port | Usually `49152` | Sonos: `1400`, Samsung: `9197`, Chromecast: `8008` |
+
+**Important**: The `SERVER` header is **unreliable** for positive identification. Most LinkPlay devices (especially Arylic and Audio Pro) use generic `Linux/x.x.x UPnP/1.0 Portable SDK for UPnP devices/x.x.x` headers that are shared by thousands of IoT devices.
+
+#### The "Wiimu" Namespace (Definitive Identifier)
+
+The most reliable way to identify a LinkPlay device is the proprietary **"Wiimu"** service namespace in the UPnP description:
+
+```xml
+<service>
+  <serviceType>urn:schemas-wiimu-com:service:PlayQueue:1</serviceType>
+  <serviceId>urn:wiimu-com:serviceId:PlayQueue</serviceId>
+</service>
+```
+
+"Wiimu" (WiFi Music) is LinkPlay's legacy trade name. This namespace is **unique to LinkPlay devices** - no other manufacturer uses it. If a device exposes `PlayQueue:1` in its UPnP services, it is definitively a LinkPlay device.
+
+#### mDNS Service Type (Not Used)
+
+LinkPlay devices also advertise via mDNS (Multicast DNS / Bonjour):
+
+```
+_linkplay._tcp.local.
+```
+
+While this is 100% reliable for identification, **pywiim does not use mDNS discovery**. The mDNS/TCP approach is legacy and not actively used in modern integrations. SSDP combined with HTTP API probing provides equivalent reliability with better compatibility across network environments.
+
+### How pywiim Identifies LinkPlay Devices
+
+The library uses a **three-tier validation approach**:
+
+#### Tier 1: SSDP Pattern Filtering (Fast Reject)
+
+Known non-LinkPlay devices are rejected immediately based on SSDP headers:
+
+| Pattern Type | Examples |
+|-------------|----------|
+| **SERVER patterns** | `Sonos`, `Samsung`, `Chromecast`, `Denon-Heos`, `SmartThings` |
+| **ST patterns** | `urn:schemas-upnp-org:device:ZonePlayer` (Sonos), `urn:samsung.com:device` |
+
+This prevents unnecessary API probes to devices we know aren't LinkPlay.
+
+#### Tier 2: Known LinkPlay Fast Path (Skip Probe)
+
+Devices that identify themselves as LinkPlay in their SSDP `SERVER` header skip the API probe:
+
+| Pattern | Example |
+|---------|---------|
+| `WiiM` | `Linux UPnP/1.0 WiiM/4.8.5` |
+| `Linkplay` | `Linux/3.x.x Linkplay/4.8.5` |
+
+**Note**: Many LinkPlay devices (Arylic, Audio Pro) use generic `Linux` headers and won't match these patterns. They proceed to Tier 3.
+
+#### Tier 3: API Probe (Definitive Check)
+
+For devices that pass Tier 1 but don't match Tier 2, pywiim probes the LinkPlay HTTP API:
+
+```
+/httpapi.asp?command=getStatusEx
+/httpapi.asp?command=getStatus
+```
+
+If the device returns a valid JSON response, it's confirmed as LinkPlay. Non-LinkPlay devices (Samsung TVs, random Linux servers) will return 404, connection errors, or non-JSON responses.
+
+### Device-Specific Notes
+
+#### WiiM Devices
+- Usually include "WiiM" in SERVER header → Fast path
+- Modern devices (Pro, Amp, Ultra) support HTTPS API
+- Port 49152 for UPnP description, Port 80/443 for HTTP API
+
+#### Arylic Devices
+- Use generic "Linux" SERVER headers → Require API probe
+- Manufacturer: `Rakoit Technology(SZ) Co., Ltd.`
+- Some models (LP10) are NOT LinkPlay-based
+
+#### Audio Pro Devices
+- Use generic "Linux" SERVER headers → Require API probe
+- Some firmware versions hide the PlayQueue service from SSDP broadcasts
+- Still expose it in the full `description.xml`
+
+#### Hardware Generations
+
+| Generation | Chipset | Kernel | Devices |
+|------------|---------|--------|---------|
+| **Legacy (MIPS)** | MediaTek MT7688AN | Linux 2.6/3.10 | Arylic Up2Stream v3, older Audio Pro |
+| **Modern (ARM)** | Amlogic A113/A98 | Linux 4.x/5.x | WiiM Mini/Pro/Amp, newer devices |
+
 ## Discovery API
 
 ### `discover_devices()`
@@ -405,16 +523,32 @@ async def async_step_discovery(self):
 
 ### Performance Optimization
 
-The discovery system includes automatic optimization to skip validation of known non-LinkPlay devices:
+The discovery system uses a **three-tier validation approach** to minimize network traffic and discovery time:
 
-- **Quick filtering**: Uses SSDP `SERVER` headers to identify non-LinkPlay devices (Chromecast, Denon Heos, Sony, Kodi, etc.) before validation
-- **Conservative approach**: Only filters devices we're 100% certain are not LinkPlay-compatible
-- **Safe fallback**: Generic "Linux" headers (used by Audio Pro, Arylic, WiiM) pass through to validation
-- **Performance improvement**: Reduces discovery time by 50-70% when non-LinkPlay devices are present on the network
+#### Tier 1: SSDP Pattern Filtering (Instant)
+Known non-LinkPlay devices are rejected immediately based on SSDP headers:
+- Sonos, Samsung, Chromecast, Denon-Heos, SmartThings, Roku, etc.
+- No network calls required - pure string matching
 
-**Example**: If SSDP discovers 5 devices (4 non-LinkPlay + 1 WiiM):
-- **Before optimization**: ~45 seconds (validates all 5 devices)
-- **After optimization**: ~13-21 seconds (validates only 1-2 devices)
+#### Tier 2: Known LinkPlay Fast Path (~0ms)
+Devices that identify themselves as LinkPlay (e.g., "WiiM" in SERVER header) skip the API probe and go directly to full validation.
+
+#### Tier 3: API Probe (~1-3 seconds)
+For devices with generic headers (Arylic, Audio Pro), we probe the LinkPlay API endpoints (`getStatusEx`/`getStatus`) to confirm compatibility.
+
+**Performance characteristics**:
+
+| Device Type | Tier | Time | Network Calls |
+|-------------|------|------|--------------|
+| Samsung TV | 1 (rejected) | ~0ms | 0 |
+| Sonos | 1 (rejected) | ~0ms | 0 |
+| WiiM | 2 (fast path) | ~1s | 1 (full validation) |
+| Arylic | 3 (probe) | ~2-4s | 2 (probe + validation) |
+| Random device | 3 (probe fails) | ~3s | 1 (probe timeout) |
+
+**Example**: If SSDP discovers 5 devices (3 non-LinkPlay + 1 WiiM + 1 Arylic):
+- **Before optimization**: ~25 seconds (validates all 5 devices)
+- **After optimization**: ~5 seconds (skips 3, fast-paths 1, probes 1)
 
 For best performance:
 - Use SSDP when possible (includes automatic filtering)
