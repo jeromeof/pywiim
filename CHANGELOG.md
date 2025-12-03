@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.34] - 2025-12-02
+
+### Fixed
+- **Increased protocol probe timeouts for Audio Pro Link2 mTLS compatibility** (PR #1 by @notchris1)
+  - Increased connect timeout from 0.5s to 1.0s
+  - Increased total probe timeout from 2.0s to 5.0s
+  - Increased async timeout from 2.0s to 5.0s
+  - Audio Pro Link2 devices on port 4443 require mutual TLS (mTLS) authentication which can take several seconds to complete
+  - Changed `min()` to `max()` in timeout logic to ensure mTLS handshakes always have sufficient time regardless of caller-specified timeout
+  - Extracted timeout values into named constants (`PROBE_TIMEOUT_CONNECT`, `PROBE_TIMEOUT_TOTAL`, `PROBE_ASYNC_TIMEOUT`) for maintainability
+
 ## [2.1.33] - 2025-12-02
 
 ### Fixed

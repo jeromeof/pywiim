@@ -302,6 +302,15 @@ VENDOR_LINKPLAY_GENERIC = "linkplay_generic"
 DEFAULT_PORT = 443  # HTTPS port
 DEFAULT_TIMEOUT = 5.0  # seconds
 
+# Protocol probe timeout constants
+# These timeouts are set to accommodate mTLS handshake requirements for devices
+# like Audio Pro Link2 which use port 4443 and require mutual TLS authentication.
+# The mTLS exchange can take several seconds to complete, so these values provide
+# sufficient headroom for reliable connection establishment.
+PROBE_TIMEOUT_CONNECT = 1.0  # Connection timeout for protocol probe (seconds)
+PROBE_TIMEOUT_TOTAL = 5.0  # Total timeout for protocol probe (seconds)
+PROBE_ASYNC_TIMEOUT = 5.0  # Async operation timeout for protocol probe (seconds)
+
 # Play mode constants
 PLAY_MODE_NORMAL = "normal"
 PLAY_MODE_REPEAT_ALL = "repeat_all"
