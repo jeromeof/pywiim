@@ -57,6 +57,80 @@ Streaming services (Spotify, Amazon Music, Tidal, etc.) always report `queue_cou
 - Live radio: TuneIn, iHeartRadio (no "next track" concept)
 - Physical inputs: Line-in, Optical, Coaxial, HDMI (passthrough audio)
 
+### Playback State Properties
+
+These properties provide clean boolean checks for playback state, eliminating the need to parse raw `play_state` strings:
+
+| Property | Description | Notes |
+|----------|-------------|-------|
+| `player.is_playing` | Device is playing (including buffering) | True for: play, playing, buffering, loading, transitioning |
+| `player.is_paused` | Device is paused | True for: pause (also normalized "stop") |
+| `player.is_idle` | Device is idle (no media) | True for: idle, none, or when state is None |
+| `player.is_buffering` | Device is loading/buffering | True for: buffering, loading, transitioning |
+| `player.state` | Normalized state string | Returns: `"playing"`, `"paused"`, `"idle"`, or `"buffering"` |
+
+**Two approaches for state mapping:**
+
+```python
+# Option 1: Full state mapping (expose BUFFERING state)
+# Shows loading indicator during track transitions
+STATE_MAP = {
+    "playing": MediaPlayerState.PLAYING,
+    "paused": MediaPlayerState.PAUSED,
+    "idle": MediaPlayerState.IDLE,
+    "buffering": MediaPlayerState.BUFFERING,
+}
+return STATE_MAP[player.state]
+
+# Option 2: Simplified mapping (collapse buffering to playing)
+# Avoids UI flickering during track transitions
+if player.is_playing:  # includes buffering states
+    return MediaPlayerState.PLAYING
+elif player.is_paused:
+    return MediaPlayerState.PAUSED
+else:
+    return MediaPlayerState.IDLE
+```
+
+**Design rationale:** pywiim exposes the full state including `"buffering"` to give integrations maximum flexibility. The integration can choose whether to show a loading indicator during buffering/transitioning states, or collapse them to "playing" for simpler UX.
+
+**Note:** The "stop" state is normalized to "pause" for modern UX (both indicate media is loaded but not playing, position is maintained). Use `is_paused` to check for both paused and stopped states.
+
+### Safe Accessor Properties
+
+These properties provide safe access to nested data, eliminating None checks and chained attribute access:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `player.discovered_endpoint` | `str \| None` | Full endpoint URL (e.g., "https://192.168.1.100:443") |
+| `player.input_list` | `list[str]` | Raw input list from device, `[]` if unavailable |
+| `player.available_sources` | `list[str]` | Available sources, `[]` if unavailable |
+| `player.eq_presets` | `list[str]` | EQ presets, `[]` if unavailable |
+| `player.group_master_name` | `str \| None` | Safe accessor for `player.group.master.name` |
+
+**Eliminates unsafe chained access:**
+
+```python
+# ❌ Before - unsafe chained access
+if player and player.device_info and player.device_info.name:
+    return player.device_info.name
+
+if player.is_slave and player.group and player.group.master:
+    attrs["coordinator_name"] = player.group.master.name
+
+for source in player.available_sources or []:  # needed None guard
+    ...
+
+# ✅ After - safe property access
+return player.name  # already handles None device_info
+
+if player.is_slave:
+    attrs["coordinator_name"] = player.group_master_name  # safe accessor
+
+for source in player.available_sources:  # always returns list
+    ...
+```
+
 ## Usage in Home Assistant
 
 ### Checking Capabilities

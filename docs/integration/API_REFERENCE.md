@@ -92,10 +92,24 @@ await player.refresh()
 
 ### Properties
 
+#### Device Identity & Connection
+
+```python
+player.name               # str | None - Device name (e.g., "Living Room")
+player.model              # str | None - Device model (e.g., "WiiM Pro Plus")
+player.firmware           # str | None - Firmware version
+player.mac_address        # str | None - MAC address
+player.uuid               # str | None - Device UUID
+player.host               # str - IP/hostname
+player.port               # int - Port number
+player.discovered_endpoint  # str | None - Full endpoint URL (e.g., "https://192.168.1.100:443")
+player.input_list         # list[str] - Raw input list from device ([] if unavailable)
+```
+
 #### Available Sources
 
 ```python
-player.available_sources  # list[str] | None
+player.available_sources  # list[str] - Returns [] if unavailable
 ```
 
 Returns list of user-selectable physical inputs plus the current source (when active):
@@ -143,11 +157,12 @@ Current EQ preset name from cached status.
 #### Multiroom / Group Role
 
 ```python
-player.role  # str - "solo", "master", or "slave"
-player.is_solo  # bool - True if not in a group
-player.is_master  # bool - True if group master
-player.is_slave  # bool - True if slave in a group
-player.group  # Group | None - Group object (for multi-player scenarios)
+player.role              # str - "solo", "master", or "slave"
+player.is_solo           # bool - True if not in a group
+player.is_master         # bool - True if group master
+player.is_slave          # bool - True if slave in a group
+player.group             # Group | None - Group object (for multi-player scenarios)
+player.group_master_name # str | None - Safe accessor for group master's name
 ```
 
 **Role Detection** - SINGLE source of truth:

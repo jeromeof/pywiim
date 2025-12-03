@@ -90,6 +90,98 @@ class PlayerProperties:
             return None
         return self.player._status_model.play_state
 
+    @property
+    def is_playing(self) -> bool:
+        """Whether device is currently playing (including buffering/loading).
+
+        Returns True for any active playback state: play, playing, buffering,
+        loading, transitioning, load. This indicates the device is actively
+        outputting or preparing to output audio.
+
+        Use this property instead of checking play_state manually:
+            # Good:
+            if player.is_playing:
+                ...
+            # Avoid:
+            if player.play_state in ("play", "playing", "buffering", ...):
+                ...
+        """
+        state = self.play_state
+        if not state:
+            return False
+        # Import here to avoid circular dependency
+        from ..state import PLAYING_STATES
+
+        return state.lower() in PLAYING_STATES
+
+    @property
+    def is_paused(self) -> bool:
+        """Whether device is paused.
+
+        Returns True only when playback is paused. Media is loaded but not
+        playing. Resuming playback will continue from current position.
+        """
+        return self.play_state == "pause"
+
+    @property
+    def is_idle(self) -> bool:
+        """Whether device is idle (no media loaded).
+
+        Returns True when device has no active media. This indicates the device
+        is not playing and has no media to resume.
+
+        Note: "stop" states are normalized to "pause" (modern UX), so stopped
+        devices are considered paused, not idle. Use is_paused to check for
+        both paused and stopped states.
+        """
+        state = self.play_state
+        return state is None or state in ("idle", "none")
+
+    @property
+    def is_buffering(self) -> bool:
+        """Whether device is buffering or loading media.
+
+        Returns True during loading, buffering, or transitioning states.
+        Useful for showing loading indicators in UI.
+        """
+        state = self.play_state
+        if not state:
+            return False
+        return state.lower() in ("buffering", "loading", "transitioning", "load")
+
+    @property
+    def state(self) -> str:
+        """Normalized playback state: 'playing', 'paused', 'idle', or 'buffering'.
+
+        This property provides a clean, consistent state string that maps
+        directly to Home Assistant's MediaPlayerState values:
+        - 'playing' → MediaPlayerState.PLAYING
+        - 'paused' → MediaPlayerState.PAUSED
+        - 'idle' → MediaPlayerState.IDLE
+        - 'buffering' → MediaPlayerState.BUFFERING
+
+        Example:
+            ```python
+            # Clean state mapping
+            from homeassistant.components.media_player import MediaPlayerState
+
+            STATE_MAP = {
+                "playing": MediaPlayerState.PLAYING,
+                "paused": MediaPlayerState.PAUSED,
+                "idle": MediaPlayerState.IDLE,
+                "buffering": MediaPlayerState.BUFFERING,
+            }
+            return STATE_MAP[player.state]
+            ```
+        """
+        if self.is_buffering:
+            return "buffering"
+        if self.is_playing:
+            return "playing"
+        if self.is_paused:
+            return "paused"
+        return "idle"
+
     # === Media Metadata ===
 
     def _status_field(self, *names: str) -> str | None:
@@ -586,7 +678,7 @@ class PlayerProperties:
     # === Available Sources and Outputs ===
 
     @property
-    def available_sources(self) -> list[str] | None:
+    def available_sources(self) -> list[str]:
         """Available input sources from cached device info.
 
         Returns user-selectable physical inputs plus the current source (if active):
@@ -602,9 +694,12 @@ class PlayerProperties:
 
         plm_support is the source of truth for physical inputs. input_list is
         used to augment with additional sources when available.
+
+        Returns:
+            List of available source names, or empty list if device info unavailable.
         """
         if self.player._device_info is None:
-            return None
+            return []
 
         # Streaming services and protocols that are externally activated
         streaming_services = {

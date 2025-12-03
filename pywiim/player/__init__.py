@@ -586,6 +586,38 @@ class Player(PlayerBase):
         return self._properties.play_state
 
     @property
+    def is_playing(self) -> bool:
+        """Whether device is currently playing (including buffering/loading).
+
+        Returns True for any active playback state. Use this instead of
+        checking play_state strings manually.
+        """
+        return self._properties.is_playing
+
+    @property
+    def is_paused(self) -> bool:
+        """Whether device is paused."""
+        return self._properties.is_paused
+
+    @property
+    def is_idle(self) -> bool:
+        """Whether device is idle (no media loaded)."""
+        return self._properties.is_idle
+
+    @property
+    def is_buffering(self) -> bool:
+        """Whether device is buffering or loading media."""
+        return self._properties.is_buffering
+
+    @property
+    def state(self) -> str:
+        """Normalized playback state: 'playing', 'paused', 'idle', or 'buffering'.
+
+        Maps directly to Home Assistant's MediaPlayerState values.
+        """
+        return self._properties.state
+
+    @property
     def media_title(self) -> str | None:
         """Current track title from cached status."""
         return self._properties.media_title
@@ -696,8 +728,12 @@ class Player(PlayerBase):
         return self._properties.wifi_rssi
 
     @property
-    def available_sources(self) -> list[str] | None:
-        """Available input sources from cached device info."""
+    def available_sources(self) -> list[str]:
+        """Available input sources from cached device info.
+
+        Returns:
+            List of available source names, or empty list if unavailable.
+        """
         return self._properties.available_sources
 
     @property
@@ -748,16 +784,16 @@ class Player(PlayerBase):
         return self._properties.available_outputs
 
     @property
-    def eq_presets(self) -> list[str] | None:
+    def eq_presets(self) -> list[str]:
         """Available EQ presets from cached state.
 
         Returns:
-            List of EQ preset names, or None if not available.
+            List of EQ preset names, or empty list if not available.
 
         Example:
             ["flat", "acoustic", "bass", "rock", "jazz", "custom"]
         """
-        return self._eq_presets
+        return self._eq_presets if self._eq_presets is not None else []
 
     @property
     def presets(self) -> list[dict[str, Any]] | None:

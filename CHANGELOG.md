@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.37] - 2025-12-03
+
+### Added
+- **Playback state properties** for cleaner integration code:
+  - `is_playing` - True when device is playing (includes buffering/loading states)
+  - `is_paused` - True when device is paused (includes normalized "stop" state)
+  - `is_idle` - True when device is idle (no media loaded)
+  - `is_buffering` - True when device is loading/buffering media
+  - `state` - Normalized state string: `"playing"`, `"paused"`, `"idle"`, or `"buffering"`
+  
+- These properties eliminate the need to parse raw `play_state` strings:
+  ```python
+  # Before (parsing strings)
+  if player.play_state in ("play", "playing", "buffering", ...):
+      return MediaPlayerState.PLAYING
+  
+  # After (clean property access)
+  STATE_MAP = {
+      "playing": MediaPlayerState.PLAYING,
+      "paused": MediaPlayerState.PAUSED,
+      "idle": MediaPlayerState.IDLE,
+      "buffering": MediaPlayerState.BUFFERING,
+  }
+  return STATE_MAP[player.state]
+  ```
+
+- **Safe property accessors** for simpler HA integration code:
+  - `player.discovered_endpoint` - Exposes `client.discovered_endpoint` at player level
+  - `player.input_list` - Returns `[]` instead of `None` when device info unavailable
+  - `player.group_master_name` - Safe accessor for `player.group.master.name` chain
+
+### Changed
+- **`available_sources` now returns `list[str]` instead of `list[str] | None`**
+  - Returns empty list `[]` when device info is unavailable (eliminates None checks)
+- **`eq_presets` now returns `list[str]` instead of `list[str] | None`**
+  - Returns empty list `[]` when presets not available (eliminates None checks)
+
+### Documentation
+- Updated `HA_CAPABILITIES.md` with new playback state properties section
+- Added usage examples showing both full state mapping (with BUFFERING) and simplified mapping
+- **Design note:** pywiim exposes `"buffering"` state to give integrations full visibility; integrations can choose to collapse it to "playing" if preferred for simpler UX
+
+### Developer Experience
+- Added `scripts/prerelease-test.sh` - comprehensive pre-release testing workflow
+- Added `scripts/test_devices.conf` - configurable test device list
+- Added `scripts/test_state_properties.py` - validates new state properties against real devices
+- Pre-release workflow runs: unit tests → device connectivity → state validation → integration tests
+
 ## [2.1.36] - 2025-12-03
 
 ### Documentation

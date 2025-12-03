@@ -1440,6 +1440,110 @@ class TestPlayerMediaMetadata:
         assert player.play_state == "play"
 
     @pytest.mark.asyncio
+    async def test_is_playing(self, mock_client):
+        """Test is_playing property for various play states."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+
+        # Test playing states
+        for state in ["play", "playing", "buffering", "loading", "transitioning", "load"]:
+            player._state_synchronizer.update_from_http({"play_state": state})
+            assert player.is_playing is True, f"Expected is_playing=True for state '{state}'"
+
+        # Test non-playing states
+        for state in ["pause", "stop", "idle", "none"]:
+            player._state_synchronizer.update_from_http({"play_state": state})
+            assert player.is_playing is False, f"Expected is_playing=False for state '{state}'"
+
+        # Test None state
+        player._status_model = None
+        player._state_synchronizer = player._state_synchronizer.__class__()  # Reset
+        assert player.is_playing is False
+
+    @pytest.mark.asyncio
+    async def test_is_paused(self, mock_client):
+        """Test is_paused property."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+
+        # Test paused state (note: "stop" is normalized to "pause" for modern UX)
+        for state in ["pause", "stop"]:
+            player._state_synchronizer.update_from_http({"play_state": state})
+            assert player.is_paused is True, f"Expected is_paused=True for state '{state}'"
+
+        # Test non-paused states
+        for state in ["play", "idle", "buffering"]:
+            player._state_synchronizer.update_from_http({"play_state": state})
+            assert player.is_paused is False, f"Expected is_paused=False for state '{state}'"
+
+    @pytest.mark.asyncio
+    async def test_is_idle(self, mock_client):
+        """Test is_idle property."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+
+        # Test idle states (note: "stop" is normalized to "pause", not idle)
+        for state in ["idle", "none"]:
+            player._state_synchronizer.update_from_http({"play_state": state})
+            assert player.is_idle is True, f"Expected is_idle=True for state '{state}'"
+
+        # Test non-idle states (including "stop" which becomes "pause")
+        for state in ["play", "pause", "stop", "buffering"]:
+            player._state_synchronizer.update_from_http({"play_state": state})
+            assert player.is_idle is False, f"Expected is_idle=False for state '{state}'"
+
+        # Test None state (should be idle)
+        player._status_model = None
+        player._state_synchronizer = player._state_synchronizer.__class__()  # Reset
+        assert player.is_idle is True
+
+    @pytest.mark.asyncio
+    async def test_is_buffering(self, mock_client):
+        """Test is_buffering property."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+
+        # Test buffering states
+        for state in ["buffering", "loading", "transitioning", "load"]:
+            player._state_synchronizer.update_from_http({"play_state": state})
+            assert player.is_buffering is True, f"Expected is_buffering=True for state '{state}'"
+
+        # Test non-buffering states
+        for state in ["play", "pause", "stop", "idle"]:
+            player._state_synchronizer.update_from_http({"play_state": state})
+            assert player.is_buffering is False, f"Expected is_buffering=False for state '{state}'"
+
+    @pytest.mark.asyncio
+    async def test_state_normalized(self, mock_client):
+        """Test state property returns normalized values."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+
+        # Test playing state
+        player._state_synchronizer.update_from_http({"play_state": "play"})
+        assert player.state == "playing"
+
+        # Test paused state (including "stop" which normalizes to "pause")
+        player._state_synchronizer.update_from_http({"play_state": "pause"})
+        assert player.state == "paused"
+        player._state_synchronizer.update_from_http({"play_state": "stop"})
+        assert player.state == "paused"
+
+        # Test idle state
+        player._state_synchronizer.update_from_http({"play_state": "idle"})
+        assert player.state == "idle"
+
+        # Test buffering states - buffering takes precedence over playing
+        for state in ["buffering", "loading", "transitioning"]:
+            player._state_synchronizer.update_from_http({"play_state": state})
+            assert player.state == "buffering", f"Expected state='buffering' for play_state '{state}'"
+
+    @pytest.mark.asyncio
     async def test_source(self, mock_client):
         """Test getting source."""
         from pywiim.player import Player
@@ -2279,14 +2383,14 @@ class TestPlayerMediaMetadata:
         assert player.available_sources == ["bluetooth", "line_in", "optical"]
 
     @pytest.mark.asyncio
-    async def test_available_sources_none(self, mock_client):
-        """Test available sources when device info is None."""
+    async def test_available_sources_empty_when_no_device_info(self, mock_client):
+        """Test available sources returns empty list when device info is None."""
         from pywiim.player import Player
 
         player = Player(mock_client)
         player._device_info = None
 
-        assert player.available_sources is None
+        assert player.available_sources == []
 
     @pytest.mark.asyncio
     async def test_available_sources_filters_streaming_services(self, mock_client):
@@ -2600,6 +2704,104 @@ class TestPlayerMediaMetadata:
         player._device_info = device_info
 
         assert player.device_info == device_info
+
+    @pytest.mark.asyncio
+    async def test_discovered_endpoint_property(self, mock_client):
+        """Test discovered_endpoint property exposes client's endpoint."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        # Mock the client's discovered_endpoint
+        mock_client._endpoint = "https://192.168.1.100:443"
+
+        assert player.discovered_endpoint == "https://192.168.1.100:443"
+
+    @pytest.mark.asyncio
+    async def test_discovered_endpoint_none_when_not_discovered(self, mock_client):
+        """Test discovered_endpoint is None when not yet discovered."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        mock_client._endpoint = None
+
+        assert player.discovered_endpoint is None
+
+    @pytest.mark.asyncio
+    async def test_input_list_property(self, mock_client):
+        """Test input_list property returns device's input list."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        device_info = DeviceInfo(uuid="test", InputList=["wifi", "bluetooth", "optical"])
+        player._device_info = device_info
+
+        assert player.input_list == ["wifi", "bluetooth", "optical"]
+
+    @pytest.mark.asyncio
+    async def test_input_list_empty_when_no_device_info(self, mock_client):
+        """Test input_list returns empty list when device info is None."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        player._device_info = None
+
+        assert player.input_list == []
+
+    @pytest.mark.asyncio
+    async def test_input_list_empty_when_input_list_none(self, mock_client):
+        """Test input_list returns empty list when device has no input_list."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        device_info = DeviceInfo(uuid="test")  # No input_list
+        player._device_info = device_info
+
+        assert player.input_list == []
+
+    @pytest.mark.asyncio
+    async def test_group_master_name_property(self, mock_client):
+        """Test group_master_name returns master's name when in a group."""
+        from pywiim.group import Group
+        from pywiim.player import Player
+
+        master = Player(mock_client)
+        master._device_info = DeviceInfo(uuid="master", DeviceName="Living Room")
+
+        slave = Player(mock_client)
+        group = Group(master)
+        group.add_slave(slave)
+
+        assert slave.group_master_name == "Living Room"
+
+    @pytest.mark.asyncio
+    async def test_group_master_name_none_when_solo(self, mock_client):
+        """Test group_master_name is None when player is solo."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        player._group = None
+
+        assert player.group_master_name is None
+
+    @pytest.mark.asyncio
+    async def test_eq_presets_returns_empty_list_when_none(self, mock_client):
+        """Test eq_presets returns empty list instead of None."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        player._eq_presets = None
+
+        assert player.eq_presets == []
+
+    @pytest.mark.asyncio
+    async def test_eq_presets_returns_list_when_available(self, mock_client):
+        """Test eq_presets returns the preset list when available."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        player._eq_presets = ["flat", "acoustic", "bass", "rock"]
+
+        assert player.eq_presets == ["flat", "acoustic", "bass", "rock"]
 
     @pytest.mark.asyncio
     async def test_is_muted_various_formats(self, mock_client):

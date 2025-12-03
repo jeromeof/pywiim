@@ -197,6 +197,52 @@ class PlayerBase:
         """Cached DeviceInfo model (None if not refreshed yet)."""
         return self._device_info
 
+    @property
+    def discovered_endpoint(self) -> str | None:
+        """Discovered endpoint (protocol://host:port) from protocol detection.
+
+        Returns the actual endpoint URL discovered during protocol detection,
+        including whether HTTPS or HTTP is used and the correct port.
+
+        Example:
+            "https://192.168.1.100:443" or "http://192.168.1.100:80"
+
+        Returns:
+            Endpoint string or None if not yet discovered.
+        """
+        return self.client.discovered_endpoint
+
+    @property
+    def input_list(self) -> list[str]:
+        """Available input sources from device info.
+
+        Returns the list of input sources reported by the device,
+        or an empty list if device info is not available.
+
+        This is the raw input list from the device. For user-selectable
+        sources filtered by availability, use available_sources instead.
+
+        Returns:
+            List of input source names, or empty list if unavailable.
+        """
+        if self._device_info and self._device_info.input_list:
+            return self._device_info.input_list
+        return []
+
+    @property
+    def group_master_name(self) -> str | None:
+        """Name of the group master, or None if not in a group.
+
+        Safe accessor that handles cases where group or master might be None.
+        Use this instead of chained access like player.group.master.name.
+
+        Returns:
+            Master device name if in a group, None otherwise.
+        """
+        if self._group and self._group.master:
+            return self._group.master.name
+        return None
+
     def __repr__(self) -> str:
         """String representation."""
         role = self.role
