@@ -210,16 +210,24 @@ fi
 
 info "Version updated successfully in both files"
 
-# Step 8: Final validation before commit
-step "Running final validation checks before commit..."
-# Re-run all CI checks one more time to ensure nothing broke
-if ! ./check.sh > /dev/null 2>&1; then
-    error "Final CI checks failed! Aborting release."
-    error "Run './check.sh' to see detailed errors."
+# Step 8: Final validation before commit (quick check - tests already passed in Step 2)
+step "Running quick validation (lint/format only - tests already passed)..."
+# Only run fast checks (black, isort, ruff) - no need to re-run full test suite
+# since only version numbers and changelog changed, not source code
+if ! black --check pywiim tests > /dev/null 2>&1; then
+    error "Black formatting check failed!"
+    exit 1
+fi
+if ! isort --check-only pywiim tests > /dev/null 2>&1; then
+    error "isort check failed!"
+    exit 1
+fi
+if ! ruff check pywiim tests > /dev/null 2>&1; then
+    error "Ruff linting failed!"
     exit 1
 fi
 
-info "Final validation checks passed ✓"
+info "Quick validation passed ✓ (full tests already passed in Step 2)"
 
 # Step 9: Check git status
 step "Checking git status..."
