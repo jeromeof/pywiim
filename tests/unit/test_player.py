@@ -1888,68 +1888,120 @@ class TestPlayerMediaMetadata:
         assert player.repeat_mode == "all"
 
     @pytest.mark.asyncio
-    async def test_shuffle_supported_device_controlled_source(self, mock_client):
-        """Test shuffle_supported returns True for device-controlled sources."""
+    async def test_shuffle_supported_full_control_sources(self, mock_client):
+        """Test shuffle_supported returns True for sources with full control.
+
+        Full control sources are those where the WiiM device manages the queue
+        and can control shuffle/repeat directly.
+        """
         from pywiim.player import Player
 
         player = Player(mock_client)
 
-        # Test device-controlled sources
-        for source in ["usb", "line_in", "optical", "coaxial", "playlist", "preset", "http"]:
+        # Streaming services and local playback - device controls shuffle
+        for source in [
+            "usb",
+            "wifi",
+            "network",
+            "playlist",
+            "preset",
+            "http",
+            "spotify",
+            "amazon",
+            "tidal",
+            "qobuz",
+            "deezer",
+        ]:
             status = PlayerStatus(source=source, play_state="play")
             player._status_model = status
             assert player.shuffle_supported is True, f"shuffle_supported should be True for {source}"
 
     @pytest.mark.asyncio
-    async def test_shuffle_supported_external_source(self, mock_client):
-        """Test shuffle_supported returns False only for truly external sources."""
+    async def test_shuffle_supported_no_control_sources(self, mock_client):
+        """Test shuffle_supported returns False for sources without shuffle control.
+
+        These include:
+        - Live radio (no queue to shuffle)
+        - Physical inputs (passthrough audio)
+        - External casting (source app controls shuffle)
+        """
         from pywiim.player import Player
 
         player = Player(mock_client)
 
-        # Test external sources (blacklist) - AirPlay is no longer blacklisted (re-enabled for testing)
-        for source in ["tunein", "iheartradio", "multiroom"]:
+        # Live radio - no shuffle concept
+        for source in ["tunein", "iheartradio", "radio"]:
             status = PlayerStatus(source=source, play_state="play")
             player._status_model = status
             assert player.shuffle_supported is False, f"shuffle_supported should be False for {source}"
 
-        # Test sources that ARE now supported (permissive approach)
-        for source in ["bluetooth", "dlna", "spotify", "tidal", "qobuz", "deezer"]:
+        # Physical inputs - passthrough audio
+        for source in ["line_in", "optical", "coaxial", "hdmi"]:
             status = PlayerStatus(source=source, play_state="play")
             player._status_model = status
-            assert player.shuffle_supported is True, f"shuffle_supported should be True for {source}"
+            assert player.shuffle_supported is False, f"shuffle_supported should be False for {source}"
+
+        # External casting - source app controls shuffle
+        for source in ["airplay", "bluetooth", "dlna", "multiroom"]:
+            status = PlayerStatus(source=source, play_state="play")
+            player._status_model = status
+            assert player.shuffle_supported is False, f"shuffle_supported should be False for {source}"
 
     @pytest.mark.asyncio
-    async def test_repeat_supported_device_controlled_source(self, mock_client):
-        """Test repeat_supported returns True for device-controlled sources."""
+    async def test_repeat_supported_full_control_sources(self, mock_client):
+        """Test repeat_supported returns True for sources with full control."""
         from pywiim.player import Player
 
         player = Player(mock_client)
 
-        # Test device-controlled sources
-        for source in ["usb", "line_in", "optical", "coaxial", "playlist", "preset", "http"]:
+        # Streaming services and local playback - device controls repeat
+        for source in [
+            "usb",
+            "wifi",
+            "network",
+            "playlist",
+            "preset",
+            "http",
+            "spotify",
+            "amazon",
+            "tidal",
+            "qobuz",
+            "deezer",
+        ]:
             status = PlayerStatus(source=source, play_state="play")
             player._status_model = status
             assert player.repeat_supported is True, f"repeat_supported should be True for {source}"
 
     @pytest.mark.asyncio
-    async def test_repeat_supported_external_source(self, mock_client):
-        """Test repeat_supported returns False only for truly external sources."""
+    async def test_repeat_supported_no_control_sources(self, mock_client):
+        """Test repeat_supported returns False for sources without repeat control.
+
+        These include:
+        - Live radio (no queue to repeat)
+        - Physical inputs (passthrough audio)
+        - External casting (source app controls repeat)
+        """
         from pywiim.player import Player
 
         player = Player(mock_client)
 
-        # Test external sources (blacklist) - AirPlay is no longer blacklisted (re-enabled for testing)
-        for source in ["tunein", "iheartradio", "multiroom"]:
+        # Live radio - no repeat concept
+        for source in ["tunein", "iheartradio", "radio"]:
             status = PlayerStatus(source=source, play_state="play")
             player._status_model = status
             assert player.repeat_supported is False, f"repeat_supported should be False for {source}"
 
-        # Test sources that ARE now supported (permissive approach)
-        for source in ["bluetooth", "dlna", "spotify", "tidal", "qobuz", "deezer"]:
+        # Physical inputs - passthrough audio
+        for source in ["line_in", "optical", "coaxial", "hdmi"]:
             status = PlayerStatus(source=source, play_state="play")
             player._status_model = status
-            assert player.repeat_supported is True, f"repeat_supported should be True for {source}"
+            assert player.repeat_supported is False, f"repeat_supported should be False for {source}"
+
+        # External casting - source app controls repeat
+        for source in ["airplay", "bluetooth", "dlna", "multiroom"]:
+            status = PlayerStatus(source=source, play_state="play")
+            player._status_model = status
+            assert player.repeat_supported is False, f"repeat_supported should be False for {source}"
 
     @pytest.mark.asyncio
     async def test_shuffle_state_returns_none_for_external_source(self, mock_client):
@@ -1985,10 +2037,10 @@ class TestPlayerMediaMetadata:
         # Should return None because AirPlay is blacklisted (iOS device controls playback)
         assert player.repeat_mode is None
 
-        # Bluetooth should also work (permissive approach)
+        # Bluetooth is now blacklisted - external device (phone/tablet) controls playback
         status = PlayerStatus(source="bluetooth", play_state="play", loop_mode=2)
         player._status_model = status
-        assert player.repeat_mode is not None  # Bluetooth supports device control
+        assert player.repeat_mode is None  # Bluetooth doesn't support device control
 
     @pytest.mark.asyncio
     async def test_shuffle_state_works_for_device_controlled_source(self, mock_client):
@@ -2015,6 +2067,156 @@ class TestPlayerMediaMetadata:
 
         # Should decode loop_mode normally for USB source
         assert player.repeat_mode == "all"
+
+    @pytest.mark.asyncio
+    async def test_supports_next_track_streaming_sources(self, mock_client):
+        """Test supports_next_track returns True for streaming services.
+
+        IMPORTANT: Next/prev work even when queue_count is 0 because streaming
+        services manage their own queues (not exposed via plicount).
+        """
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+
+        # Streaming services support next track even with queue_count=0
+        for source in ["spotify", "amazon", "tidal", "qobuz", "deezer", "pandora"]:
+            status = PlayerStatus(source=source, play_state="play")
+            # Deliberately set queue_count to 0 to verify it doesn't affect support
+            status.queue_count = 0
+            player._status_model = status
+            assert player.supports_next_track is True, f"supports_next_track should be True for {source}"
+            assert player.supports_previous_track is True, f"supports_previous_track should be True for {source}"
+
+    @pytest.mark.asyncio
+    async def test_supports_next_track_local_sources(self, mock_client):
+        """Test supports_next_track returns True for local playback sources."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+
+        # Local sources support next track
+        for source in ["usb", "wifi", "http", "playlist", "preset", "network"]:
+            status = PlayerStatus(source=source, play_state="play")
+            player._status_model = status
+            assert player.supports_next_track is True, f"supports_next_track should be True for {source}"
+            assert player.supports_previous_track is True, f"supports_previous_track should be True for {source}"
+
+    @pytest.mark.asyncio
+    async def test_supports_next_track_external_casting(self, mock_client):
+        """Test supports_next_track returns True for AirPlay/Bluetooth/DLNA.
+
+        Even though these are external sources, next/prev commands are forwarded
+        to the source app which may handle them.
+        """
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+
+        # External casting sources - commands forwarded to source app
+        for source in ["airplay", "bluetooth", "dlna"]:
+            status = PlayerStatus(source=source, play_state="play")
+            player._status_model = status
+            assert player.supports_next_track is True, f"supports_next_track should be True for {source}"
+            assert player.supports_previous_track is True, f"supports_previous_track should be True for {source}"
+
+    @pytest.mark.asyncio
+    async def test_supports_next_track_live_radio_false(self, mock_client):
+        """Test supports_next_track returns False for live radio (no tracks)."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+
+        # Live radio has no "next track" concept
+        for source in ["tunein", "iheartradio", "radio", "internetradio", "webradio"]:
+            status = PlayerStatus(source=source, play_state="play")
+            player._status_model = status
+            assert player.supports_next_track is False, f"supports_next_track should be False for {source}"
+            assert player.supports_previous_track is False, f"supports_previous_track should be False for {source}"
+
+    @pytest.mark.asyncio
+    async def test_supports_next_track_physical_inputs_false(self, mock_client):
+        """Test supports_next_track returns False for passthrough inputs."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+
+        # Physical inputs (passthrough audio) have no track concept
+        for source in ["line_in", "linein", "optical", "coaxial", "coax", "aux", "hdmi"]:
+            status = PlayerStatus(source=source, play_state="play")
+            player._status_model = status
+            assert player.supports_next_track is False, f"supports_next_track should be False for {source}"
+            assert player.supports_previous_track is False, f"supports_previous_track should be False for {source}"
+
+    @pytest.mark.asyncio
+    async def test_supports_next_track_multiroom_slave_true(self, mock_client):
+        """Test supports_next_track returns True for multiroom slave.
+
+        Slave commands route through Group to master, so next/prev work.
+        Same as play/pause which also route through Group.
+        """
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+
+        # Multiroom slave - commands route through Group to master
+        status = PlayerStatus(source="multiroom", play_state="play")
+        player._status_model = status
+        assert player.supports_next_track is True
+        assert player.supports_previous_track is True
+
+    @pytest.mark.asyncio
+    async def test_supports_next_track_no_source_false(self, mock_client):
+        """Test supports_next_track returns False when no source set."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+
+        # No source set
+        status = PlayerStatus(source=None, play_state="idle")
+        player._status_model = status
+        assert player.supports_next_track is False
+        assert player.supports_previous_track is False
+
+    @pytest.mark.asyncio
+    async def test_next_track_supported_aliases(self, mock_client):
+        """Test next_track_supported and previous_track_supported aliases.
+
+        These aliases exist for WiiM HA integration compatibility which expects
+        *_supported naming rather than supports_* naming.
+        """
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+
+        # Test with Spotify (should return True)
+        status = PlayerStatus(source="spotify", play_state="play")
+        player._status_model = status
+
+        # Aliases should return same value as original properties
+        assert player.next_track_supported == player.supports_next_track
+        assert player.previous_track_supported == player.supports_previous_track
+        assert player.next_track_supported is True
+        assert player.previous_track_supported is True
+
+        # Test with live radio (should return False)
+        status = PlayerStatus(source="tunein", play_state="play")
+        player._status_model = status
+
+        assert player.next_track_supported == player.supports_next_track
+        assert player.previous_track_supported == player.supports_previous_track
+        assert player.next_track_supported is False
+        assert player.previous_track_supported is False
+
+        # Test getattr (how HA integration uses it)
+        assert (
+            getattr(player, "next_track_supported", False) is True
+            or getattr(player, "next_track_supported", False) is False
+        )
+        assert (
+            getattr(player, "previous_track_supported", False) is True
+            or getattr(player, "previous_track_supported", False) is False
+        )
 
     @pytest.mark.asyncio
     async def test_eq_preset(self, mock_client):

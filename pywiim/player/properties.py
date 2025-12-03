@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from ..device_capabilities import filter_plm_inputs, get_device_inputs
+from .source_capabilities import SourceCapability, get_source_capabilities
 
 if TYPE_CHECKING:
     from . import Player
@@ -332,110 +333,135 @@ class PlayerProperties:
             return None
         return self.player._status_model.source
 
-    # === Shuffle and Repeat Support ===
+    # === Source-Based Capabilities ===
+    # These capabilities depend on the current playback source.
+    # See source_capabilities.py for the centralized capability definitions.
 
-    def _is_device_controlled_source(self) -> bool:
-        """Check if current source allows device-controlled playback (shuffle/repeat).
+    def _get_source_capabilities(self) -> SourceCapability:
+        """Get capabilities for current source.
 
-        Uses a blacklist approach: most sources support device control, but some
-        external sources don't (e.g., AirPlay, live radio streams).
-
-        For Spotify, performs content-type detection using the vendor field URI:
-        - spotify:album:* and spotify:playlist:* → controllable (music)
-        - spotify:show:* → not controllable (podcasts/audiobooks, episodic content)
+        Uses the centralized SOURCE_CAPABILITIES mapping from source_capabilities.py.
+        Includes special handling for Spotify podcasts (no shuffle/repeat).
 
         Returns:
-            True if the WiiM device can control shuffle/repeat.
-            False if an external device/app exclusively controls playback.
+            SourceCapability flags for the current source.
         """
         source = self.source
-        if source is None:
-            return False
+        if not source:
+            return SourceCapability.NONE
 
         source_lower = source.lower()
 
         # Special handling for Spotify - check content type via vendor URI
+        # Podcasts and audiobooks don't support shuffle/repeat
         if source_lower == "spotify":
             vendor_uri = getattr(self.player._status_model, "vendor", None)
             if vendor_uri and isinstance(vendor_uri, str):
-                # Podcasts and audiobooks (episodic content) - no shuffle/repeat
                 if vendor_uri.startswith("spotify:show:") or vendor_uri.startswith("spotify:episode:"):
-                    return False
-                # Albums and playlists (music) - shuffle/repeat supported
-                # Default to True for Spotify (permissive)
-            return True
+                    # Podcast/audiobook - track control only, no shuffle/repeat
+                    return SourceCapability.TRACK_CONTROL
 
-        # Blacklist: Sources where device CANNOT control shuffle/repeat
-        # These are sources where playback is controlled externally
-        external_controlled = {
-            # AirPlay - iOS/macOS device controls playback (device is passive sink)
-            "airplay",  # Tested: Commands accepted but don't affect iOS-controlled queue
-            # Radio streams (live streams, no queue to shuffle)
-            "tunein",  # Radio streams - no shuffle/repeat support
-            "iheartradio",  # Radio streams - no shuffle/repeat support
-            # Multiroom
-            "multiroom",  # Slave device in multiroom - can't control playback
-        }
-
-        # Check if source is in blacklist
-        if source_lower in external_controlled:
-            return False
-
-        # Check for radio-like sources that don't support shuffle/repeat
-        # Radio streams typically don't support these controls
-        radio_keywords = ["radio", "stream"]
-        if any(keyword in source_lower for keyword in radio_keywords):
-            # However, some services might have "radio" in their name but still support queues
-            # Only block if it's clearly a streaming radio service
-            if source_lower in {"radio", "internetradio", "webradio"}:
-                _LOGGER.debug(
-                    "Source '%s' appears to be a radio stream - shuffle/repeat not supported",
-                    source,
-                )
-                return False
-
-        # Default: assume device control for all other sources (permissive approach)
-        # This includes: USB, optical, coaxial, Spotify, Tidal, Amazon Music, Qobuz,
-        # Deezer, Bluetooth, DLNA, Chromecast, playlists, presets, HTTP, and more
-        return True
+        return get_source_capabilities(source)
 
     @property
     def shuffle_supported(self) -> bool:
         """Whether shuffle can be controlled by the device in current state.
 
-        Returns False for external sources (AirPlay, Bluetooth, DLNA, streaming services)
-        where the source device/app controls shuffle, not the WiiM device.
+        Returns False for:
+        - External casting sources (AirPlay, Bluetooth, DLNA) where source app controls shuffle
+        - Live radio (no queue to shuffle)
+        - Physical inputs (passthrough audio)
+        - Spotify podcasts/audiobooks (episodic content)
 
         Example:
             ```python
             if player.shuffle_supported:
                 await player.set_shuffle(True)
-                print(f"Shuffle: {player.shuffle_state}")
             else:
                 print("Shuffle controlled by source app")
             ```
         """
-        return self._is_device_controlled_source()
+        return SourceCapability.SHUFFLE in self._get_source_capabilities()
 
     @property
     def repeat_supported(self) -> bool:
         """Whether repeat mode can be controlled by the device in current state.
 
-        Returns False for external sources (AirPlay, Bluetooth, DLNA, streaming services)
-        where the source device/app controls repeat, not the WiiM device.
+        Returns False for:
+        - External casting sources (AirPlay, Bluetooth, DLNA) where source app controls repeat
+        - Live radio (no queue to repeat)
+        - Physical inputs (passthrough audio)
+        - Spotify podcasts/audiobooks (episodic content)
 
         Example:
             ```python
             if player.repeat_supported:
                 await player.set_repeat("all")
-                print(f"Repeat: {player.repeat_mode}")
             else:
                 print("Repeat controlled by source app")
             ```
         """
-        return self._is_device_controlled_source()
+        return SourceCapability.REPEAT in self._get_source_capabilities()
 
-    # === Shuffle and Repeat ===
+    @property
+    def supports_next_track(self) -> bool:
+        """Whether skip to next track is supported in current state.
+
+        IMPORTANT: Returns True even when queue_count is 0.
+        Streaming services (Spotify, Amazon, etc.) manage their own queues
+        and don't report via plicount, but next/previous commands work.
+
+        Home Assistant integrations should use this (or next_track_supported alias)
+        to determine NEXT_TRACK support, NOT queue_count.
+
+        Returns True for:
+        - Streaming services: Spotify, Amazon, Tidal, Qobuz, Deezer, Pandora
+        - Local playback: USB, Network (wifi), HTTP, playlist, preset
+        - External casting: AirPlay, Bluetooth, DLNA (commands forwarded to app)
+        - Multiroom slaves: Commands route through Group to master
+
+        Returns False for:
+        - Live radio: TuneIn, iHeartRadio (no "next" concept)
+        - Physical inputs: Line-in, Optical, Coaxial, HDMI (passthrough audio)
+        """
+        return SourceCapability.NEXT_TRACK in self._get_source_capabilities()
+
+    @property
+    def supports_previous_track(self) -> bool:
+        """Whether skip to previous track is supported in current state.
+
+        Same logic as supports_next_track - see that property for details.
+
+        Home Assistant integrations should use this (or previous_track_supported alias)
+        to determine PREVIOUS_TRACK support, NOT queue_count.
+        """
+        return SourceCapability.PREVIOUS_TRACK in self._get_source_capabilities()
+
+    @property
+    def supports_seek(self) -> bool:
+        """Whether seeking within track is supported in current state.
+
+        Returns False for live radio and physical inputs where seeking doesn't apply.
+        """
+        return SourceCapability.SEEK in self._get_source_capabilities()
+
+    # Aliases for WiiM HA integration compatibility (uses *_supported naming)
+    @property
+    def next_track_supported(self) -> bool:
+        """Alias for supports_next_track (WiiM HA integration compatibility)."""
+        return self.supports_next_track
+
+    @property
+    def previous_track_supported(self) -> bool:
+        """Alias for supports_previous_track (WiiM HA integration compatibility)."""
+        return self.supports_previous_track
+
+    @property
+    def seek_supported(self) -> bool:
+        """Alias for supports_seek (WiiM HA integration compatibility)."""
+        return self.supports_seek
+
+    # === Shuffle and Repeat State ===
 
     @property
     def shuffle_state(self) -> bool | None:

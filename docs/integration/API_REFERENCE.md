@@ -498,6 +498,17 @@ player.port  # int - Device port number
 player.timeout  # float - Network timeout in seconds
 ```
 
+#### Transport Support 
+
+```python
+# Use these to determine if next/prev buttons should be shown
+player.supports_next_track      # bool - True if next track is supported
+player.supports_previous_track  # bool - True if previous track is supported
+
+# IMPORTANT: Use these properties, NOT queue_count!
+# Spotify/streaming services have queue_count=0 but next/prev work perfectly.
+```
+
 ### Methods
 
 ```python

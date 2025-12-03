@@ -34,6 +34,29 @@ These capabilities depend on UPnP client initialization and service availability
 | `player.supports_queue_add` | Add items to queue (AVTransport) | Most devices with UPnP |
 | `player.supports_queue_count` | Queue count/position (HTTP API) | Always `True` |
 
+### Transport Capabilities
+
+These properties indicate whether next/previous track commands are supported for the current source:
+
+| Property | Description | Notes |
+|----------|-------------|-------|
+| `player.supports_next_track` | Next track is supported | **Use this, NOT queue_count!** |
+| `player.supports_previous_track` | Previous track is supported | **Use this, NOT queue_count!** |
+
+⚠️ **IMPORTANT**: Do NOT use `queue_count > 0` to determine next/prev support!
+
+Streaming services (Spotify, Amazon Music, Tidal, etc.) always report `queue_count=0` because they manage their own queues internally. However, next/previous track commands work perfectly. Use `supports_next_track` and `supports_previous_track` instead.
+
+**Returns True for:**
+- Streaming services: Spotify, Amazon Music, Tidal, Qobuz, Deezer, Pandora
+- Local playback: USB, Network (WiFi), HTTP streams with playlists
+- External casting: AirPlay, Bluetooth, DLNA (commands forwarded to source app)
+- Multiroom slaves: Commands route through Group to master (same as play/pause)
+
+**Returns False for:**
+- Live radio: TuneIn, iHeartRadio (no "next track" concept)
+- Physical inputs: Line-in, Optical, Coaxial, HDMI (passthrough audio)
+
 ## Usage in Home Assistant
 
 ### Checking Capabilities
@@ -57,6 +80,13 @@ class WiiMMediaPlayer(MediaPlayerEntity):
             | MediaPlayerEntityFeature.VOLUME_SET
             | MediaPlayerEntityFeature.VOLUME_MUTE
         )
+
+        # Next/Previous track - use supports_next_track, NOT queue_count!
+        # Streaming services (Spotify, Amazon, etc.) have queue_count=0 but next/prev still work
+        if self._player.supports_next_track:
+            features |= MediaPlayerEntityFeature.NEXT_TRACK
+        if self._player.supports_previous_track:
+            features |= MediaPlayerEntityFeature.PREVIOUS_TRACK
 
         # Queue capabilities
         if self._player.supports_queue_add:

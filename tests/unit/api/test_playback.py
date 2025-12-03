@@ -100,7 +100,7 @@ class TestPlaybackAPI:
         await mock_client.seek(0)
 
         call_args = mock_client._request.call_args[0]
-        assert "seek:0" in call_args[0]
+        assert "setPlayerCmd:seek:0" in call_args[0]
 
 
 class TestPlaybackAPIVolume:
@@ -116,7 +116,8 @@ class TestPlaybackAPIVolume:
 
         mock_client._request.assert_called_once()
         call_args = mock_client._request.call_args[0]
-        assert "vol:0" in call_args[0]
+        # Must use setPlayerCmd:vol: prefix
+        assert "setPlayerCmd:vol:0" in call_args[0]
 
     @pytest.mark.asyncio
     async def test_set_volume_max(self, mock_client):
@@ -127,7 +128,8 @@ class TestPlaybackAPIVolume:
         await mock_client.set_volume(1.0)
 
         call_args = mock_client._request.call_args[0]
-        assert "vol:100" in call_args[0]
+        # Must use setPlayerCmd:vol: prefix
+        assert "setPlayerCmd:vol:100" in call_args[0]
 
     @pytest.mark.asyncio
     async def test_set_volume_mid(self, mock_client):
@@ -138,7 +140,8 @@ class TestPlaybackAPIVolume:
         await mock_client.set_volume(0.5)
 
         call_args = mock_client._request.call_args[0]
-        assert "vol:50" in call_args[0]
+        # Must use setPlayerCmd:vol: prefix
+        assert "setPlayerCmd:vol:50" in call_args[0]
 
     @pytest.mark.asyncio
     async def test_set_volume_clamps_above_max(self, mock_client):
@@ -149,7 +152,8 @@ class TestPlaybackAPIVolume:
         await mock_client.set_volume(1.5)
 
         call_args = mock_client._request.call_args[0]
-        assert "vol:100" in call_args[0]
+        # Must use setPlayerCmd:vol: prefix
+        assert "setPlayerCmd:vol:100" in call_args[0]
 
     @pytest.mark.asyncio
     async def test_set_volume_clamps_below_min(self, mock_client):
@@ -160,7 +164,8 @@ class TestPlaybackAPIVolume:
         await mock_client.set_volume(-0.5)
 
         call_args = mock_client._request.call_args[0]
-        assert "vol:0" in call_args[0]
+        # Must use setPlayerCmd:vol: prefix
+        assert "setPlayerCmd:vol:0" in call_args[0]
 
     @pytest.mark.asyncio
     async def test_set_volume_error_handling(self, mock_client):
@@ -184,7 +189,8 @@ class TestPlaybackAPIMute:
 
         mock_client._request.assert_called_once()
         call_args = mock_client._request.call_args[0]
-        assert "mute:1" in call_args[0]
+        # Must use setPlayerCmd:mute: prefix
+        assert "setPlayerCmd:mute:1" in call_args[0]
 
     @pytest.mark.asyncio
     async def test_set_mute_false(self, mock_client):
@@ -194,7 +200,8 @@ class TestPlaybackAPIMute:
         await mock_client.set_mute(False)
 
         call_args = mock_client._request.call_args[0]
-        assert "mute:0" in call_args[0]
+        # Must use setPlayerCmd:mute: prefix
+        assert "setPlayerCmd:mute:0" in call_args[0]
 
 
 class TestPlaybackAPILoopMode:
@@ -262,7 +269,9 @@ class TestPlaybackAPISource:
         await mock_client.set_source("wifi")
 
         call_args = mock_client._request.call_args[0]
-        assert "switchmode:wifi" in call_args[0]
+        # Must use setPlayerCmd:switchmode: prefix (not just switchmode:)
+        # Without the prefix, device returns "unknown command"
+        assert "setPlayerCmd:switchmode:wifi" in call_args[0]
 
     @pytest.mark.asyncio
     async def test_set_source_bluetooth(self, mock_client):
@@ -272,7 +281,8 @@ class TestPlaybackAPISource:
         await mock_client.set_source("bluetooth")
 
         call_args = mock_client._request.call_args[0]
-        assert "switchmode:bluetooth" in call_args[0]
+        # Must use setPlayerCmd:switchmode: prefix (not just switchmode:)
+        assert "setPlayerCmd:switchmode:bluetooth" in call_args[0]
 
     @pytest.mark.asyncio
     async def test_set_source_line_in(self, mock_client):
@@ -282,7 +292,8 @@ class TestPlaybackAPISource:
         await mock_client.set_source("line_in")
 
         call_args = mock_client._request.call_args[0]
-        assert "switchmode:line_in" in call_args[0]
+        # Must use setPlayerCmd:switchmode: prefix (not just switchmode:)
+        assert "setPlayerCmd:switchmode:line_in" in call_args[0]
 
 
 class TestPlaybackAPIAudioOutput:

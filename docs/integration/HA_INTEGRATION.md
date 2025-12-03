@@ -232,8 +232,33 @@ Map Home Assistant media_player services to pywiim Player methods:
 | `media_pause` | `player.pause()` | Raw API call |
 | `media_play_pause` | `player.media_play_pause()` | ✅ **Use this** - handles resume correctly |
 | `media_stop` | `player.stop()` or `player.pause()` | See webradio note below |
-| `media_next_track` | `player.next_track()` | |
-| `media_previous_track` | `player.previous_track()` | |
+| `media_next_track` | `player.next_track()` | Use `supports_next_track` for feature flag |
+| `media_previous_track` | `player.previous_track()` | Use `supports_previous_track` for feature flag |
+
+### Next/Previous Track Support
+
+⚠️ **IMPORTANT**: Use `supports_next_track` and `supports_previous_track` to determine feature support, NOT `queue_count`!
+
+Streaming services (Spotify, Amazon Music, Tidal, etc.) always report `queue_count=0` because they manage their own queues internally. However, next/previous track commands work perfectly.
+
+```python
+@property
+def supported_features(self) -> MediaPlayerEntityFeature:
+    """Return supported features."""
+    features = MediaPlayerEntityFeature.PLAY | MediaPlayerEntityFeature.PAUSE
+    
+    # ✅ CORRECT: Use supports_next_track property
+    if self._player.supports_next_track:
+        features |= MediaPlayerEntityFeature.NEXT_TRACK
+    if self._player.supports_previous_track:
+        features |= MediaPlayerEntityFeature.PREVIOUS_TRACK
+    
+    # ❌ WRONG: Don't use queue_count - Spotify has queue_count=0 but next/prev work!
+    # if self._player.queue_count > 0:  # This breaks Spotify!
+    #     features |= MediaPlayerEntityFeature.NEXT_TRACK
+    
+    return features
+```
 
 ### Implementation Example
 

@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.35] - 2025-12-03
+
+### Added
+- **Centralized Source Capability System** (`source_capabilities.py`)
+  - New `SourceCapability` enum with flags: `SHUFFLE`, `REPEAT`, `NEXT_TRACK`, `PREVIOUS_TRACK`, `SEEK`
+  - Centralized `SOURCE_CAPABILITIES` mapping defines what each source type supports
+  - Single source of truth for source-based capabilities (replaces scattered blacklists)
+  - Easy to maintain and extend with new sources
+
+- **Source-based capability properties**:
+  - `supports_next_track` / `next_track_supported` - Whether next track is supported
+  - `supports_previous_track` / `previous_track_supported` - Whether previous track is supported
+  - `supports_seek` / `seek_supported` - Whether seeking is supported
+  - `shuffle_supported` - Whether device can control shuffle (refactored to use new system)
+  - `repeat_supported` - Whether device can control repeat (refactored to use new system)
+
+- **Capability categories**:
+  - `FULL_CONTROL`: Streaming services (Spotify, Amazon, Tidal, etc.) and local playback (USB, WiFi)
+  - `TRACK_CONTROL`: External casting (AirPlay, Bluetooth, DLNA, multiroom) - track navigation works, shuffle/repeat controlled by source app
+  - `NONE`: Live radio (TuneIn, iHeartRadio) and physical inputs (Line-in, Optical)
+
+- **IMPORTANT for Home Assistant integrations**: 
+  - Use `next_track_supported` to determine NEXT_TRACK feature, NOT `queue_count`
+  - Streaming services report `queue_count=0` but next/previous commands work perfectly
+
+### Fixed
+- **Source switching now works correctly** (live debugging session)
+  - Fixed `API_ENDPOINT_SOURCE` to use `setPlayerCmd:switchmode:` instead of `switchmode:`
+  - The incorrect endpoint returned "unknown command" on WiiM devices
+  - Source selection (Bluetooth, Line In, Optical, WiFi, etc.) from Home Assistant UI now works
+
+### Changed
+- **Bluetooth source now hides shuffle/repeat controls**
+  - When playing from Bluetooth, the WiiM device is a passive audio sink receiving audio from an external device (phone, tablet)
+  - Shuffle and repeat are controlled by the source device's app, not the WiiM device
+  - `shuffle_supported` and `repeat_supported` now return `False` for Bluetooth source
+  - `shuffle_state` and `repeat_mode` return `None` for Bluetooth source
+  - This prevents confusing UI controls that have no effect
+
 ## [2.1.34] - 2025-12-02
 
 ### Fixed

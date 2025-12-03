@@ -917,6 +917,62 @@ class Player(PlayerBase):
         return self._properties.supports_queue_count
 
     @property
+    def supports_next_track(self) -> bool:
+        """Whether skip to next track is supported in current state.
+
+        Returns True for most sources. Returns False for live radio streams
+        and physical inputs (line-in, optical, etc.) where "next track" doesn't apply.
+
+        IMPORTANT: Returns True even when queue_count is 0.
+        Streaming services (Spotify, Amazon, etc.) manage their own queues
+        and don't report via plicount, but next/previous commands still work.
+
+        Home Assistant integrations should use this property for NEXT_TRACK feature,
+        not queue_count which is unreliable for streaming services.
+        """
+        return self._properties.supports_next_track
+
+    @property
+    def supports_previous_track(self) -> bool:
+        """Whether skip to previous track is supported in current state.
+
+        Returns True for most sources. Returns False for live radio streams
+        and physical inputs (line-in, optical, etc.) where "previous track" doesn't apply.
+
+        IMPORTANT: Returns True even when queue_count is 0.
+        Streaming services (Spotify, Amazon, etc.) manage their own queues
+        and don't report via plicount, but next/previous commands still work.
+
+        Home Assistant integrations should use this property for PREVIOUS_TRACK feature,
+        not queue_count which is unreliable for streaming services.
+        """
+        return self._properties.supports_previous_track
+
+    @property
+    def supports_seek(self) -> bool:
+        """Whether seeking within track is supported in current state.
+
+        Returns False for live radio and physical inputs where seeking doesn't apply.
+        """
+        return self._properties.supports_seek
+
+    # Aliases for WiiM HA integration compatibility (uses *_supported naming)
+    @property
+    def next_track_supported(self) -> bool:
+        """Alias for supports_next_track (WiiM HA integration compatibility)."""
+        return self._properties.next_track_supported
+
+    @property
+    def previous_track_supported(self) -> bool:
+        """Alias for supports_previous_track (WiiM HA integration compatibility)."""
+        return self._properties.previous_track_supported
+
+    @property
+    def seek_supported(self) -> bool:
+        """Alias for supports_seek (WiiM HA integration compatibility)."""
+        return self._properties.seek_supported
+
+    @property
     def audio(self) -> AudioConfiguration:
         """Audio configuration manager.
 
