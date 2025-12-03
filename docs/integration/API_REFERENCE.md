@@ -8,23 +8,15 @@ Complete API reference for the `pywiim` library.
 - [Player](#player)
 - [Models](#models)
 - [Exceptions](#exceptions)
-- [API Mixins](#api-mixins)
-  - [DeviceAPI](#deviceapi)
-  - [PlaybackAPI](#playbackapi)
-  - [GroupAPI](#groupapi)
-  - [EQAPI](#eqapi)
-  - [PresetAPI](#presetapi)
-  - [DiagnosticsAPI](#diagnosticsapi)
-  - [BluetoothAPI](#bluetoothapi)
-  - [AudioSettingsAPI](#audiosettingsapi)
-  - [LMSAPI](#lmsapi)
-  - [MiscAPI](#miscapi)
-  - [FirmwareAPI](#firmwareapi)
-  - [TimerAPI](#timerapi)
+- [Group Object](#group-object)
+- [Usage Examples](#usage-examples)
+- [Output Selection](#output-selection-hardware--bluetooth)
 
 ## WiiMClient
 
-Main client class that composes all API mixins.
+Low-level HTTP client for device communication. **Most users should use the `Player` class instead**, which provides state caching, convenient properties, and a higher-level API.
+
+The client is primarily used internally by the Player class, but may be accessed for advanced use cases via `player.client`.
 
 ### Initialization
 
@@ -855,83 +847,6 @@ class WiiMInvalidDataError(WiiMError):
     """Raised when response data is invalid."""
 ```
 
-## API Mixins
-
-All mixin methods are available directly on `WiiMClient` instances.
-
-### DeviceAPI
-
-Device information and LED control.
-
-```python
-# Device information
-await client.get_device_info()
-await client.get_device_info_model()
-await client.get_firmware_version()
-await client.get_mac_address()
-
-# LED control
-await client.set_led(enabled: bool)
-await client.set_led_brightness(brightness: int)  # 0-100
-```
-
-### PlaybackAPI
-
-Playback and volume control.
-
-```python
-# Playback control
-await client.play()
-await client.pause()
-await client.resume()
-await client.stop()
-await client.next_track()
-await client.previous_track()
-await client.seek(position: int)  # seconds
-
-# Volume control
-await client.set_volume(volume: float)  # 0.0-1.0
-await client.set_mute(muted: bool)
-
-# Source control
-await client.set_source(source: str)
-
-# Playback modes
-await client.set_loop_mode(mode: str)  # "none", "one", "all"
-
-# Media playback
-await client.play_url(url: str)
-await client.play_playlist(playlist_url: str)
-await client.play_notification(url: str)
-
-# Metadata
-await client.get_meta_info()
-```
-
-### GroupAPI
-
-Multiroom group management.
-
-```python
-# Group status
-await client.get_multiroom_status()
-await client.get_slaves()
-
-# Group management
-await client.create_group()
-await client.delete_group()
-await client.join_slave(master_ip: str)
-await client.leave_group()
-await client.kick_slave(slave_ip: str)
-await client.mute_slave(slave_ip: str, muted: bool)
-
-# Properties
-client.is_master  # bool
-client.is_slave   # bool
-client.group_master  # str | None
-client.group_slaves  # list[str]
-```
-
 ## Group Object
 
 The `Group` object is a utility for managing multiroom groups. It's accessed via the master player and provides group-level operations.
@@ -1099,235 +1014,30 @@ class VirtualGroupEntity:
 - Virtual entity reads `group.volume_level` (computed property)
 - No polling lag, immediate updates
 
-### EQAPI
-
-Equalizer control.
-
-```python
-# EQ presets
-await client.set_eq_preset(preset: str)  # "flat", "classical", "jazz", etc.
-await client.get_eq_presets()  # Returns list[str] of available preset names
-
-# Custom EQ
-await client.set_eq_custom(
-    bass: int,      # -12 to 12
-    treble: int,    # -12 to 12
-    balance: float  # -1.0 to 1.0
-)
-
-# EQ status
-await client.get_eq()
-await client.set_eq_enabled(enabled: bool)
-await client.get_eq_status()
-```
-
-### PresetAPI
-
-Preset management.
-
-```python
-# Presets
-await client.get_presets()  # Returns list of preset dicts
-await client.get_max_preset_slots()  # Returns int
-await client.play_preset(preset: int)  # 1-based preset number
-```
-
-### DiagnosticsAPI
-
-Device diagnostics and maintenance.
-
-```python
-await client.reboot()
-await client.sync_time()
-await client.send_command(command: str)  # Raw command
-```
-
-### BluetoothAPI
-
-Bluetooth device management.
-
-```python
-# Scanning
-await client.start_bluetooth_discovery(duration: int = 3)
-await client.get_bluetooth_discovery_result()
-await client.scan_for_bluetooth_devices(duration: int = 3)
-await client.is_bluetooth_scan_in_progress()
-await client.get_bluetooth_device_count()
-await client.clear_bluetooth_discovery_result()
-
-# Connection
-await client.connect_bluetooth_device(mac: str)
-await client.disconnect_bluetooth_device()
-await client.get_bluetooth_pair_status()
-await client.get_bluetooth_history()
-```
-
-### AudioSettingsAPI
-
-Advanced audio settings.
-
-```python
-# SPDIF
-await client.get_spdif_sample_rate()
-await client.set_spdif_switch_delay(delay_ms: int)
-await client.is_spdif_output_active()
-
-# Channel balance
-await client.get_channel_balance()
-await client.set_channel_balance(balance: float)  # -1.0 to 1.0
-await client.center_channel_balance()
-
-# Audio output
-await client.get_audio_output_status()
-await client.set_audio_output_hardware_mode(mode: str)
-
-# Status
-await client.get_audio_settings_status()
-```
-
-### LMSAPI
-
-Lyrion Music Server integration.
-
-```python
-# Server discovery
-await client.discover_lms_servers()
-await client.get_discovered_servers()
-
-# Connection
-await client.connect_to_lms_server(server_address: str)
-await client.set_auto_connect_enabled(enabled: bool)
-await client.is_auto_connect_enabled()
-await client.get_connected_server()
-await client.get_default_server()
-await client.get_connection_state()
-await client.is_connected_to_lms()
-
-# Setup helper
-await client.setup_lms_connection(
-    server_address: str,
-    auto_connect: bool = True
-)
-
-# State
-await client.get_squeezelite_state()
-```
-
-### MiscAPI
-
-Miscellaneous device controls.
-
-```python
-# Touch buttons
-await client.set_buttons_enabled(enabled: bool)
-await client.enable_touch_buttons()
-await client.disable_touch_buttons()
-await client.are_touch_buttons_enabled()
-
-# LED (alternative method)
-await client.set_led_switch(enabled: bool)
-
-# Capabilities
-await client.get_device_capabilities()
-```
-
-### FirmwareAPI
-
-Firmware information and updates.
-
-```python
-# Version parsing
-client.parse_firmware_version(version_str: str) -> dict[str, Any]
-client.compare_firmware_versions(v1: str, v2: str) -> int
-
-# Firmware info
-await client.get_firmware_info()
-await client.check_for_updates()
-await client.get_update_status()
-await client.is_firmware_version_at_least(version: str) -> bool
-```
-
-### TimerAPI
-
-Sleep timer and alarm clock features (WiiM devices only).
-
-#### Sleep Timer
-
-```python
-# Set sleep timer (in seconds)
-await client.set_sleep_timer(seconds: int)  # 0=immediate, -1=cancel
-await client.get_sleep_timer()  # Returns int (remaining seconds)
-await client.cancel_sleep_timer()  # Cancel active timer
-```
-
-#### Alarm Clock
-
-WiiM devices support 3 independent alarm slots (indices 0-2).
-
-```python
-# Set alarm (time in UTC, HHMMSS format)
-await client.set_alarm(
-    alarm_id=0,  # 0-2
-    trigger=2,  # ALARM_TRIGGER_DAILY
-    operation=1,  # ALARM_OP_PLAYBACK
-    time="073000",  # 07:30:00 UTC
-    day=None,  # Required for once/weekly/monthly triggers
-    url=None  # Optional playback URL
-)
-
-# Get specific alarm or all alarms
-await client.get_alarm(alarm_id=0)
-await client.get_alarms()  # Returns list of 3 alarm configs
-
-# Delete alarm
-await client.delete_alarm(alarm_id=0)
-
-# Stop currently ringing alarm
-await client.stop_current_alarm()
-
-# Sync device time (for offline devices)
-await client.sync_time(timestamp="20250117120000")  # YYYYMMDDHHMMSS UTC
-```
-
-**Alarm Trigger Types:**
-- `ALARM_TRIGGER_CANCEL` (0) - Cancel alarm
-- `ALARM_TRIGGER_ONCE` (1) - One-time (day=YYYYMMDD)
-- `ALARM_TRIGGER_DAILY` (2) - Every day
-- `ALARM_TRIGGER_WEEKLY` (3) - Every week (day="00"-"06" for Sun-Sat)
-- `ALARM_TRIGGER_WEEKLY_BITMASK` (4) - Week bitmask (day="7F"=all, "01"=Sun only)
-- `ALARM_TRIGGER_MONTHLY` (5) - Every month (day="01"-"31")
-
-**Alarm Operations:**
-- `ALARM_OP_SHELL` (0) - Execute shell command
-- `ALARM_OP_PLAYBACK` (1) - Play audio/ring
-- `ALARM_OP_STOP` (2) - Stop playback
-
-**Note:** All times are in UTC. Applications must handle timezone conversion.
-
 ## Usage Examples
 
 ### Basic Usage
 
 ```python
 import asyncio
-from pywiim import WiiMClient
+from pywiim import Player, WiiMClient
 
 async def main():
-    client = WiiMClient("192.168.1.100")
+    player = Player(WiiMClient("192.168.1.100"))
     
-    # Get device info
-    info = await client.get_device_info_model()
-    print(f"Device: {info.name} ({info.model})")
+    # Refresh state cache
+    await player.refresh()
     
-    # Get status
-    status = await client.get_player_status()
-    print(f"Playing: {status.get('play_state')}")
+    # Access cached properties
+    print(f"Device: {player.device_name}")
+    print(f"Playing: {player.play_state}")
+    print(f"Volume: {player.volume_level}")
     
     # Control playback
-    await client.set_volume(0.5)
-    await client.play()
+    await player.set_volume(0.5)
+    await player.play()
     
-    await client.close()
+    await player.client.close()
 
 asyncio.run(main())
 ```
@@ -1335,13 +1045,13 @@ asyncio.run(main())
 ### Error Handling
 
 ```python
-from pywiim import WiiMClient, WiiMError, WiiMRequestError
+from pywiim import Player, WiiMClient, WiiMError, WiiMRequestError
 
 async def main():
-    client = WiiMClient("192.168.1.100")
+    player = Player(WiiMClient("192.168.1.100"))
     
     try:
-        await client.play()
+        await player.play()
     except WiiMRequestError as e:
         print(f"Request failed: {e}")
         print(f"Endpoint: {e.endpoint}")
@@ -1349,24 +1059,26 @@ async def main():
     except WiiMError as e:
         print(f"WiiM error: {e}")
     finally:
-        await client.close()
+        await player.client.close()
 ```
 
 ### Capability Detection
 
 ```python
+from pywiim import Player, WiiMClient
+
 async def main():
-    client = WiiMClient("192.168.1.100")
+    player = Player(WiiMClient("192.168.1.100"))
+    await player.refresh()
     
-    # Capabilities are auto-detected on first use
-    info = await client.get_device_info_model()
+    # Check capabilities via player properties
+    if player.supports_sleep_timer:
+        print("Device supports sleep timer")
     
-    # Check capabilities
-    if client.capabilities.get("supports_presets"):
-        presets = await client.get_presets()
-        print(f"Found {len(presets)} presets")
+    if player.shuffle_supported:
+        print("Shuffle is supported for current source")
     
-    await client.close()
+    await player.client.close()
 ```
 
 ## Output Selection (Hardware + Bluetooth)
