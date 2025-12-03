@@ -169,6 +169,31 @@ class TestUpnpEventer:
         assert eventer.check_available is True
 
     @pytest.mark.asyncio
+    async def test_on_event_empty_state_variables_connection_manager_expected(self):
+        """Test ConnectionManager empty initial state is expected (DEBUG, not WARNING).
+
+        ConnectionManager tracks media format connections which may be empty on startup.
+        This should NOT set check_available because it's normal behavior, not a problem.
+        """
+        mock_upnp_client = MagicMock()
+        mock_upnp_client.host = "192.168.1.100"
+        mock_state_manager = MagicMock()
+        mock_service = MagicMock()
+        mock_service.service_id = "urn:upnp-org:serviceId:ConnectionManager"
+        mock_service.service_type = "urn:schemas-upnp-org:service:ConnectionManager:1"
+
+        eventer = UpnpEventer(mock_upnp_client, mock_state_manager, "test-uuid")
+        # Early lifecycle - low event count and recent/no events
+        eventer._event_count = 2
+        eventer._last_notify_ts = None  # No events yet
+
+        # Empty state_variables from ConnectionManager during early lifecycle = expected
+        eventer._on_event(mock_service, [])
+
+        # Should NOT set check_available (this is normal, not a problem)
+        assert eventer.check_available is False
+
+    @pytest.mark.asyncio
     async def test_on_event_avtransport_lastchange(self):
         """Test parsing AVTransport LastChange event."""
         mock_upnp_client = MagicMock()

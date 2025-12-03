@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.33] - 2025-12-02
+
+### Fixed
+- **Bluetooth metadata now displays correctly (enhanced fix for Issue #138)**
+  - When `getPlayerStatusEx` returns "Unknown" for title/artist/album (common with Bluetooth AVRCP), the library now fetches metadata from `getMetaInfo` endpoint
+  - This ensures Bluetooth track information (title, artist, album) is displayed correctly
+  - The WiiM device receives AVRCP metadata from the Bluetooth source, but only exposes it via `getMetaInfo`, not `getPlayerStatusEx`
+  - Fix applies to both HTTP polling and UPnP event handling
+
 ## [2.1.32] - 2025-12-02
 
 ### Added

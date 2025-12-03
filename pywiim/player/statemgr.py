@@ -351,44 +351,66 @@ class StateManager:
             current_signature and self._last_track_signature and current_signature != self._last_track_signature
         )
 
+        # Helper to check if metadata value is invalid/unknown
+        def is_invalid_metadata(val: str | None) -> bool:
+            if not val:
+                return True
+            val_lower = str(val).strip().lower()
+            return val_lower in ("unknow", "unknown", "un_known", "", "none")
+
+        # Check if metadata needs enrichment (title/artist/album are Unknown)
+        # This is common with Bluetooth AVRCP where getPlayerStatusEx returns "Unknown"
+        # but getMetaInfo has the actual track info
+        needs_metadata_enrichment = is_invalid_metadata(title) or is_invalid_metadata(artist)
+
         if track_changed:
             self._last_track_signature = current_signature
 
-            # Check if artwork is missing or is default logo
-            image_url = merged.get("image_url")
-            from ..api.constants import DEFAULT_WIIM_LOGO_URL
+        # Check if artwork is missing or is default logo
+        image_url = merged.get("image_url")
+        from ..api.constants import DEFAULT_WIIM_LOGO_URL
 
-            has_valid_artwork = (
-                image_url
-                and str(image_url).strip()
-                and str(image_url).strip().lower() not in ("unknow", "unknown", "un_known", "none", "")
-                and str(image_url).strip() != DEFAULT_WIIM_LOGO_URL
-            )
+        has_valid_artwork = (
+            image_url
+            and str(image_url).strip()
+            and str(image_url).strip().lower() not in ("unknow", "unknown", "un_known", "none", "")
+            and str(image_url).strip() != DEFAULT_WIIM_LOGO_URL
+        )
 
-            # If artwork is missing and device supports getMetaInfo, fetch it immediately
-            if not has_valid_artwork:
-                capabilities = self.player.client._capabilities
-                if capabilities.get("supports_metadata", True) and hasattr(self.player.client, "get_meta_info"):
-                    # Cancel any existing artwork fetch task
-                    if self._artwork_fetch_task and not self._artwork_fetch_task.done():
-                        self._artwork_fetch_task.cancel()
+        # Fetch metadata from getMetaInfo if:
+        # 1. Track changed and artwork is missing, OR
+        # 2. Metadata (title/artist) is "Unknown" (Bluetooth AVRCP case)
+        should_fetch_metadata = (track_changed and not has_valid_artwork) or needs_metadata_enrichment
 
-                    # Start background task to fetch artwork
-                    try:
-                        loop = asyncio.get_event_loop()
-                        self._artwork_fetch_task = loop.create_task(self._fetch_artwork_from_metainfo())
-                        _LOGGER.debug("Track changed, fetching artwork from getMetaInfo immediately")
-                    except RuntimeError:
-                        # No event loop available (sync context) - will fetch on next poll
-                        _LOGGER.debug("No event loop available, artwork will be fetched on next poll")
-        elif not self._last_track_signature and current_signature:
+        if should_fetch_metadata:
+            capabilities = self.player.client._capabilities
+            if capabilities.get("supports_metadata", True) and hasattr(self.player.client, "get_meta_info"):
+                # Cancel any existing fetch task
+                if self._artwork_fetch_task and not self._artwork_fetch_task.done():
+                    self._artwork_fetch_task.cancel()
+
+                # Start background task to fetch metadata
+                try:
+                    loop = asyncio.get_event_loop()
+                    self._artwork_fetch_task = loop.create_task(self._fetch_artwork_from_metainfo())
+                    if needs_metadata_enrichment:
+                        _LOGGER.debug("Metadata is Unknown, fetching from getMetaInfo")
+                    else:
+                        _LOGGER.debug("Track changed, fetching metadata from getMetaInfo")
+                except RuntimeError:
+                    # No event loop available (sync context) - will fetch on next poll
+                    _LOGGER.debug("No event loop available, metadata will be fetched on next poll")
+
+        if not self._last_track_signature and current_signature:
             # First track detected
             self._last_track_signature = current_signature
 
     async def _fetch_artwork_from_metainfo(self) -> None:
-        """Fetch artwork from getMetaInfo and update state.
+        """Fetch metadata and artwork from getMetaInfo and update state.
 
         This runs as a background task when track changes and artwork is missing.
+        Also updates title/artist/album from getMetaInfo when the status endpoint
+        returns "Unknown" values (common with Bluetooth AVRCP sources).
         """
         try:
             if not hasattr(self.player.client, "get_meta_info"):
@@ -399,6 +421,41 @@ class StateManager:
                 return
 
             meta_data = meta_info["metaData"]
+            update: dict[str, Any] = {}
+
+            # Helper to check if a value is invalid/unknown
+            def is_invalid(val: str | None) -> bool:
+                if not val:
+                    return True
+                val_lower = str(val).strip().lower()
+                return val_lower in ("unknow", "unknown", "un_known", "", "none")
+
+            # Get current merged state to check what needs updating
+            merged = self.player._state_synchronizer.get_merged_state()
+
+            # Extract and apply title if current is invalid and getMetaInfo has valid data
+            meta_title = meta_data.get("title")
+            if meta_title and not is_invalid(meta_title):
+                current_title = merged.get("title")
+                if is_invalid(current_title):
+                    update["title"] = meta_title
+                    update["Title"] = meta_title  # For Pydantic model alias
+
+            # Extract and apply artist if current is invalid and getMetaInfo has valid data
+            meta_artist = meta_data.get("artist")
+            if meta_artist and not is_invalid(meta_artist):
+                current_artist = merged.get("artist")
+                if is_invalid(current_artist):
+                    update["artist"] = meta_artist
+                    update["Artist"] = meta_artist  # For Pydantic model alias
+
+            # Extract and apply album if current is invalid and getMetaInfo has valid data
+            meta_album = meta_data.get("album")
+            if meta_album and not is_invalid(meta_album):
+                current_album = merged.get("album")
+                if is_invalid(current_album):
+                    update["album"] = meta_album
+                    update["Album"] = meta_album  # For Pydantic model alias
 
             # Extract artwork URL
             artwork_url = (
@@ -413,21 +470,14 @@ class StateManager:
                 or meta_data.get("pic_url")
             )
 
-            # Validate artwork URL
-            if artwork_url and str(artwork_url).strip() not in (
-                "unknow",
-                "unknown",
-                "un_known",
-                "",
-                "none",
-            ):
+            # Validate and add artwork URL
+            if artwork_url and not is_invalid(artwork_url):
                 # Basic URL validation
                 if "http" in str(artwork_url).lower() or str(artwork_url).startswith("/"):
-                    # Get current metadata for cache-busting
-                    merged = self.player._state_synchronizer.get_merged_state()
-                    title = merged.get("title") or ""
-                    artist = merged.get("artist") or ""
-                    album = merged.get("album") or ""
+                    # Get metadata for cache-busting (use new values if we're updating)
+                    title = update.get("title") or merged.get("title") or ""
+                    artist = update.get("artist") or merged.get("artist") or ""
+                    album = update.get("album") or merged.get("album") or ""
                     cache_key = f"{title}-{artist}-{album}"
 
                     if cache_key:
@@ -437,31 +487,47 @@ class StateManager:
                         sep = "&" if "?" in artwork_url else "?"
                         artwork_url = f"{artwork_url}{sep}cache={encoded}"
 
-                    # Update state synchronizer with new artwork
-                    self.player._state_synchronizer.update_from_http(
-                        {"entity_picture": artwork_url}, timestamp=time.time()
-                    )
+                    update["entity_picture"] = artwork_url
 
-                    # Update cached status model
-                    merged = self.player._state_synchronizer.get_merged_state()
-                    if self.player._status_model and "image_url" in merged:
+            # Apply updates if any
+            if update:
+                _LOGGER.debug("Applying metadata from getMetaInfo: %s", update)
+
+                # Update state synchronizer
+                self.player._state_synchronizer.update_from_http(update, timestamp=time.time())
+
+                # Update cached status model
+                merged = self.player._state_synchronizer.get_merged_state()
+                if self.player._status_model:
+                    if "title" in update:
+                        self.player._status_model.title = merged.get("title")
+                    if "artist" in update:
+                        self.player._status_model.artist = merged.get("artist")
+                    if "album" in update:
+                        self.player._status_model.album = merged.get("album")
+                    if "entity_picture" in update:
                         image_url = merged.get("image_url")
                         self.player._status_model.entity_picture = image_url
                         self.player._status_model.cover_url = image_url
 
-                    # Trigger callback to notify of artwork update
-                    if self.player._on_state_changed:
-                        try:
-                            self.player._on_state_changed()
-                        except Exception as err:
-                            _LOGGER.debug("Error in callback after artwork update: %s", err)
+                # Trigger callback to notify of update
+                if self.player._on_state_changed:
+                    try:
+                        self.player._on_state_changed()
+                    except Exception as err:
+                        _LOGGER.debug("Error in callback after metadata update: %s", err)
 
-                    _LOGGER.debug("Fetched artwork from getMetaInfo on track change: %s", artwork_url)
+                _LOGGER.debug(
+                    "Fetched metadata from getMetaInfo: title=%s, artist=%s, album=%s",
+                    update.get("title"),
+                    update.get("artist"),
+                    update.get("album"),
+                )
         except asyncio.CancelledError:
             # Task was cancelled (new track change detected)
             pass
         except Exception as e:
-            _LOGGER.debug("Error fetching artwork from getMetaInfo on track change: %s", e)
+            _LOGGER.debug("Error fetching metadata from getMetaInfo on track change: %s", e)
 
     async def _get_master_name(self, device_info: DeviceInfo | None, status: PlayerStatus | None) -> str | None:
         """Get master device name."""
@@ -691,15 +757,71 @@ class StateManager:
                 self._last_source = current_source
             elif source_changed:
                 self._last_source = current_source
-            if track_changed:
-                # Track changed (or first run)
+
+            # Helper to check if a metadata value is invalid/unknown
+            def is_invalid_metadata(val: str | None) -> bool:
+                if not val:
+                    return True
+                val_lower = str(val).strip().lower()
+                return val_lower in ("unknow", "unknown", "un_known", "", "none")
+
+            # Check if we need to enrich metadata (title/artist are Unknown - common with Bluetooth AVRCP)
+            status_title = status.title if status else None
+            status_artist = status.artist if status else None
+            needs_metadata_enrichment = is_invalid_metadata(status_title) or is_invalid_metadata(status_artist)
+
+            if track_changed or needs_metadata_enrichment:
+                # Track changed OR metadata needs enrichment (Bluetooth AVRCP case)
                 if self.player.client.capabilities.get("supports_metadata", False):
                     try:
                         metadata = await self.player.client.get_meta_info()
                         self.player._metadata = metadata if metadata else None
+
+                        # Apply title/artist/album from getMetaInfo when status values are "Unknown"
+                        # This is critical for Bluetooth AVRCP sources where getPlayerStatusEx returns "Unknown"
+                        # but getMetaInfo has the actual track info
+                        if metadata and "metaData" in metadata:
+                            meta_data = metadata["metaData"]
+                            update: dict[str, Any] = {}
+
+                            # Extract and apply title if status has invalid value
+                            meta_title = meta_data.get("title")
+                            if meta_title and not is_invalid_metadata(meta_title) and is_invalid_metadata(status_title):
+                                update["title"] = meta_title
+                                update["Title"] = meta_title
+                                if status:
+                                    status.title = meta_title
+
+                            # Extract and apply artist if status has invalid value
+                            meta_artist = meta_data.get("artist")
+                            if (
+                                meta_artist
+                                and not is_invalid_metadata(meta_artist)
+                                and is_invalid_metadata(status_artist)
+                            ):
+                                update["artist"] = meta_artist
+                                update["Artist"] = meta_artist
+                                if status:
+                                    status.artist = meta_artist
+
+                            # Extract and apply album if status has invalid value
+                            status_album = status.album if status else None
+                            meta_album = meta_data.get("album")
+                            if meta_album and not is_invalid_metadata(meta_album) and is_invalid_metadata(status_album):
+                                update["album"] = meta_album
+                                update["Album"] = meta_album
+                                if status:
+                                    status.album = meta_album
+
+                            if update:
+                                _LOGGER.debug("Applied metadata from getMetaInfo: %s", update)
+                                # Update state synchronizer
+                                self.player._state_synchronizer.update_from_http(update, timestamp=time.time())
                     except Exception as err:
                         _LOGGER.debug("Failed to fetch metadata for %s: %s", self.player.host, err)
                         self.player._metadata = None
+
+            if track_changed:
                 # Update track signature after processing track change
                 self._last_track_signature = current_signature
 

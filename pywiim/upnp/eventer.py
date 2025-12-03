@@ -241,6 +241,27 @@ class UpnpEventer:
             except Exception as diag_err:
                 subscription_info["diagnostic_error"] = str(diag_err)
 
+            # Determine if this is a normal/expected empty event vs. a potential issue
+            # ConnectionManager often sends empty initial notifications - this is normal because:
+            #   - It tracks media format connections (SourceProtocolInfo, SinkProtocolInfo, etc.)
+            #   - On startup, there may be no active connections to report
+            #   - The service still sends the initial subscription confirmation with empty state
+            # AVTransport/RenderingControl sending empty events after working = potential problem
+            is_connection_manager = "ConnectionManager" in service_id
+            is_early_lifecycle = event_count < 5 and (time_since_last_event is None or time_since_last_event < 5.0)
+            is_expected_empty = is_connection_manager and is_early_lifecycle
+
+            if is_expected_empty:
+                # Normal behavior - log at DEBUG level
+                _LOGGER.debug(
+                    "ConnectionManager sent empty initial state for %s - this is normal. "
+                    "ConnectionManager tracks media format connections (source/sink protocols) "
+                    "which may be empty on startup when nothing is actively streaming.",
+                    self.upnp_client.host,
+                )
+                # Don't set check_available for expected empty events
+                return
+
             # Following DLNA DMR pattern: empty state_variables indicates resubscription issue
             # Set check_available flag to trigger availability check in next poll
             # Trust auto_resubscribe=True to recover - don't mark as failed
@@ -251,51 +272,21 @@ class UpnpEventer:
                     "will check device availability, trusting auto_resubscribe to recover",
                     self.upnp_client.host,
                 )
-                _LOGGER.warning(
-                    "   📊 Diagnostic Information:",
-                )
-                _LOGGER.warning(
-                    "      Service: %s (%s)",
-                    service_id,
-                    service_type,
-                )
-                _LOGGER.warning(
-                    "      Callback URL: %s",
-                    callback_url,
-                )
-                _LOGGER.warning(
-                    "      Events received before issue: %d",
-                    event_count,
-                )
+                _LOGGER.warning("   📊 Diagnostic Information:")
+                _LOGGER.warning("      Service: %s (%s)", service_id, service_type)
+                _LOGGER.warning("      Callback URL: %s", callback_url)
+                _LOGGER.warning("      Events received before issue: %d", event_count)
                 if time_since_last_event:
-                    _LOGGER.warning(
-                        "      Time since last event: %.1f seconds",
-                        time_since_last_event,
-                    )
+                    _LOGGER.warning("      Time since last event: %.1f seconds", time_since_last_event)
                 else:
-                    _LOGGER.warning(
-                        "      Time since last event: No events received yet",
-                    )
+                    _LOGGER.warning("      Time since last event: No events received yet")
                 if subscription_info:
-                    _LOGGER.warning(
-                        "      Subscription state: %s",
-                        subscription_info,
-                    )
-                _LOGGER.warning(
-                    "   💡 Possible causes:",
-                )
-                _LOGGER.warning(
-                    "      - Device may have reached subscription limit (multiple clients?)",
-                )
-                _LOGGER.warning(
-                    "      - Network connectivity issue preventing resubscription",
-                )
-                _LOGGER.warning(
-                    "      - Device firmware limitation with auto_resubscribe",
-                )
-                _LOGGER.warning(
-                    "      - Callback URL unreachable (check Docker/container networking)",
-                )
+                    _LOGGER.warning("      Subscription state: %s", subscription_info)
+                _LOGGER.warning("   💡 This warning typically indicates:")
+                _LOGGER.warning("      - Device resubscription failed (subscription may have expired)")
+                _LOGGER.warning("      - Multiple clients competing for limited device subscriptions")
+                _LOGGER.warning("      - Network issue preventing callback delivery")
+                _LOGGER.warning("   ℹ️  The library will continue polling and auto_resubscribe should recover.")
 
             # Set check_available flag (DLNA DMR pattern)
             self.check_available = True
