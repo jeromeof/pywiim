@@ -1133,8 +1133,8 @@ class PlayerMonitor:
 
                     connection_info.append(
                         f"UPnP: {status_icon} {status_text} "
-                        f"({stats['detected_changes']-stats['missed_changes']}/{stats['detected_changes']} caught, "
-                        f"{stats['miss_rate']*100:.0f}% miss)"
+                        f"({stats['detected_changes'] - stats['missed_changes']}/{stats['detected_changes']} caught, "
+                        f"{stats['miss_rate'] * 100:.0f}% miss)"
                     )
                 else:
                     # Not enough data yet, show event count

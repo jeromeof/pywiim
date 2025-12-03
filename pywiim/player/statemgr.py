@@ -651,6 +651,8 @@ class StateManager:
             if full or device_info is None:
                 device_info = await self.player.client.get_device_info_model()
                 self.player._device_info = device_info
+                # Update device profile when device_info changes
+                self.player._update_profile_from_device_info()
 
             # Try UPnP GetVolume first if available, fallback to HTTP
             volume_from_upnp: int | None = None

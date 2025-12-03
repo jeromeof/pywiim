@@ -54,10 +54,16 @@ from .models import DeviceInfo, PlayerStatus
 from .normalize import normalize_device_info
 from .player import Player
 from .polling import PollingStrategy, TrackChangeDetector, fetch_parallel
+from .profiles import (
+    PROFILES,
+    DeviceProfile,
+    get_device_profile,
+    get_profile_for_vendor,
+)
 from .role import RoleDetectionResult, detect_role
 from .state import GroupStateSynchronizer, StateSynchronizer
 
-__version__ = "2.1.37"
+__version__ = "2.1.38"
 __all__ = [
     # Main client
     "WiiMClient",
@@ -96,6 +102,11 @@ __all__ = [
     # State Synchronization
     "StateSynchronizer",
     "GroupStateSynchronizer",
+    # Device Profiles
+    "DeviceProfile",
+    "get_device_profile",
+    "get_profile_for_vendor",
+    "PROFILES",
     # Alarm Constants (WiiM only)
     "ALARM_TRIGGER_CANCEL",
     "ALARM_TRIGGER_ONCE",

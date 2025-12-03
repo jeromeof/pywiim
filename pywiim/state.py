@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .models import GroupState
+    from .profiles import DeviceProfile
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -208,14 +209,98 @@ class SynchronizedState:
 
 
 class StateSynchronizer:
-    """Synchronize state from HTTP and UPnP sources with conflict resolution."""
+    """Synchronize state from HTTP and UPnP sources with conflict resolution.
 
-    def __init__(self):
-        """Initialize state synchronizer."""
+    The synchronizer can operate in two modes:
+
+    1. **Profile-driven** (recommended): When a DeviceProfile is provided, the
+       synchronizer uses the profile's state_sources configuration to determine
+       which source is authoritative for each field. This eliminates guessing
+       and makes behavior explicit and predictable.
+
+    2. **Legacy/fallback**: When no profile is provided, the synchronizer uses
+       the global SOURCE_PRIORITY dict with freshness-based conflict resolution.
+       This maintains backward compatibility but may have subtle bugs on devices
+       with specific requirements (e.g., Audio Pro MkII needs UPnP for play_state).
+
+    Example with profile:
+        ```python
+        from pywiim.profiles import get_device_profile
+
+        profile = get_device_profile(device_info)
+        synchronizer = StateSynchronizer(profile=profile)
+
+        # For Audio Pro MkII, profile.state_sources.play_state == "upnp"
+        # So the synchronizer will always prefer UPnP for play_state
+        ```
+    """
+
+    def __init__(self, profile: DeviceProfile | None = None):
+        """Initialize state synchronizer.
+
+        Args:
+            profile: Optional device profile that defines which source is
+                authoritative for each state field. When provided, the
+                synchronizer uses explicit source selection instead of
+                freshness-based conflict resolution.
+        """
         self._http_state: dict[str, TimestampedField] = {}
         self._upnp_state: dict[str, TimestampedField] = {}
         self._merged_state = SynchronizedState()
         self._last_merge_time: float = 0.0
+        self._profile = profile
+
+    def set_profile(self, profile: DeviceProfile) -> None:
+        """Set or update the device profile.
+
+        This can be called after initialization when the device profile
+        becomes available (e.g., after capability detection completes).
+
+        Args:
+            profile: Device profile defining source preferences
+        """
+        self._profile = profile
+        _LOGGER.debug(
+            "StateSynchronizer profile set: %s (play_state=%s, volume=%s)",
+            profile.display_name,
+            profile.state_sources.play_state,
+            profile.state_sources.volume,
+        )
+
+    @property
+    def profile(self) -> DeviceProfile | None:
+        """Get the current device profile."""
+        return self._profile
+
+    def _get_preferred_source(self, field_name: str) -> str:
+        """Get the preferred source for a field from profile or global default.
+
+        Args:
+            field_name: Name of the state field
+
+        Returns:
+            Preferred source: "http", "upnp", or "latest"
+        """
+        if self._profile is not None:
+            # Profile-driven: use explicit configuration
+            sources = self._profile.state_sources
+            source_map = {
+                "play_state": sources.play_state,
+                "volume": sources.volume,
+                "muted": sources.mute,
+                "position": sources.position,
+                "duration": sources.duration,
+                "source": sources.source,
+                "title": sources.title,
+                "artist": sources.artist,
+                "album": sources.album,
+                "image_url": sources.image_url,
+            }
+            return source_map.get(field_name, "http")
+
+        # No profile: use global priority (legacy behavior)
+        priority = SOURCE_PRIORITY.get(field_name, ["upnp", "http"])
+        return priority[0]
 
     def update_from_http(
         self,
@@ -421,6 +506,10 @@ class StateSynchronizer:
     ) -> TimestampedField | None:
         """Resolve conflict between HTTP and UPnP data.
 
+        When a device profile is set, uses explicit source selection based on
+        the profile's state_sources configuration. Otherwise falls back to
+        freshness-based conflict resolution (legacy behavior).
+
         Args:
             http_field: HTTP field value (may be None)
             upnp_field: UPnP field value (may be None)
@@ -430,7 +519,7 @@ class StateSynchronizer:
         Returns:
             Resolved field value (may be None)
         """
-        # If only one source has data, use it
+        # If only one source has data, use it (regardless of profile)
         if not http_field and not upnp_field:
             return None
         if not http_field:
@@ -438,18 +527,218 @@ class StateSynchronizer:
         if not upnp_field:
             return http_field
 
-        # Both present - resolve conflict
+        # Both present - resolve conflict using profile or legacy logic
         http_fresh = http_field.is_fresh(field_name, now)
         upnp_fresh = upnp_field.is_fresh(field_name, now)
+        upnp_available = self._merged_state.upnp_available
 
+        # Get preferred source from profile (or legacy global priority)
+        preferred_source = self._get_preferred_source(field_name)
+
+        # Profile-driven resolution (when profile is set)
+        if self._profile is not None:
+            return self._resolve_with_profile(
+                http_field,
+                upnp_field,
+                field_name,
+                preferred_source,
+                http_fresh,
+                upnp_fresh,
+                upnp_available,
+                now,
+            )
+
+        # Legacy resolution (no profile)
+        return self._resolve_legacy(
+            http_field,
+            upnp_field,
+            field_name,
+            http_fresh,
+            upnp_fresh,
+            upnp_available,
+            now,
+        )
+
+    def _resolve_with_profile(
+        self,
+        http_field: TimestampedField,
+        upnp_field: TimestampedField,
+        field_name: str,
+        preferred_source: str,
+        http_fresh: bool,
+        upnp_fresh: bool,
+        upnp_available: bool,
+        now: float,
+    ) -> TimestampedField:
+        """Resolve conflict using device profile configuration.
+
+        Profile-driven resolution is simple and predictable:
+        1. Use the preferred source if it has data
+        2. Fall back to the other source if preferred is unavailable/stale
+        3. For metadata, apply special handling to preserve non-empty values
+
+        Args:
+            http_field: HTTP field value
+            upnp_field: UPnP field value
+            field_name: Name of the field
+            preferred_source: "http", "upnp", or "latest" from profile
+            http_fresh: Whether HTTP data is fresh
+            upnp_fresh: Whether UPnP data is fresh
+            upnp_available: Whether UPnP is currently receiving events
+            now: Current timestamp
+
+        Returns:
+            Resolved field value
+        """
+        # Handle "latest" preference (use most recent regardless of source)
+        if preferred_source == "latest":
+            chosen = upnp_field if upnp_field.timestamp > http_field.timestamp else http_field
+            _LOGGER.debug(
+                "State merge [profile]: field=%s, chose=%s (latest, profile=%s)",
+                field_name,
+                chosen.source,
+                self._profile.display_name if self._profile else "none",
+            )
+            return chosen
+
+        # Determine primary and fallback based on preference
+        if preferred_source == "upnp":
+            primary, fallback = upnp_field, http_field
+            primary_fresh, fallback_fresh = upnp_fresh, http_fresh
+            primary_available = upnp_available
+        else:  # "http" (default)
+            primary, fallback = http_field, upnp_field
+            primary_fresh, fallback_fresh = http_fresh, upnp_fresh
+            primary_available = True  # HTTP is always "available" if we got data
+
+        # For metadata fields, apply special handling
+        if field_name in ["title", "artist", "album", "image_url"]:
+            return self._resolve_metadata_with_profile(
+                primary,
+                fallback,
+                field_name,
+                primary_fresh,
+                fallback_fresh,
+            )
+
+        # Non-metadata: use primary if available and fresh, else fallback
+        if primary_available and primary_fresh:
+            _LOGGER.debug(
+                "State merge [profile]: field=%s, chose=%s (preferred=%s, fresh)",
+                field_name,
+                primary.source,
+                preferred_source,
+            )
+            return primary
+
+        if fallback_fresh:
+            _LOGGER.debug(
+                "State merge [profile]: field=%s, chose=%s (fallback, primary %s stale/unavailable)",
+                field_name,
+                fallback.source,
+                preferred_source,
+            )
+            return fallback
+
+        # Both stale - use primary anyway (profile says it's authoritative)
+        _LOGGER.debug(
+            "State merge [profile]: field=%s, chose=%s (preferred=%s, both stale)",
+            field_name,
+            primary.source,
+            preferred_source,
+        )
+        return primary
+
+    def _resolve_metadata_with_profile(
+        self,
+        primary: TimestampedField,
+        fallback: TimestampedField,
+        field_name: str,
+        primary_fresh: bool,
+        fallback_fresh: bool,
+    ) -> TimestampedField:
+        """Resolve metadata field using profile with value preservation.
+
+        For metadata, we prioritize non-empty values to prevent clearing
+        valid metadata with empty updates.
+
+        Args:
+            primary: Primary source field (per profile preference)
+            fallback: Fallback source field
+            field_name: Name of the metadata field
+            primary_fresh: Whether primary data is fresh
+            fallback_fresh: Whether fallback data is fresh
+
+        Returns:
+            Resolved metadata field
+        """
+        # If primary has value, use it
+        if primary.value:
+            _LOGGER.debug(
+                "State merge [profile]: field=%s, chose=%s (metadata, has value)",
+                field_name,
+                primary.source,
+            )
+            return primary
+
+        # Primary empty - if fallback has value and is fresh, use it
+        if fallback.value and fallback_fresh:
+            _LOGGER.debug(
+                "State merge [profile]: field=%s, chose=%s (metadata, primary empty, fallback has value)",
+                field_name,
+                fallback.source,
+            )
+            return fallback
+
+        # Both empty or fallback stale - preserve existing if we have it
+        existing_merged: TimestampedField | None = getattr(self._merged_state, field_name, None)
+        if existing_merged is not None and existing_merged.value:
+            _LOGGER.debug(
+                "State merge [profile]: field=%s, preserving existing (both sources empty)",
+                field_name,
+            )
+            return existing_merged
+
+        # No existing - use primary (even if empty)
+        _LOGGER.debug(
+            "State merge [profile]: field=%s, chose=%s (metadata, no existing value)",
+            field_name,
+            primary.source,
+        )
+        return primary
+
+    def _resolve_legacy(
+        self,
+        http_field: TimestampedField,
+        upnp_field: TimestampedField,
+        field_name: str,
+        http_fresh: bool,
+        upnp_fresh: bool,
+        upnp_available: bool,
+        now: float,
+    ) -> TimestampedField:
+        """Resolve conflict using legacy freshness-based logic.
+
+        This is the original conflict resolution used when no profile is set.
+        Kept for backward compatibility.
+
+        Args:
+            http_field: HTTP field value
+            upnp_field: UPnP field value
+            field_name: Name of the field
+            http_fresh: Whether HTTP data is fresh
+            upnp_fresh: Whether UPnP data is fresh
+            upnp_available: Whether UPnP is currently receiving events
+            now: Current timestamp
+
+        Returns:
+            Resolved field value
+        """
         # Check if UPnP is actually working (receiving events)
         # If UPnP is not available, consider its data stale even if within freshness window
-        # This is critical when playing - we expect continuous UPnP events
-        upnp_available = self._merged_state.upnp_available
         if not upnp_available:
-            # UPnP is not working - prefer HTTP even if UPnP data is "fresh"
             _LOGGER.debug(
-                "State merge: field=%s, chose=http (upnp not available, age=%.1fs)",
+                "State merge [legacy]: field=%s, chose=http (upnp not available, age=%.1fs)",
                 field_name,
                 upnp_field.age(now),
             )
@@ -458,90 +747,72 @@ class StateSynchronizer:
         # If one is stale, use the fresh one
         if http_fresh and not upnp_fresh:
             _LOGGER.debug(
-                "State merge: field=%s, chose=http (upnp stale: age=%.1fs)",
+                "State merge [legacy]: field=%s, chose=http (upnp stale: age=%.1fs)",
                 field_name,
                 upnp_field.age(now),
             )
             return http_field
         if upnp_fresh and not http_fresh:
             _LOGGER.debug(
-                "State merge: field=%s, chose=upnp (http stale: age=%.1fs)",
+                "State merge [legacy]: field=%s, chose=upnp (http stale: age=%.1fs)",
                 field_name,
                 http_field.age(now),
             )
             return upnp_field
 
-        # Both fresh - for metadata, prefer UPnP (fires immediately on track changes, HTTP may be stale)
-        # For other fields, use priority
+        # Both fresh - for metadata, prefer UPnP (fires immediately on track changes)
         if field_name in ["title", "artist", "album", "image_url"]:
-            # Metadata: prefer UPnP when both fresh (UPnP events fire immediately on track changes)
-            # IMPORTANT: Spotify source requires UPnP events for metadata - HTTP API does not provide
-            # metadata when Spotify is the active source. Without UPnP events, Spotify metadata will be unavailable.
-            # HTTP polling may have stale metadata (e.g., Spotify only sends metadata via UPnP)
-            # For radio streams: HTTP often returns empty metadata, but UPnP may have valid metadata
-            # Don't overwrite valid UPnP metadata with empty HTTP data
             if upnp_field.value:
                 _LOGGER.debug(
-                    "State merge: field=%s, chose=upnp (metadata, UPnP has value, both fresh)",
+                    "State merge [legacy]: field=%s, chose=upnp (metadata, has value, both fresh)",
                     field_name,
                 )
                 return upnp_field
             elif http_field.value:
                 _LOGGER.debug(
-                    "State merge: field=%s, chose=http (metadata, UPnP empty, HTTP has value)",
+                    "State merge [legacy]: field=%s, chose=http (metadata, UPnP empty, HTTP has value)",
                     field_name,
                 )
                 return http_field
             else:
-                # Both None/empty - preserve existing metadata if we have it from merged state
-                # This prevents empty HTTP data from clearing valid metadata that was previously available
+                # Both empty - preserve existing
                 existing_merged: TimestampedField | None = getattr(self._merged_state, field_name, None)
                 if existing_merged is not None and existing_merged.value:
                     _LOGGER.debug(
-                        "State merge: field=%s, preserving existing metadata "
-                        "(both sources empty, keeping previous value)",
+                        "State merge [legacy]: field=%s, preserving existing (both sources empty)",
                         field_name,
                     )
                     return existing_merged
-                # No existing metadata - use most recent empty value
+                # Use most recent empty value
                 if upnp_field.timestamp > http_field.timestamp:
-                    _LOGGER.debug(
-                        "State merge: field=%s, chose=upnp (metadata, both empty, most recent)",
-                        field_name,
-                    )
                     return upnp_field
-                else:
-                    _LOGGER.debug(
-                        "State merge: field=%s, chose=http (metadata, both empty, most recent)",
-                        field_name,
-                    )
-                    return http_field
+                return http_field
 
-        # Non-metadata fields: use priority
+        # Non-metadata: use global priority
         priority = SOURCE_PRIORITY.get(field_name, ["upnp", "http"])
         if priority[0] == "upnp" and upnp_fresh:
             _LOGGER.debug(
-                "State merge: field=%s, chose=upnp (priority, both fresh)",
+                "State merge [legacy]: field=%s, chose=upnp (priority, both fresh)",
                 field_name,
             )
             return upnp_field
         if priority[0] == "http" and http_fresh:
             _LOGGER.debug(
-                "State merge: field=%s, chose=http (priority, both fresh)",
+                "State merge [legacy]: field=%s, chose=http (priority, both fresh)",
                 field_name,
             )
             return http_field
 
-        # Same priority - use most recent
+        # Use most recent
         if upnp_field.timestamp > http_field.timestamp:
             _LOGGER.debug(
-                "State merge: field=%s, chose=upnp (most recent)",
+                "State merge [legacy]: field=%s, chose=upnp (most recent)",
                 field_name,
             )
             return upnp_field
 
         _LOGGER.debug(
-            "State merge: field=%s, chose=http (most recent)",
+            "State merge [legacy]: field=%s, chose=http (most recent)",
             field_name,
         )
         return http_field

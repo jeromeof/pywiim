@@ -28,9 +28,9 @@ async def test_media_progress_tracking():
     """
     device_ip = "192.168.1.116"
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"Testing Media Progress on {device_ip}")
-    print(f"{'='*70}\n")
+    print(f"{'=' * 70}\n")
 
     # Create client and player
     client = WiiMClient(host=device_ip)
@@ -86,9 +86,9 @@ async def test_media_progress_tracking():
 
                     if player.media_duration:
                         progress = (pos / player.media_duration) * 100
-                        print(f"   Reading {i+1}: Position={pos}s, Progress={progress:.1f}%")
+                        print(f"   Reading {i + 1}: Position={pos}s, Progress={progress:.1f}%")
                     else:
-                        print(f"   Reading {i+1}: Position={pos}s")
+                        print(f"   Reading {i + 1}: Position={pos}s")
 
                 if i < 4:  # Don't sleep after last reading
                     await asyncio.sleep(1)
@@ -160,16 +160,16 @@ async def test_media_progress_tracking():
             print("      - Consider checking UPnP configuration if smooth progress is needed")
 
         # Summary
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print("Test Summary")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
         print("✓ Media progress properties are accessible")
         print("✓ Position and duration are properly reported")
         if player.play_state == "play":
             print("✓ Position estimation is working")
         if not upnp_available:
             print("⚠ UPnP not available - position tracking relies only on HTTP polling")
-        print(f"{'='*70}\n")
+        print(f"{'=' * 70}\n")
 
     finally:
         await client.close()
@@ -181,9 +181,9 @@ async def test_media_progress_when_paused():
     """Test that media progress remains stable when paused."""
     device_ip = "192.168.1.116"
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"Testing Media Progress When Paused on {device_ip}")
-    print(f"{'='*70}\n")
+    print(f"{'=' * 70}\n")
 
     client = WiiMClient(host=device_ip)
     player = Player(client)
@@ -224,9 +224,9 @@ async def test_media_progress_properties():
     """Test all media progress related properties."""
     device_ip = "192.168.1.116"
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"Testing All Media Progress Properties on {device_ip}")
-    print(f"{'='*70}\n")
+    print(f"{'=' * 70}\n")
 
     client = WiiMClient(host=device_ip)
     player = Player(client)
@@ -281,9 +281,9 @@ async def test_media_progress_properties():
             dur_min, dur_sec = divmod(player.media_duration, 60)
             print(f"   Display: {pos_min:02d}:{pos_sec:02d} / {dur_min:02d}:{dur_sec:02d}")
 
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print("✓ All media progress properties are working")
-        print(f"{'='*70}\n")
+        print(f"{'=' * 70}\n")
 
     finally:
         await client.close()

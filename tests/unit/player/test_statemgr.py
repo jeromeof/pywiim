@@ -234,7 +234,6 @@ class TestStateManager:
         TestStateManager._setup_refresh_mocks(mock_player, state_manager)
         mock_player._last_refresh = time.time() - 10  # Not first refresh
         with patch("pywiim.player.groupops.GroupOperations") as mock_groupops:
-
             mock_groupops.return_value._synchronize_group_state = AsyncMock()
 
             await state_manager.refresh(full=True)
@@ -250,7 +249,6 @@ class TestStateManager:
         mock_player._state_synchronizer.update_from_http = MagicMock()
 
         with patch("pywiim.player.groupops.GroupOperations") as mock_groupops:
-
             mock_groupops.return_value._synchronize_group_state = AsyncMock()
 
             await state_manager.refresh(full=False)
@@ -399,7 +397,6 @@ class TestStateManager:
         TestStateManager._setup_refresh_mocks(mock_player, state_manager)
         mock_player._last_refresh = None  # First refresh
         with patch("pywiim.player.groupops.GroupOperations") as mock_groupops:
-
             mock_groupops.return_value._synchronize_group_state = AsyncMock()
 
             await state_manager.refresh(full=False)  # Even though False, should be full
@@ -418,7 +415,6 @@ class TestStateManager:
         mock_player._upnp_client.get_mute = AsyncMock(return_value=True)
 
         with patch("pywiim.player.groupops.GroupOperations") as mock_groupops:
-
             mock_groupops.return_value._synchronize_group_state = AsyncMock()
 
             await state_manager.refresh(full=False)
@@ -439,7 +435,6 @@ class TestStateManager:
         mock_player._upnp_client.get_volume = AsyncMock(side_effect=Exception("UPnP error"))
 
         with patch("pywiim.player.groupops.GroupOperations") as mock_groupops:
-
             mock_groupops.return_value._synchronize_group_state = AsyncMock()
 
             await state_manager.refresh(full=False)
@@ -459,7 +454,6 @@ class TestStateManager:
         state_manager._last_track_signature = "Old|Track|Album"
 
         with patch("pywiim.player.groupops.GroupOperations") as mock_groupops:
-
             mock_groupops.return_value._synchronize_group_state = AsyncMock()
 
             await state_manager.refresh(full=False)
@@ -477,7 +471,6 @@ class TestStateManager:
         state_manager._last_eq_preset = "jazz"
 
         with patch("pywiim.player.groupops.GroupOperations") as mock_groupops:
-
             mock_groupops.return_value._synchronize_group_state = AsyncMock()
 
             await state_manager.refresh(full=False)
@@ -495,7 +488,6 @@ class TestStateManager:
         state_manager._last_source = "wifi"
 
         with patch("pywiim.player.groupops.GroupOperations") as mock_groupops:
-
             mock_groupops.return_value._synchronize_group_state = AsyncMock()
 
             await state_manager.refresh(full=False)
@@ -514,7 +506,6 @@ class TestStateManager:
         state_manager._last_track_signature = "Old|Track"
 
         with patch("pywiim.player.groupops.GroupOperations") as mock_groupops:
-
             mock_groupops.return_value._synchronize_group_state = AsyncMock()
 
             await state_manager.refresh(full=False)
@@ -533,7 +524,6 @@ class TestStateManager:
         state_manager._last_track_signature = "Old|Track"
 
         with patch("pywiim.player.groupops.GroupOperations") as mock_groupops:
-
             mock_groupops.return_value._synchronize_group_state = AsyncMock()
 
             await state_manager.refresh(full=False)
@@ -551,7 +541,6 @@ class TestStateManager:
         state_manager._last_track_signature = "Old|Track"
 
         with patch("pywiim.player.groupops.GroupOperations") as mock_groupops:
-
             mock_groupops.return_value._synchronize_group_state = AsyncMock()
 
             await state_manager.refresh(full=False)
@@ -583,7 +572,6 @@ class TestStateManager:
         mock_player._upnp_health_tracker = UpnpHealthTracker()
 
         with patch("pywiim.player.groupops.GroupOperations") as mock_groupops:
-
             mock_groupops.return_value._synchronize_group_state = AsyncMock()
 
             await state_manager.refresh(full=False)

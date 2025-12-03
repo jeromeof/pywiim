@@ -390,3 +390,238 @@ class TestGroupStateSynchronizer:
 
         with pytest.raises(ValueError, match="Master state not available"):
             sync.build_group_state("192.168.1.100", [])
+
+
+class TestStateSynchronizerWithProfile:
+    """Test StateSynchronizer with device profile configuration."""
+
+    def test_init_with_profile(self):
+        """Test initializing with a profile."""
+        from pywiim.profiles import PROFILES
+
+        profile = PROFILES["audio_pro_mkii"]
+        sync = StateSynchronizer(profile=profile)
+
+        assert sync.profile == profile
+        assert sync._profile == profile
+
+    def test_set_profile(self):
+        """Test setting profile after initialization."""
+        from pywiim.profiles import PROFILES
+
+        sync = StateSynchronizer()
+        assert sync.profile is None
+
+        profile = PROFILES["wiim"]
+        sync.set_profile(profile)
+
+        assert sync.profile == profile
+
+    def test_get_preferred_source_with_profile(self):
+        """Test _get_preferred_source uses profile config."""
+        from pywiim.profiles import PROFILES
+
+        # Audio Pro MkII requires UPnP for play_state
+        profile = PROFILES["audio_pro_mkii"]
+        sync = StateSynchronizer(profile=profile)
+
+        assert sync._get_preferred_source("play_state") == "upnp"
+        assert sync._get_preferred_source("volume") == "upnp"
+        assert sync._get_preferred_source("title") == "http"
+
+    def test_get_preferred_source_without_profile(self):
+        """Test _get_preferred_source uses global priority without profile."""
+        sync = StateSynchronizer()
+
+        # Without profile, uses global SOURCE_PRIORITY
+        # play_state priority is ["upnp", "http"], so first is "upnp"
+        assert sync._get_preferred_source("play_state") == "upnp"
+
+    def test_wiim_profile_uses_http(self):
+        """Test WiiM profile prefers HTTP for all state."""
+        from pywiim.profiles import PROFILES
+
+        profile = PROFILES["wiim"]
+        sync = StateSynchronizer(profile=profile)
+
+        assert sync._get_preferred_source("play_state") == "http"
+        assert sync._get_preferred_source("volume") == "http"
+        assert sync._get_preferred_source("muted") == "http"
+
+    def test_mkii_profile_uses_upnp_for_transport(self):
+        """Test Audio Pro MkII profile uses UPnP for transport state."""
+        from pywiim.profiles import PROFILES
+
+        profile = PROFILES["audio_pro_mkii"]
+        sync = StateSynchronizer(profile=profile)
+
+        # Transport state uses UPnP (HTTP doesn't provide it on MkII)
+        assert sync._get_preferred_source("play_state") == "upnp"
+        assert sync._get_preferred_source("volume") == "upnp"
+        assert sync._get_preferred_source("muted") == "upnp"
+
+        # Metadata still uses HTTP
+        assert sync._get_preferred_source("title") == "http"
+        assert sync._get_preferred_source("artist") == "http"
+
+    def test_profile_driven_conflict_resolution(self):
+        """Test that profile-driven resolution uses preferred source."""
+        from pywiim.profiles import PROFILES
+
+        # WiiM profile prefers HTTP
+        profile = PROFILES["wiim"]
+        sync = StateSynchronizer(profile=profile)
+
+        now = time.time()
+        # Both sources fresh with different values
+        sync.update_from_http({"play_state": "pause"}, timestamp=now)
+        sync.update_from_upnp({"play_state": "play"}, timestamp=now)
+
+        merged = sync.get_merged_state()
+
+        # WiiM profile prefers HTTP for play_state
+        assert merged["play_state"] == "pause"
+
+    def test_mkii_profile_resolution_prefers_upnp(self):
+        """Test MkII profile prefers UPnP for play_state."""
+        from pywiim.profiles import PROFILES
+
+        profile = PROFILES["audio_pro_mkii"]
+        sync = StateSynchronizer(profile=profile)
+
+        now = time.time()
+        # Both sources fresh with different values
+        sync.update_from_http({"play_state": "pause"}, timestamp=now)
+        sync.update_from_upnp({"play_state": "play"}, timestamp=now)
+
+        merged = sync.get_merged_state()
+
+        # MkII profile prefers UPnP for play_state
+        assert merged["play_state"] == "play"
+
+    def test_profile_fallback_when_preferred_unavailable(self):
+        """Test fallback to other source when preferred is unavailable."""
+        from pywiim.profiles import PROFILES
+
+        # MkII prefers UPnP for play_state
+        profile = PROFILES["audio_pro_mkii"]
+        sync = StateSynchronizer(profile=profile)
+
+        now = time.time()
+        # Only HTTP data available
+        sync.update_from_http({"play_state": "pause"}, timestamp=now)
+
+        merged = sync.get_merged_state()
+
+        # Should fall back to HTTP since no UPnP data
+        assert merged["play_state"] == "pause"
+
+    def test_legacy_resolution_without_profile(self):
+        """Test legacy resolution still works when no profile set."""
+        sync = StateSynchronizer()  # No profile
+
+        now = time.time()
+        # HTTP stale, UPnP fresh
+        sync.update_from_http({"play_state": "pause"}, timestamp=now - 10.0)
+        sync.update_from_upnp({"play_state": "play"}, timestamp=now)
+
+        merged = sync.get_merged_state()
+
+        # Legacy: should prefer fresh UPnP
+        assert merged["play_state"] == "play"
+
+    def test_metadata_uses_non_empty_value(self):
+        """Test metadata uses non-empty value from either source."""
+        from pywiim.profiles import PROFILES
+
+        profile = PROFILES["wiim"]
+        sync = StateSynchronizer(profile=profile)
+
+        now = time.time()
+
+        # HTTP has empty metadata, UPnP has values
+        sync.update_from_http(
+            {
+                "play_state": "play",
+                "title": None,
+            },
+            timestamp=now,
+        )
+
+        sync.update_from_upnp(
+            {
+                "play_state": "play",
+                "title": "UPnP Title",
+            },
+            timestamp=now,
+        )
+
+        merged = sync.get_merged_state()
+
+        # Even though WiiM prefers HTTP, UPnP has a value so use it
+        assert merged["title"] == "UPnP Title"
+
+    def test_metadata_prefers_primary_when_both_have_values(self):
+        """Test metadata uses preferred source when both have values."""
+        from pywiim.profiles import PROFILES
+
+        profile = PROFILES["wiim"]  # HTTP preferred
+        sync = StateSynchronizer(profile=profile)
+
+        now = time.time()
+
+        sync.update_from_http(
+            {
+                "play_state": "play",
+                "title": "HTTP Title",
+            },
+            timestamp=now,
+        )
+
+        sync.update_from_upnp(
+            {
+                "play_state": "play",
+                "title": "UPnP Title",
+            },
+            timestamp=now,
+        )
+
+        merged = sync.get_merged_state()
+
+        # WiiM profile prefers HTTP for metadata
+        assert merged["title"] == "HTTP Title"
+
+    def test_metadata_preservation_from_merged_state(self):
+        """Test metadata is preserved from merged state when both sources empty."""
+        from pywiim.profiles import PROFILES
+
+        profile = PROFILES["wiim"]
+        sync = StateSynchronizer(profile=profile)
+
+        now = time.time()
+
+        # First update with metadata (this sets merged state)
+        sync.update_from_http(
+            {
+                "play_state": "play",
+                "title": "Good Song",
+            },
+            timestamp=now,
+        )
+
+        # Verify it's there
+        merged = sync.get_merged_state()
+        assert merged["title"] == "Good Song"
+
+        # Now update with ONLY play_state (don't include title at all)
+        # This shouldn't overwrite the existing title
+        sync.update_from_http(
+            {
+                "play_state": "play",
+            },
+            timestamp=now + 1,
+        )
+
+        merged = sync.get_merged_state()
+        # Title should still be there since we didn't provide a new one
+        assert merged["title"] == "Good Song"

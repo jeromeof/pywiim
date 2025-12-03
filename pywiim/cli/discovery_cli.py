@@ -141,16 +141,16 @@ Examples:
             # Text output
             print(f"✅ Found {len(devices)} device(s):\n")
             for i, device in enumerate(devices, 1):
-                print(f"{'='*60}")
+                print(f"{'=' * 60}")
                 print(f"Device {i}/{len(devices)}")
-                print(f"{'='*60}")
+                print(f"{'=' * 60}")
                 print(format_device_report(device))
                 print()
 
             # Summary
-            print(f"{'='*60}")
+            print(f"{'=' * 60}")
             print("Summary")
-            print(f"{'='*60}")
+            print(f"{'=' * 60}")
             print(f"Total devices: {len(devices)}")
             validated = sum(1 for d in devices if d.validated)
             print(f"Validated: {validated}/{len(devices)}")

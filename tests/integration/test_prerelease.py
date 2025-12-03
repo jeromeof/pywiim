@@ -826,9 +826,7 @@ class TestPreReleaseComprehensive:
                         f"Current source: {current_source}, Available: {sources}"
                     )
             except Exception:
-                pytest.skip(
-                    f"Cannot switch to network source for notification test. " f"Current source: {current_source}"
-                )
+                pytest.skip(f"Cannot switch to network source for notification test. Current source: {current_source}")
 
         # Use a short test notification URL (a brief audio file)
         # Using a short test audio file
@@ -938,7 +936,7 @@ class TestPreReleaseComprehensive:
                 selectable_sources.append(source)
 
         if len(selectable_sources) == 0:
-            pytest.skip(f"No selectable physical inputs found. " f"Available sources: {sources}")
+            pytest.skip(f"No selectable physical inputs found. Available sources: {sources}")
 
         # Save initial source
         initial_source = player.source

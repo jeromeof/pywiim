@@ -96,7 +96,7 @@ class EQAPI:
                 return key
 
         # If we get here, we couldn't normalize it
-        raise ValueError(f"Invalid EQ preset: {preset}. " f"Valid presets: {', '.join(sorted(EQ_PRESET_MAP.keys()))}")
+        raise ValueError(f"Invalid EQ preset: {preset}. Valid presets: {', '.join(sorted(EQ_PRESET_MAP.keys()))}")
 
     async def set_eq_preset(self, preset: str) -> None:
         """Apply a named EQ preset (e.g. "rock", "flat", "bass reducer").

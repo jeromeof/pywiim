@@ -113,10 +113,10 @@ class GroupTester:
             # Check follower players are solo
             for i, slave in enumerate(self.slaves):
                 if slave.is_solo:
-                    self._record_test(f"Follower {i+1} initial state", True, "SOLO")
+                    self._record_test(f"Follower {i + 1} initial state", True, "SOLO")
                 else:
                     self._record_test(
-                        f"Follower {i+1} initial state",
+                        f"Follower {i + 1} initial state",
                         False,
                         f"Role is {slave.role.upper()} (expected SOLO)",
                     )
@@ -152,10 +152,10 @@ class GroupTester:
 
                 # Defensive verification: Check library state matches expected
                 if slave.is_slave and slave.group == self.master.group:
-                    self._record_test(f"Join follower {i+1}", True, "Became SLAVE in group")
+                    self._record_test(f"Join follower {i + 1}", True, "Became SLAVE in group")
                 else:
                     self._record_test(
-                        f"Join follower {i+1}",
+                        f"Join follower {i + 1}",
                         False,
                         f"Role is {slave.role.upper()}, in group: {slave.group is not None}",
                     )
@@ -171,7 +171,7 @@ class GroupTester:
                         "warning",
                     )
             except Exception as e:
-                self._record_test(f"Join follower {i+1}", False, str(e))
+                self._record_test(f"Join follower {i + 1}", False, str(e))
 
     async def test_group_state(self) -> None:
         """Test group state after all slaves joined."""
@@ -271,7 +271,7 @@ class GroupTester:
                     "play_state": slave.play_state,
                 }
 
-                self._log(f"Slave {i+1} metadata: {slave_metadata}", "debug")
+                self._log(f"Slave {i + 1} metadata: {slave_metadata}", "debug")
 
                 # Compare metadata (position may differ slightly due to timing)
                 title_match = slave_metadata["title"] == master_metadata["title"]
@@ -281,7 +281,7 @@ class GroupTester:
 
                 if title_match and artist_match and album_match and play_state_match:
                     self._record_test(
-                        f"Metadata propagation slave {i+1}",
+                        f"Metadata propagation slave {i + 1}",
                         True,
                         "Title/Artist/Album/State match",
                     )
@@ -299,7 +299,7 @@ class GroupTester:
                             f"play_state: '{slave_metadata['play_state']}' != '{master_metadata['play_state']}'"
                         )
                     self._record_test(
-                        f"Metadata propagation slave {i+1}",
+                        f"Metadata propagation slave {i + 1}",
                         False,
                         f"Mismatches: {', '.join(mismatches)}",
                     )
@@ -410,10 +410,10 @@ class GroupTester:
             # Check follower players are solo
             for i, slave in enumerate(self.slaves):
                 if slave.is_solo:
-                    self._record_test(f"Final state - follower {i+1}", True, "SOLO")
+                    self._record_test(f"Final state - follower {i + 1}", True, "SOLO")
                 else:
                     self._record_test(
-                        f"Final state - follower {i+1}",
+                        f"Final state - follower {i + 1}",
                         False,
                         f"Role is {slave.role.upper()} (expected SOLO)",
                     )
@@ -509,7 +509,7 @@ async def show_detailed_status(players: list[Player], pause: float = 5.0) -> Non
             master_name = player.group.master.name or player.group.master.host
             group_info = f" (master: {master_name})"
 
-        print(f"  Player {i+1} ({name}): {role}{group_info}")
+        print(f"  Player {i + 1} ({name}): {role}{group_info}")
     print("-" * 60)
 
     if pause > 0:
@@ -533,7 +533,7 @@ async def run_interactive_tests(tester: GroupTester, master: Player, slaves: lis
     print("=" * 60)
     print(f"Leader: {master.host}")
     for i, slave in enumerate(slaves):
-        print(f"Follower {i+1}: {slave.host}")
+        print(f"Follower {i + 1}: {slave.host}")
     print("=" * 60)
 
     # Initial state
@@ -548,9 +548,9 @@ async def run_interactive_tests(tester: GroupTester, master: Player, slaves: lis
 
     # Test 2: Join followers one by one
     for i, slave in enumerate(slaves):
-        print(f"\n{i+2}️⃣  Joining follower {i+1} ({slave.host}) to leader...")
+        print(f"\n{i + 2}️⃣  Joining follower {i + 1} ({slave.host}) to leader...")
         await slave.join_group(master)
-        print(f"   ✓ Follower {i+1} joined group")
+        print(f"   ✓ Follower {i + 1} joined group")
         await show_detailed_status(all_players, pause)
 
     # Test 3: Show group state
@@ -562,9 +562,9 @@ async def run_interactive_tests(tester: GroupTester, master: Player, slaves: lis
 
     # Test 4: Leave followers one by one
     for i, slave in enumerate(slaves):
-        print(f"\n🚪 Follower {i+1} ({slave.host}) leaving group...")
+        print(f"\n🚪 Follower {i + 1} ({slave.host}) leaving group...")
         await slave.leave_group()
-        print(f"   ✓ Follower {i+1} left group, now solo")
+        print(f"   ✓ Follower {i + 1} left group, now solo")
         await show_detailed_status(all_players, pause)
 
     # Final state

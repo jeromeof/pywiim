@@ -146,7 +146,7 @@ async def discover_via_ssdp(
     """
     if async_search is None:
         _LOGGER.warning(
-            "async-upnp-client not available, SSDP discovery disabled. " "Install with: pip install async-upnp-client"
+            "async-upnp-client not available, SSDP discovery disabled. Install with: pip install async-upnp-client"
         )
         return []
 

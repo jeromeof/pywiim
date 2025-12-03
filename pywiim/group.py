@@ -268,7 +268,7 @@ class Group:
 
         # Update master first, then each slave sequentially to make logging clearer
         players = [("master", self.master, self.master.volume_level or 0.0)]
-        players.extend((f"slave-{i+1}", slave, slave.volume_level or 0.0) for i, slave in enumerate(self.slaves))
+        players.extend((f"slave-{i + 1}", slave, slave.volume_level or 0.0) for i, slave in enumerate(self.slaves))
 
         for role, player, current in players:
             target = max(0.0, min(1.0, current + delta))

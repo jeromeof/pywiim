@@ -165,7 +165,7 @@ class TestMultiDeviceGroup:
             if volume is None:
                 pytest.skip(f"Device {player.host} does not report volume levels")
             initial_volumes[player.host] = volume
-            role = "master" if player == master else f"slave-{slaves.index(player)+1}"
+            role = "master" if player == master else f"slave-{slaves.index(player) + 1}"
             _log(f"  {role:8s} {player.host:15s} volume={volume:.2f}")
 
         for player in players:
@@ -173,7 +173,7 @@ class TestMultiDeviceGroup:
             if mute_state is None:
                 pytest.skip(f"Device {player.host} does not report mute state")
             initial_mutes[player.host] = mute_state
-            role = "master" if player == master else f"slave-{slaves.index(player)+1}"
+            role = "master" if player == master else f"slave-{slaves.index(player) + 1}"
             _log(f"  {role:8s} {player.host:15s} mute={mute_state}")
 
         try:
@@ -563,7 +563,7 @@ class TestMultiDeviceGroup:
             await _refresh_players(players)
 
             for player in players:
-                role = "master" if player == master else f"slave-{slaves.index(player)+1}"
+                role = "master" if player == master else f"slave-{slaves.index(player) + 1}"
                 volume = await _get_volume(player)
                 mute = await _get_mute(player)
                 _log(f"  {role:8s} {player.host:15s} volume={volume:.2f} mute={mute}")

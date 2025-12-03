@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.38] - 2025-12-03
+
+### Added
+- **Device Profiles System** - Centralized device-specific behaviors in `pywiim/profiles.py`:
+  - `DeviceProfile` dataclass defines all device-specific settings in one place
+  - Pre-defined profiles for WiiM, Arylic, Audio Pro (MkII, W-Generation, Original), and generic LinkPlay
+  - `get_device_profile(device_info)` auto-detects the appropriate profile
+  - `StateSourceConfig` defines which source (HTTP vs UPnP) is authoritative per field
+  - `ConnectionConfig`, `EndpointConfig`, `GroupingConfig` for other device-specific settings
+
+- **Profile-Driven State Management**:
+  - `StateSynchronizer` now accepts an optional `DeviceProfile`
+  - When profile is set, uses explicit source selection instead of guessing
+  - Audio Pro MkII automatically uses UPnP for play_state/volume (HTTP doesn't provide them)
+  - WiiM/Arylic use HTTP for all state (as before)
+  - Eliminates "which source do I trust?" bugs
+
+- **Player Profile Integration**:
+  - `player.profile` property exposes the detected device profile
+  - Profile auto-detected on first refresh when `device_info` becomes available
+  - Profile automatically set on `StateSynchronizer`
+
+### Documentation
+- Added `docs/design/DEVICE_PROFILES.md`:
+  - Explains why profiles were created (fix one thing, break another pattern)
+  - Documents profile architecture and components
+  - Lists current integration status (what's done vs pending)
+  - Provides migration guide for future work
+  - Instructions for adding new device types
+
 ## [2.1.37] - 2025-12-03
 
 ### Added

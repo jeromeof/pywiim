@@ -393,7 +393,7 @@ class JoinTester:
 
         success_count = 0
         for i in range(cycles):
-            self._log(f"\n--- Cycle {i+1}/{cycles} ---", "info")
+            self._log(f"\n--- Cycle {i + 1}/{cycles} ---", "info")
 
             # Join
             if await self.test_join(self.player1, self.player2, "Player 1", "Player 2"):
@@ -402,11 +402,11 @@ class JoinTester:
                 # Unjoin
                 if await self.test_unjoin(self.player2, "Player 2"):
                     success_count += 1
-                    self._log(f"Cycle {i+1} completed successfully", "success")
+                    self._log(f"Cycle {i + 1} completed successfully", "success")
                 else:
-                    self._log(f"Cycle {i+1} failed at unjoin", "error")
+                    self._log(f"Cycle {i + 1} failed at unjoin", "error")
             else:
-                self._log(f"Cycle {i+1} failed at join", "error")
+                self._log(f"Cycle {i + 1} failed at join", "error")
 
             # Small delay between cycles
             if i < cycles - 1:

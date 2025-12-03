@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..client import WiiMClient
 from ..models import DeviceInfo, PlayerStatus
+from ..profiles import DeviceProfile, get_device_profile
 from ..state import StateSynchronizer
 
 if TYPE_CHECKING:
@@ -97,6 +98,10 @@ class PlayerBase:
         self._cover_art_cache: dict[str, tuple[bytes, str, float]] = {}
         self._cover_art_cache_max_size: int = 10  # Max cached images per player
         self._cover_art_cache_ttl: float = 3600.0  # 1 hour TTL
+
+        # Device profile (detected after device_info is available)
+        # Profile defines device-specific behaviors (state sources, endpoints, etc.)
+        self._profile: DeviceProfile | None = None
 
     @property
     def role(self) -> str:
@@ -242,6 +247,44 @@ class PlayerBase:
         if self._group and self._group.master:
             return self._group.master.name
         return None
+
+    @property
+    def profile(self) -> DeviceProfile | None:
+        """Device profile defining device-specific behaviors.
+
+        The profile is detected automatically when device_info becomes available.
+        It defines which state sources to use (HTTP vs UPnP), endpoint support,
+        connection requirements, and other device-specific behaviors.
+
+        Returns:
+            DeviceProfile or None if not yet detected.
+        """
+        return self._profile
+
+    def _update_profile_from_device_info(self) -> None:
+        """Update device profile when device_info becomes available.
+
+        Called automatically during refresh() when device_info changes.
+        Sets the profile on the StateSynchronizer so it uses the correct
+        state source preferences for this device type.
+        """
+        if self._device_info is None:
+            return
+
+        old_profile = self._profile
+        self._profile = get_device_profile(self._device_info)
+
+        # Update StateSynchronizer with the profile
+        self._state_synchronizer.set_profile(self._profile)
+
+        if old_profile is None or old_profile.display_name != self._profile.display_name:
+            _LOGGER.info(
+                "Device profile detected for %s: %s (play_state=%s, volume=%s)",
+                self.host,
+                self._profile.display_name,
+                self._profile.state_sources.play_state,
+                self._profile.state_sources.volume,
+            )
 
     def __repr__(self) -> str:
         """String representation."""
