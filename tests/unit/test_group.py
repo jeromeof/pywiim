@@ -70,8 +70,8 @@ class TestGroupSlaveManagement:
         assert slave.group == group
 
     @pytest.mark.asyncio
-    async def test_add_slave_already_in_group(self, mock_client):
-        """Test adding slave that's already in a group."""
+    async def test_add_slave_already_in_different_group_moves_slave(self, mock_client):
+        """Test adding slave that's in a DIFFERENT group moves it automatically."""
         from pywiim.group import Group
         from pywiim.player import Player
 
@@ -82,9 +82,39 @@ class TestGroupSlaveManagement:
         group2 = Group(master2)
 
         group1.add_slave(slave)
+        assert slave in group1.slaves
+        assert slave.group == group1
 
-        with pytest.raises(ValueError, match="already in a group"):
-            group2.add_slave(slave)
+        # Adding to group2 should automatically remove from group1
+        group2.add_slave(slave)
+
+        assert slave not in group1.slaves
+        assert slave in group2.slaves
+        assert slave.group == group2
+        assert group1.size == 1  # Just master1
+        assert group2.size == 2  # master2 + slave
+
+    @pytest.mark.asyncio
+    async def test_add_slave_already_in_same_group_idempotent(self, mock_client):
+        """Test adding slave that's already in THIS group is idempotent (no error)."""
+        from pywiim.group import Group
+        from pywiim.player import Player
+
+        master = Player(mock_client)
+        slave = Player(mock_client)
+        group = Group(master)
+
+        group.add_slave(slave)
+        assert slave in group.slaves
+        assert group.size == 2
+
+        # Adding again should NOT raise - should be idempotent
+        group.add_slave(slave)
+
+        # State should be unchanged
+        assert slave in group.slaves
+        assert group.size == 2
+        assert slave.group == group
 
     @pytest.mark.asyncio
     async def test_remove_slave(self, mock_client):

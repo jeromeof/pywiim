@@ -91,14 +91,21 @@ class Group:
         This is called automatically when a player joins via join_group().
         The slave must already have joined via the API.
 
+        This method handles all cases gracefully:
+        - If the slave is already in THIS group: no-op (idempotent)
+        - If the slave is in a DIFFERENT group: removes from old group first
+
         Args:
             slave: The slave player to add.
-
-        Raises:
-            ValueError: If the slave is already in a group.
         """
         if slave._group is not None:
-            raise ValueError(f"Player {slave.host} is already in a group")
+            # Idempotent: if already in THIS group, return success (no-op)
+            if slave._group == self:
+                _LOGGER.debug("Slave %s is already in this group - no action needed", slave.host)
+                return
+            # In a different group - remove from old group first
+            _LOGGER.debug("Slave %s is in different group, removing first", slave.host)
+            slave._group.remove_slave(slave)
 
         self.slaves.append(slave)
         slave._group = self

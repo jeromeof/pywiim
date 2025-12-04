@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.44] - 2025-12-04
+
+### Fixed
+- **`join_group()` now handles "already in group" gracefully** - Made group operations idempotent to handle race conditions:
+  - If player is already in target group → returns success (no-op)
+  - If player is in a different group → automatically leaves first, then joins
+  - `add_slave()` similarly handles moving slaves between groups without errors
+  - Eliminates sporadic "Player X is already in a group" errors during group operations
+
 ## [2.1.43] - 2025-12-04
 
 ### Fixed

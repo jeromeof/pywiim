@@ -293,6 +293,9 @@ class GroupOperations:
         - If target is solo: creates a group on target first
         - Validates wmrm_version compatibility before attempting to join
 
+        This method is idempotent: calling it multiple times with the same target
+        is safe and will return success if already in the target group.
+
         The integration/caller doesn't need to check roles or handle preconditions -
         just call this method and it will orchestrate everything needed.
 
@@ -302,11 +305,27 @@ class GroupOperations:
         Raises:
             WiiMGroupCompatibilityError: If devices have incompatible wmrm_version.
         """
+        # Idempotent check: if already in the target master's group, return success (no-op)
+        if self.player._group is not None and self.player._group.master is not None:
+            if self.player._group.master.host == master.host:
+                _LOGGER.debug(
+                    "Player %s is already in target master %s's group - no action needed",
+                    self.player.host,
+                    master.host,
+                )
+                return
+
         old_group = self.player._group if self.player.is_slave else None
 
         if self.player.is_master:
             _LOGGER.debug("Player %s is master, disbanding group before join", self.player.host)
             await self.leave_group()
+
+        # If this player is a slave in a DIFFERENT group, leave it first
+        if self.player.is_slave and old_group is not None:
+            _LOGGER.debug("Player %s is slave in different group, leaving first", self.player.host)
+            await self.leave_group()
+            old_group = None  # Already left, no need to remove later
 
         if master.is_slave:
             _LOGGER.debug("Target %s is slave, having it leave group first", master.host)
