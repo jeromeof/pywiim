@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.41] - 2025-12-04
+
+### Fixed
+- Re-release of v2.1.39 with correct package (PyPI had incorrect package from initial release attempt)
+
 ## [2.1.39] - 2025-12-04
 
 
