@@ -87,6 +87,9 @@ class PlayerBase:
 
             self._upnp_health_tracker = UpnpHealthTracker()
 
+        # Track if we've tried to create UPnP client (to avoid repeated attempts)
+        self._upnp_client_creation_attempted: bool = False
+
         # Availability tracking
         self._available: bool = True  # Assume available until proven otherwise
 
@@ -285,6 +288,63 @@ class PlayerBase:
                 self._profile.state_sources.play_state,
                 self._profile.state_sources.volume,
             )
+
+    async def _ensure_upnp_client(self) -> bool:
+        """Lazily create UPnP client if not already present.
+
+        Returns:
+            True if UPnP client is available (either existed or was created),
+            False if creation failed or device doesn't support UPnP.
+        """
+        # If already exists, return True
+        if self._upnp_client is not None:
+            return True
+
+        # If we've already tried and failed, don't retry
+        if self._upnp_client_creation_attempted:
+            return False
+
+        # Mark that we're attempting creation
+        self._upnp_client_creation_attempted = True
+
+        try:
+            from ..upnp.client import UpnpClient
+
+            # UPnP description URL is typically on port 49152
+            description_url = f"http://{self.client.host}:49152/description.xml"
+
+            _LOGGER.debug("Lazily creating UPnP client for %s", self.client.host)
+            # Pass client's session to UPnP client for connection pooling
+            # Ensure session exists (client may create it lazily)
+            await self.client._ensure_session()
+            client_session = getattr(self.client, "_session", None)
+            self._upnp_client = await UpnpClient.create(
+                self.client.host,
+                description_url,
+                session=client_session,
+            )
+
+            # Initialize UPnP health tracker if not already present
+            if self._upnp_health_tracker is None:
+                from ..upnp.health import UpnpHealthTracker
+
+                self._upnp_health_tracker = UpnpHealthTracker()
+
+            _LOGGER.info(
+                "✅ Auto-created UPnP client for %s: AVTransport=%s, RenderingControl=%s",
+                self.client.host,
+                self._upnp_client.av_transport is not None,
+                self._upnp_client.rendering_control is not None,
+            )
+            return True
+        except Exception as err:
+            _LOGGER.debug(
+                "Failed to auto-create UPnP client for %s: %s (will use HTTP only)",
+                self.client.host,
+                err,
+            )
+            # Don't set _upnp_client to None - leave it as None so we don't retry
+            return False
 
     def __repr__(self) -> str:
         """String representation."""

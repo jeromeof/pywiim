@@ -272,3 +272,158 @@ class TestCoverArtManager:
             result = await cover_art_manager.get_cover_art_bytes("https://example.com/image.jpg")
 
             assert result is None
+
+    # === Track change detection and metadata enrichment tests ===
+
+    def test_check_track_changed(self, cover_art_manager):
+        """Test checking if track changed."""
+        merged = {"title": "New Track", "artist": "New Artist", "album": "New Album"}
+        cover_art_manager._last_track_signature = None
+
+        result = cover_art_manager.check_track_changed(merged)
+
+        # First track, should not be changed
+        assert result is False
+        assert cover_art_manager._last_track_signature == "New Track|New Artist|New Album"
+
+    def test_check_track_changed_track_changed(self, cover_art_manager):
+        """Test checking when track actually changed."""
+        merged = {"title": "New Track", "artist": "New Artist", "album": "New Album"}
+        cover_art_manager._last_track_signature = "Old Track|Old Artist|Old Album"
+
+        result = cover_art_manager.check_track_changed(merged)
+
+        assert result is True
+        assert cover_art_manager._last_track_signature == "New Track|New Artist|New Album"
+
+    def test_check_track_changed_same_track(self, cover_art_manager):
+        """Test checking when track is the same."""
+        merged = {"title": "Same Track", "artist": "Same Artist", "album": "Same Album"}
+        cover_art_manager._last_track_signature = "Same Track|Same Artist|Same Album"
+
+        result = cover_art_manager.check_track_changed(merged)
+
+        assert result is False
+        assert cover_art_manager._last_track_signature == "Same Track|Same Artist|Same Album"
+
+    @pytest.mark.asyncio
+    async def test_enrich_metadata_on_track_change_track_changed(self, cover_art_manager, mock_player):
+        """Test enriching metadata when track changed."""
+        merged = {"title": "New Track", "artist": "New Artist", "image_url": None}
+        cover_art_manager._last_track_signature = "Old Track|Old Artist|Old Album"
+        mock_player.client._capabilities = {"supports_metadata": True}
+        mock_player.client.get_meta_info = MagicMock()
+
+        with patch("asyncio.get_event_loop") as mock_loop:
+            mock_task = MagicMock()
+            mock_loop.return_value.create_task = MagicMock(return_value=mock_task)
+
+            await cover_art_manager.enrich_metadata_on_track_change(merged)
+
+            # Should schedule artwork fetch
+            assert cover_art_manager._artwork_fetch_task == mock_task
+
+    @pytest.mark.asyncio
+    async def test_enrich_metadata_on_track_change_unknown_metadata(self, cover_art_manager, mock_player):
+        """Test enriching metadata when metadata is Unknown."""
+        merged = {"title": "Unknown", "artist": "Unknown", "image_url": "http://example.com/art.jpg"}
+        cover_art_manager._last_track_signature = None
+        mock_player.client._capabilities = {"supports_metadata": True}
+        mock_player.client.get_meta_info = MagicMock()
+
+        with patch("asyncio.get_event_loop") as mock_loop:
+            mock_task = MagicMock()
+            mock_loop.return_value.create_task = MagicMock(return_value=mock_task)
+
+            await cover_art_manager.enrich_metadata_on_track_change(merged)
+
+            # Should schedule metadata fetch
+            assert cover_art_manager._artwork_fetch_task == mock_task
+
+    @pytest.mark.asyncio
+    async def test_enrich_metadata_on_track_change_no_capability(self, cover_art_manager, mock_player):
+        """Test enriching metadata when device doesn't support metadata."""
+        merged = {"title": "New Track", "artist": "New Artist", "image_url": None}
+        cover_art_manager._last_track_signature = "Old Track|Old Artist|Old Album"
+        mock_player.client._capabilities = {"supports_metadata": False}
+
+        await cover_art_manager.enrich_metadata_on_track_change(merged)
+
+        # Should not schedule fetch
+        assert cover_art_manager._artwork_fetch_task is None
+
+    @pytest.mark.asyncio
+    async def test_enrich_metadata_on_track_change_valid_artwork(self, cover_art_manager, mock_player):
+        """Test enriching metadata when artwork is valid."""
+        merged = {"title": "New Track", "artist": "New Artist", "image_url": "http://example.com/art.jpg"}
+        cover_art_manager._last_track_signature = "Old Track|Old Artist|Old Album"
+        mock_player.client._capabilities = {"supports_metadata": True}
+
+        await cover_art_manager.enrich_metadata_on_track_change(merged)
+
+        # Should not schedule fetch if artwork is valid
+        assert cover_art_manager._artwork_fetch_task is None
+
+    @pytest.mark.asyncio
+    async def test_fetch_artwork_from_metainfo_success(self, cover_art_manager, mock_player):
+        """Test fetching artwork from meta info successfully."""
+        from pywiim.models import PlayerStatus
+
+        merged = {"title": "Unknown", "artist": "Unknown"}
+        mock_player.client.get_meta_info = AsyncMock(
+            return_value={
+                "metaData": {"title": "Real Title", "artist": "Real Artist", "cover": "http://example.com/art.jpg"}
+            }
+        )
+        mock_player._state_synchronizer.update_from_http = MagicMock()
+        mock_player._state_synchronizer.get_merged_state = MagicMock(
+            return_value={"title": "Real Title", "artist": "Real Artist", "image_url": "http://example.com/art.jpg"}
+        )
+        mock_player._status_model = PlayerStatus(title="Unknown", artist="Unknown")
+        mock_player._on_state_changed = MagicMock()
+
+        await cover_art_manager._fetch_artwork_from_metainfo(merged)
+
+        mock_player.client.get_meta_info.assert_called_once()
+        mock_player._state_synchronizer.update_from_http.assert_called_once()
+        assert mock_player._status_model.title == "Real Title"
+        assert mock_player._status_model.artist == "Real Artist"
+
+    @pytest.mark.asyncio
+    async def test_fetch_artwork_from_metainfo_cancelled(self, cover_art_manager, mock_player):
+        """Test fetching artwork when cancelled."""
+        import asyncio
+
+        merged = {"title": "Unknown", "artist": "Unknown"}
+        if not hasattr(mock_player.client, "get_meta_info"):
+            pytest.skip("get_meta_info not available")
+        mock_player.client.get_meta_info = AsyncMock(side_effect=asyncio.CancelledError())
+
+        # Should not raise
+        try:
+            await cover_art_manager._fetch_artwork_from_metainfo(merged)
+        except asyncio.CancelledError:
+            pytest.fail("CancelledError should be caught")
+
+    @pytest.mark.asyncio
+    async def test_fetch_artwork_from_metainfo_error(self, cover_art_manager, mock_player):
+        """Test fetching artwork when error occurs."""
+        merged = {"title": "Unknown", "artist": "Unknown"}
+        mock_player.client.get_meta_info = AsyncMock(side_effect=Exception("Network error"))
+
+        # Should not raise
+        await cover_art_manager._fetch_artwork_from_metainfo(merged)
+
+    @pytest.mark.asyncio
+    async def test_fetch_artwork_from_metainfo_no_meta_info(self, cover_art_manager, mock_player):
+        """Test fetching artwork when get_meta_info not available."""
+        merged = {"title": "Unknown", "artist": "Unknown"}
+        if not hasattr(mock_player.client, "get_meta_info"):
+            # Skip if method doesn't exist
+            return
+
+        mock_player.client.get_meta_info = AsyncMock(return_value={})
+
+        await cover_art_manager._fetch_artwork_from_metainfo(merged)
+
+        # Should not crash

@@ -555,3 +555,104 @@ class GroupOperations:
             if len(group.slaves) == 0:
                 _LOGGER.debug("Group is now empty, auto-disbanding (master: %s)", master.host if master else "unknown")
                 await group.disband()
+
+    async def get_master_name(self) -> str | None:
+        """Get master device name.
+
+        Returns:
+            Master device name if available, None otherwise.
+        """
+
+        # First try: Use Group object if available
+        if (
+            self.player._group is not None
+            and self.player._group.master is not None
+            and self.player._group.master != self.player
+        ):
+            if self.player._group.master._device_info is None or self.player._group.master.name is None:
+                try:
+                    await self.player._group.master.refresh()
+                except Exception:
+                    pass
+            return self.player._group.master.name or self.player._group.master.host
+
+        # Second try: Use master_ip from device_info/status
+        device_info = self.player._device_info
+        status = self.player._status_model
+        if device_info:
+            master_ip = device_info.master_ip or (status.master_ip if status else None)
+            if master_ip:
+                master_client = None
+                try:
+                    from ..client import WiiMClient
+
+                    master_client = WiiMClient(master_ip)
+                    master_name = await master_client.get_device_name()
+                    return master_name
+                except Exception as e:
+                    _LOGGER.debug("Failed to get master name from IP %s: %s", master_ip, e)
+                    return master_ip
+                finally:
+                    if master_client is not None:
+                        try:
+                            await master_client.close()
+                        except Exception:
+                            pass
+
+        return None
+
+    def propagate_metadata_to_slaves(self) -> None:
+        """Propagate metadata from master to all linked slaves.
+
+        This ensures slaves always have the latest metadata from the master,
+        even when the master's metadata changes via UPnP or refresh.
+        """
+        if not self.player.is_master or not self.player._group or not self.player._group.slaves:
+            return
+
+        if not self.player._status_model:
+            return
+
+        master_status = self.player._status_model
+
+        for slave in self.player._group.slaves:
+            if not slave._status_model:
+                continue
+
+            # Copy ALL playback metadata from master to slave
+            slave._status_model.title = master_status.title
+            slave._status_model.artist = master_status.artist
+            slave._status_model.album = master_status.album
+            slave._status_model.entity_picture = master_status.entity_picture
+            slave._status_model.cover_url = master_status.cover_url
+            slave._status_model.play_state = master_status.play_state
+            slave._status_model.position = master_status.position
+            slave._status_model.duration = master_status.duration
+
+            # Update state synchronizer with master's metadata
+            slave._state_synchronizer.update_from_http(
+                {
+                    "title": master_status.title,
+                    "artist": master_status.artist,
+                    "album": master_status.album,
+                    "image_url": master_status.entity_picture or master_status.cover_url,
+                    "play_state": master_status.play_state,
+                    "position": master_status.position,
+                    "duration": master_status.duration,
+                }
+            )
+
+            # Trigger callback on slave so HA integration updates
+            if slave._on_state_changed:
+                try:
+                    slave._on_state_changed()
+                except Exception as err:
+                    _LOGGER.debug("Error calling on_state_changed callback for slave %s: %s", slave.host, err)
+
+            _LOGGER.debug(
+                "Propagated metadata from master %s to slave %s: '%s' by %s",
+                self.player.host,
+                slave.host,
+                master_status.title,
+                master_status.artist,
+            )

@@ -5,7 +5,7 @@ Tests player initialization, state management, role detection, and control metho
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, PropertyMock, call
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, call, patch
 
 import pytest
 
@@ -4568,3 +4568,62 @@ class TestPlayerCapabilities:
 
         # Queue count is always True (HTTP API)
         assert player.supports_queue_count is True
+
+    @pytest.mark.asyncio
+    async def test_ensure_upnp_client_already_exists(self, mock_client):
+        """Test _ensure_upnp_client when client already exists."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        player._upnp_client = MagicMock()
+
+        result = await player._ensure_upnp_client()
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_ensure_upnp_client_creation_attempted(self, mock_client):
+        """Test _ensure_upnp_client when creation already attempted."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        player._upnp_client_creation_attempted = True
+
+        result = await player._ensure_upnp_client()
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_ensure_upnp_client_success(self, mock_client):
+        """Test successful UPnP client creation."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        with patch("pywiim.upnp.client.UpnpClient") as mock_upnp_client_class:
+            mock_upnp_client = MagicMock()
+            mock_upnp_client.av_transport = MagicMock()
+            mock_upnp_client.rendering_control = MagicMock()
+            mock_upnp_client_class.create = AsyncMock(return_value=mock_upnp_client)
+            mock_client._ensure_session = AsyncMock()
+            mock_client._session = MagicMock()
+
+            result = await player._ensure_upnp_client()
+
+            assert result is True
+            assert player._upnp_client == mock_upnp_client
+
+    @pytest.mark.asyncio
+    async def test_ensure_upnp_client_failure(self, mock_client):
+        """Test UPnP client creation failure."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        with patch("pywiim.upnp.client.UpnpClient") as mock_upnp_client_class:
+            mock_upnp_client_class.create = AsyncMock(side_effect=Exception("Connection failed"))
+            mock_client._ensure_session = AsyncMock()
+
+            result = await player._ensure_upnp_client()
+
+            assert result is False
+            assert player._upnp_client is None
+            assert player._upnp_client_creation_attempted is True

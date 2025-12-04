@@ -16,7 +16,8 @@ This document outlines coding standards, best practices, development guidelines,
 10. [Async/Await](#asyncawait)
 11. [Capability Detection](#capability-detection)
 12. [Common Patterns](#common-patterns)
-13. [Resources](#resources)
+13. [TODO / Roadmap](#todo--roadmap)
+14. [Resources](#resources)
 
 ## Development Setup
 
@@ -1419,6 +1420,198 @@ def apply_state_update(self, changes: dict[str, Any]) -> bool:
             changed = True
     return changed
 ```
+
+## TODO / Roadmap
+
+This section tracks architectural improvements and technical debt identified during code reviews.
+
+### Priority 1: High Impact
+
+#### 1. Split StateManager (statemgr.py)
+
+**Status:** ✅ **Completed** (Jan 2025)  
+**File:** `pywiim/player/statemgr.py` (reduced from 1,076 to 614 lines)
+
+**Problem:** StateManager handled too many responsibilities:
+- UPnP client creation
+- State synchronization
+- Track change detection
+- Artwork fetching
+- Stream metadata enrichment
+- Pending state debouncing
+- Metadata propagation to slaves
+- Periodic polling decisions
+
+**Solution Implemented:** Extracted to focused modules:
+- **`PlayStateDebouncer`** (`pywiim/player/debounce.py`, 97 lines) - Play state debouncing logic with configurable delay
+- **`StreamEnricher`** (`pywiim/player/stream_enricher.py`, 147 lines) - URL → metadata parsing for raw stream URLs
+- **`CoverArtManager`** (extended `pywiim/player/coverart.py`, 417 lines) - Track change detection and metadata enrichment from `getMetaInfo`
+- **`GroupOperations`** (extended `pywiim/player/groupops.py`, 658 lines) - Master name lookup and metadata propagation to slaves
+- **`PlayerBase`** (extended `pywiim/player/base.py`, 352 lines) - UPnP client creation moved to player ownership
+- **`StateManager`** (`pywiim/player/statemgr.py`, 614 lines) - Core state sync and refresh orchestration
+
+**Benefits Achieved:**
+- ✅ Single responsibility per class
+- ✅ Easier testing (new test files: `test_debounce.py`, `test_stream_enricher.py`, `test_groupops.py`)
+- ✅ Reusable components
+- ✅ Reduced StateManager from 1,076 to 614 lines (43% reduction)
+- ✅ Improved maintainability and readability
+
+---
+
+#### 2. Improve Test Quality (Depth vs Quantity)
+
+**Status:** 🟡 Partially Addressed  
+**Current:** 1,335+ tests, but many are shallow mock verification
+
+**Problem:** Many tests verify mock calls rather than business logic:
+```python
+# Shallow: Just verifies constructor worked
+assert client.host == "192.168.1.100"
+assert client.port == 80
+
+# Deep: Tests actual conflict resolution logic
+sync.update_from_http({"play_state": "pause"}, timestamp=now - 10.0)
+sync.update_from_upnp({"play_state": "play"}, timestamp=now)
+assert merged["play_state"] == "play"  # Tests freshness priority
+```
+
+**Focus Areas:**
+- State merging edge cases ✅ (test_state.py is good)
+- Profile selection logic ✅ (test_profiles.py is good)
+- Error handling paths
+- Group role transitions
+- Source conflict scenarios
+
+**Action Items:**
+- [ ] Audit test_player.py for shallow tests
+- [ ] Convert mock-verification tests to behavior tests
+- [ ] Add edge case tests for state transitions
+- [ ] Document test quality guidelines
+
+---
+
+### Priority 2: Medium Impact
+
+#### 3. Extract Play State Debouncer
+
+**Status:** ✅ **Completed** (Jan 2025, part of StateManager refactoring)  
+**Location:** `pywiim/player/debounce.py` (97 lines)
+
+**Problem:** Debouncing logic was embedded in StateManager with hardcoded 500ms delay.
+
+**Solution Implemented:**
+```python
+class PlayStateDebouncer:
+    def __init__(self, player: Player, delay: float = 0.5):
+        self.player = player
+        self.delay = delay
+        ...
+```
+
+**Benefits Achieved:**
+- ✅ Configurable debounce timing (default 0.5s, customizable)
+- ✅ Isolated, testable component
+- ✅ Clean separation of concerns
+- ✅ Comprehensive test coverage in `tests/unit/player/test_debounce.py`
+
+---
+
+#### 4. Document Master→Slave State Propagation
+
+**Status:** 🟡 Partially Documented  
+**Location:** `pywiim/player/groupops.py` (moved from `statemgr.py`)
+
+**Problem:** When master pushes metadata to slaves, each slave's state synchronizer is updated. This could cause cascade effects with callbacks.
+
+**Progress:**
+- ✅ Method moved to `GroupOperations.propagate_metadata_to_slaves()` for better organization
+- ✅ Test coverage added in `tests/unit/player/test_groupops.py`
+
+**Action Items:**
+- [ ] Add `source="propagated"` flag to distinguish pushed state
+- [ ] Document this behavior in STATE_MANAGEMENT.md
+- [ ] Add tests for cascade prevention
+
+---
+
+### Priority 3: Future Improvements
+
+#### 5. Consider Event Emitter Pattern
+
+**Status:** 🔵 Future Consideration (Low Priority for HA)
+
+**Current:** Single `on_state_changed` callback
+
+**Proposed:**
+```python
+player.on('volume_changed', handler)
+player.on('play_state_changed', handler)
+player.on('track_changed', handler)
+```
+
+**Benefits:**
+- Granular subscriptions
+- Reduced callback noise
+- Better integration with reactive frameworks
+
+**Assessment for HA Integration:**
+- **Current approach works well**: HA's `DataUpdateCoordinator.async_update_listeners()` efficiently handles frequent callbacks and only updates changed attributes
+- **No performance issues observed**: The single callback pattern provides immediate updates (<1ms) and works seamlessly with HA's coordinator pattern
+- **Potential benefits**: Could reduce unnecessary entity updates if only specific attributes change, but HA already optimizes this internally
+- **Complexity trade-off**: Event emitter adds complexity (event registration, unsubscription, lifecycle management) for marginal benefit in HA use case
+- **Recommendation**: **Low priority** - Only consider if:
+  - Performance issues are observed with many devices
+  - Other integrations (non-HA) would benefit significantly
+  - Reactive framework integrations (e.g., React, Vue) become a priority
+
+---
+
+#### 6. Command Pattern for Playback Operations
+
+**Status:** 🔵 Future Consideration
+
+**Problem:** Playback routing logic (slave→master) is repeated for every playback method.
+
+**Current Pattern:**
+```python
+async def next_track(self):
+    if self.is_slave and self.group and self.group.master:
+        await self.group.master.next_track()
+    else:
+        await self.client.next_track()
+```
+
+**Solution:** Command pattern to centralize routing logic.
+
+---
+
+### File Size Compliance
+
+| File | Lines | Limit | Status | Notes |
+|------|-------|-------|--------|-------|
+| `player/statemgr.py` | 614 | 600 | ⚠️ **Close to limit** | Reduced from 1,076 (43% reduction) ✅ |
+| `player/groupops.py` | 658 | 600 | ❌ **Exceeds** | Group operations + metadata propagation |
+| `player/coverart.py` | 417 | 400 | ⚠️ **Exceeds soft** | Cover art + track change detection |
+| `api/base.py` | 988 | 600 | ❌ **Exceeds** | Transport + client logic |
+| `upnp/eventer.py` | 618 | 600 | ❌ **Exceeds** | Event parsing could extract |
+| `state.py` | 725 | 600 | ⚠️ **Has pragma** | Cohesive, justified |
+
+---
+
+### Code Review Summary (Dec 2024)
+
+| Aspect | Grade | Notes |
+|--------|-------|-------|
+| **Architecture** | A | Profile system, state sync, mixin pattern excellent |
+| **Documentation** | A | 15+ design docs is exceptional |
+| **Test Quantity** | A | 1,335 tests |
+| **Test Quality** | B- | Many shallow mock tests, but core logic well tested |
+| **Code Organization** | A- | StateManager refactored (Jan 2025) ✅ |
+| **Error Handling** | A- | Good exception hierarchy, graceful degradation |
+| **Maintainability** | A- | Clear patterns, well documented |
+
+---
 
 ## Resources
 

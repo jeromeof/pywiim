@@ -164,8 +164,8 @@ class PollingStrategy:
         if now is None:
             now = time.time()
 
-        # Always fetch on first check
-        if last_fetch_time == 0:
+        # Always fetch on first check (None or 0 means never fetched)
+        if last_fetch_time is None or last_fetch_time == 0:
             return True
 
         return (now - last_fetch_time) >= self.CONFIGURATION_INTERVAL
@@ -259,8 +259,8 @@ class PollingStrategy:
         if now is None:
             now = time.time()
 
-        # Always fetch on first check
-        if last_fetch_time == 0:
+        # Always fetch on first check (None or 0 means never fetched)
+        if last_fetch_time is None or last_fetch_time == 0:
             return True
 
         # Fetch every 60s
@@ -293,8 +293,8 @@ class PollingStrategy:
         if now is None:
             now = time.time()
 
-        # Always fetch on first check
-        if last_fetch_time == 0:
+        # Always fetch on first check (None or 0 means never fetched)
+        if last_fetch_time is None or last_fetch_time == 0:
             return True
 
         # Fetch every 60s
@@ -321,8 +321,8 @@ class PollingStrategy:
         if now is None:
             now = time.time()
 
-        # Always fetch on first check
-        if last_fetch_time == 0:
+        # Always fetch on first check (None or 0 means never fetched)
+        if last_fetch_time is None or last_fetch_time == 0:
             return True
 
         # Fetch every 60s

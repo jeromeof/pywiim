@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.39] - 2025-12-04
+
+
+### Added
+- **Play state debouncing** - New `PlayStateDebouncer` class to smooth track changes:
+  - Delays applying pause/stop states during track transitions
+  - Prevents false "stopped" states when devices briefly report STOPPED between tracks
+  - Automatically cancels delayed states if playback resumes quickly (indicating track change, not pause)
+  
+- **Stream metadata enrichment** - New `StreamEnricher` class for raw URL playback:
+  - Automatically fetches and applies metadata from Icecast, M3U, and PLS streams
+  - Replaces raw URLs in title field with parsed artist/title metadata
+  - Caches metadata to avoid repeated fetches for the same stream
+  - Works with WiFi/URL source playback
+
+- **Enhanced cover art management**:
+  - Track change detection based on title/artist/album signature
+  - Automatic metadata enrichment on track changes when artwork is missing
+  - Handles "Unknown" metadata cases (e.g., Bluetooth AVRCP) by fetching from getMetaInfo endpoint
+
+- **Group operations improvements**:
+  - `get_master_name()` method to retrieve master device name from group or master IP
+  - `propagate_metadata_to_slaves()` method to synchronize playback metadata from master to all slaves
+  - Ensures slaves always have latest metadata even when master's metadata changes via UPnP
+
+### Changed
+- **State manager refactoring**:
+  - Significant code cleanup and simplification (reduced complexity)
+  - Better separation of concerns with dedicated debounce and enrichment modules
+  - Improved track change detection and handling
+
+### Fixed
+- Track changes no longer cause false "stopped" or "paused" states
+- Raw stream URLs now show proper metadata instead of URLs in title field
+- Group slaves now properly receive metadata updates from master
+
 ## [2.1.38] - 2025-12-03
 
 ### Added
