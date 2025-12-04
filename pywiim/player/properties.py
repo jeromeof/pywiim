@@ -411,20 +411,6 @@ class PlayerProperties:
             return None
         return getattr(self.player._status_model, "codec", None)
 
-    @property
-    def source(self) -> str | None:
-        """Current source from merged HTTP/UPnP state."""
-        # Always read from state synchronizer (merges HTTP polling + UPnP events)
-        merged = self.player._state_synchronizer.get_merged_state()
-        source: str | None = merged.get("source")
-        if source is not None:
-            return source
-
-        # Fallback to cached status if synchronizer has no data yet
-        if self.player._status_model is None:
-            return None
-        return self.player._status_model.source
-
     # === Source-Based Capabilities ===
     # These capabilities depend on the current playback source.
     # See source_capabilities.py for the centralized capability definitions.
@@ -438,11 +424,16 @@ class PlayerProperties:
         Returns:
             SourceCapability flags for the current source.
         """
-        source = self.source
-        if not source:
+        # Get raw source from status model (before normalization) for capability lookup
+        # Capabilities are keyed by lowercase source names
+        if self.player._status_model is None:
             return SourceCapability.NONE
 
-        source_lower = source.lower()
+        raw_source = self.player._status_model.source
+        if not raw_source:
+            return SourceCapability.NONE
+
+        source_lower = raw_source.lower()
 
         # Special handling for Spotify - check content type via vendor URI
         # Podcasts and audiobooks don't support shuffle/repeat
@@ -453,7 +444,7 @@ class PlayerProperties:
                     # Podcast/audiobook - track control only, no shuffle/repeat
                     return SourceCapability.TRACK_CONTROL
 
-        return get_source_capabilities(source)
+        return get_source_capabilities(raw_source)
 
     @property
     def shuffle_supported(self) -> bool:
@@ -652,11 +643,86 @@ class PlayerProperties:
         return "off"
 
     @property
+    def source(self) -> str | None:
+        """Current source name from cached status.
+
+        Normalized to Title Case for consistent UI display. Handles acronyms
+        (DLNA, USB, HDMI) and multi-word sources (Line In, AirPlay) correctly.
+        """
+        # Get source from state synchronizer (merges HTTP + UPnP)
+        merged = self.player._state_synchronizer.get_merged_state()
+        source = merged.get("source")
+
+        # Fallback to status model if synchronizer has no data
+        if source is None and self.player._status_model is not None:
+            source = self.player._status_model.source
+
+        if not source:
+            return None
+
+        return self._normalize_source_name(str(source))
+
+    def _normalize_source_name(self, source: str) -> str:
+        """Normalize source name to Title Case, handling acronyms correctly.
+
+        Args:
+            source: Source name (e.g., "airplay", "line_in", "bluetooth")
+
+        Returns:
+            Formatted source name (e.g., "AirPlay", "Line In", "Bluetooth")
+        """
+        # Special handling for specific sources
+        source_lower = source.lower()
+        if source_lower == "airplay":
+            return "AirPlay"
+        elif source_lower == "wifi":
+            return "WiFi"  # WiFi is the correct capitalization (not WIFI)
+
+        # Known acronyms that should be all uppercase
+        acronyms = {"dlna", "usb", "hdmi", "rssi"}
+
+        # Replace underscores with spaces
+        formatted = source.replace("_", " ")
+
+        # Split into words
+        words = formatted.split()
+
+        # Format each word
+        formatted_words = []
+        for word in words:
+            word_lower = word.lower()
+            if word_lower in acronyms:
+                # Acronyms should be all uppercase
+                formatted_words.append(word_lower.upper())
+            else:
+                # Regular words: capitalize first letter
+                formatted_words.append(word.capitalize())
+
+        return " ".join(formatted_words)
+
+    @property
     def eq_preset(self) -> str | None:
-        """Current EQ preset from cached status."""
+        """Current EQ preset from cached status.
+
+        Normalized to Title Case to match the format returned by get_eq_presets().
+        The device may return lowercase in status but capitalized in preset list,
+        so we normalize for consistency.
+        """
         if self.player._status_model is None:
             return None
-        return self.player._status_model.eq_preset
+        preset = self.player._status_model.eq_preset
+        if not preset:
+            return None
+        # Normalize to Title Case to match get_eq_presets() format
+        # Handle special cases like "Hip-Hop" and "R&B"
+        preset_lower = preset.lower()
+        if "hip" in preset_lower and "hop" in preset_lower:
+            return "Hip-Hop"
+        elif preset_lower == "r&b" or preset_lower == "r and b":
+            return "R&B"
+        else:
+            # Capitalize first letter of each word
+            return " ".join(word.capitalize() for word in str(preset).split())
 
     @property
     def shuffle(self) -> bool | None:

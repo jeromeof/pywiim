@@ -150,6 +150,8 @@ sources = player.available_sources
 
 ```python
 player.eq_preset  # str | None
+# Returns current EQ preset name, normalized to Title Case to match get_eq_presets() format.
+# Example: "Flat", "Acoustic", "Rock" (not "flat", "acoustic", "rock")
 ```
 
 Current EQ preset name from cached status.
@@ -431,7 +433,7 @@ progress = (player.media_position / player.media_duration) * 100  # May raise Ty
 player.volume_level  # float | None (0.0-1.0)
 player.is_muted  # bool | None
 player.play_state  # str | None ("play", "pause", "idle", "load")
-player.source  # str | None
+player.source  # str | None (normalized to Title Case, e.g., "AirPlay", "Spotify", "Line In")
 player.media_title  # str | None (falls back to URL filename if no title)
 player.media_artist  # str | None
 player.media_album  # str | None

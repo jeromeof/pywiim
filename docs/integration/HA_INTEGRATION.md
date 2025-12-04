@@ -401,7 +401,7 @@ shuffle = player.shuffle  # True/False/None (None for external sources like AirP
 repeat = player.repeat  # 'one'/'all'/'off'/None (None for external sources)
 shuffle_supported = player.shuffle_supported  # Check before using shuffle
 repeat_supported = player.repeat_supported  # Check before using repeat
-eq_preset = player.eq_preset  # EQ preset name
+eq_preset = player.eq_preset  # EQ preset name (normalized to Title Case, e.g., "Flat", "Rock")
 available_sources = player.available_sources  # List of selectable input sources (smart detection)
 wifi_rssi = player.wifi_rssi  # Signal strength in dBm
 
@@ -722,7 +722,9 @@ async def _async_update_data(self):
     }
 ```
 
-**Note on `available_sources` and `eq_presets`:**
+**Note on `source`, `available_sources`, and `eq_presets`:**
+
+- **`source`**: Current source name, normalized to Title Case for consistent UI display (e.g., "AirPlay", "Spotify", "Line In", "Bluetooth"). This ensures professional casing in Home Assistant's UI. For comparisons, use `.lower()` (e.g., `player.source.lower() == "airplay"`).
 
 - **`available_sources`**: Returns user-selectable physical inputs plus the current source (when active):
 
@@ -734,6 +736,8 @@ async def _async_update_data(self):
   This filtering shows only physical inputs that users can manually select, plus the current source if it's not a physical input (e.g., AirPlay, Spotify, or a multi-room follower name like "Master Bedroom"). This ensures Home Assistant's dropdown shows selectable options while correctly displaying the current state. You can directly use `player.available_sources` without additional filtering.
 
 - **`eq_presets`**: List of available EQ preset names from `get_eq_presets()` (e.g., `["Flat", "Rock", "Jazz", ...]`). Fetched every 60 seconds when EQ is supported.
+  
+- **`eq_preset`**: Current EQ preset name, normalized to Title Case to match the format from `get_eq_presets()`. This ensures consistency - if `get_eq_presets()` returns `["Flat", "Acoustic", ...]`, then `eq_preset` will return `"Flat"` (not `"flat"`), making comparisons straightforward.
 
 ## Advanced Patterns
 

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.42] - 2025-12-04
+
+### Fixed
+- **EQ preset normalization** - `player.eq_preset` now returns Title Case (e.g., "Flat", "Acoustic") to match the format from `get_eq_presets()`, ensuring consistency between the current preset and available presets list.
+
+### Changed
+- **Source name normalization** - `player.source` now returns Title Case for consistent UI display (e.g., "AirPlay", "Spotify", "Line In", "Bluetooth", "WiFi"). This ensures professional casing in Home Assistant's UI while maintaining case-insensitive comparisons for capability checks.
+
 ## [2.1.41] - 2025-12-04
 
 ### Fixed

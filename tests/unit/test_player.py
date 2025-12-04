@@ -1555,7 +1555,8 @@ class TestPlayerMediaMetadata:
         # Ensure state synchronizer has source data (property reads from synchronizer first)
         player._state_synchronizer.update_from_http({"source": "wifi"})
 
-        assert player.source == "wifi"
+        # Property normalizes to Title Case (WiFi is an acronym, so all uppercase)
+        assert player.source == "WiFi"
 
     @pytest.mark.asyncio
     async def test_media_duration_zero(self, mock_client):
@@ -2331,7 +2332,8 @@ class TestPlayerMediaMetadata:
         status = PlayerStatus(eq_preset="flat", play_state="play")
         player._status_model = status
 
-        assert player.eq_preset == "flat"
+        # Property normalizes to Title Case
+        assert player.eq_preset == "Flat"
 
     @pytest.mark.asyncio
     async def test_available_sources(self, mock_client):
