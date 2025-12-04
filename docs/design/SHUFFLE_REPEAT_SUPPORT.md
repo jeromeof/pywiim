@@ -135,6 +135,24 @@ The `setPlayerCmd:loopmode` endpoint only works when:
 
 To identify what actually works, we need **empirical testing** with real devices and content.
 
+### ⚠️ CRITICAL: Testing Requirements
+
+**Before running shuffle/repeat tests, ensure the device is playing appropriate content:**
+
+1. **For Spotify/Apple Music/Amazon Music:**
+   - ✅ **Use an album or playlist** - Queue-based content where shuffle/repeat make sense
+   - ❌ **NOT a radio station or "Daily Mix"** - These are algorithmic streams with no fixed queue
+   - ❌ **NOT podcasts or audiobooks** - Episodic content doesn't support shuffle
+
+2. **How to verify content type:**
+   - Check the `media_content_id` in player status
+   - `spotify:album:*` or `spotify:playlist:*` → Good for testing
+   - `spotify:station:*` or radio-like content → Will NOT work
+
+3. **Test failure vs unsupported content:**
+   - If shuffle/repeat commands don't work, first verify you're playing an album/playlist
+   - A "failed" test on a radio station is **expected behavior**, not a bug
+
 ### Test Script
 
 ```bash
@@ -148,18 +166,19 @@ See test script: `scripts/test-shuffle-repeat-by-source.py`
 
 For each streaming service, test multiple content types:
 
-| Service | Content Type | Example | Expected |
-|---------|-------------|---------|----------|
-| Spotify | Album | "Rumors by Fleetwood Mac" | ✅ Should work |
-| Spotify | Radio | "Daily Mix 1" | ❓ Unknown |
-| Spotify | Playlist | "Liked Songs" | ✅ Should work |
-| Amazon Music | Album | "1989" | ✅ Should work |
-| Amazon Music | Station | "Pop Hits Station" | ❓ Unknown |
-| TuneIn | Live Radio | "BBC Radio 1" | ❌ Won't work |
-| TuneIn | Podcast | "The Daily" | ❓ Unknown |
-| USB | Folder | Local files | ✅ Should work |
-| Line In | Physical | CD Player | ✅ Should work |
-| AirPlay | Album | Apple Music | ❌ Won't work |
+| Service | Content Type | Example | Expected | Notes |
+|---------|-------------|---------|----------|-------|
+| Spotify | Album | "Rumors by Fleetwood Mac" | ✅ Should work | Queue-based |
+| Spotify | Playlist | "Liked Songs" | ✅ Should work | Queue-based |
+| Spotify | Radio/Station | "Daily Mix 1" | ❌ Won't work | Algorithmic stream |
+| Spotify | Podcast | "The Daily" | ❌ Won't work | Episodic content |
+| Amazon Music | Album | "1989" | ✅ Should work | Queue-based |
+| Amazon Music | Station | "Pop Hits Station" | ❌ Won't work | Algorithmic stream |
+| Apple Music | Album (via AirPlay) | Any album | ❌ Won't work | iOS controls playback |
+| TuneIn | Live Radio | "BBC Radio 1" | ❌ Won't work | Live stream |
+| TuneIn | Podcast | "The Daily" | ❓ Unknown | Needs testing |
+| USB | Folder | Local files | ✅ Should work | Device owns queue |
+| Line In | Physical | CD Player | ✅ Should work | Device owns queue |
 
 ### What the Tests Do
 
@@ -167,6 +186,32 @@ For each streaming service, test multiple content types:
 2. **Test**: Actually try the controls on real hardware
 3. **Compare**: Did reality match prediction?
 4. **Record**: Save detailed results including loop_mode values
+
+### Interpreting Test Results
+
+**If a test "fails" (shuffle/repeat doesn't change):**
+
+1. **First, check what content is playing:**
+   ```python
+   # Check the source and content
+   print(f"Source: {player.source}")
+   print(f"Title: {player.media_title}")
+   print(f"Content ID: {player._status_model.media_content_id if player._status_model else 'N/A'}")
+   ```
+
+2. **Determine if it's a content-type issue:**
+   - Playing "Artist Radio" or "Daily Mix"? → Expected to fail (no queue)
+   - Playing an album or playlist? → This is a real bug, investigate further
+
+3. **Document findings:**
+   - Record the exact content type being played
+   - Note whether the source claims to support shuffle/repeat
+   - Capture any error messages or unexpected behavior
+
+**Common "false failures":**
+- Testing on Spotify Radio (algorithmic, no shuffle/repeat)
+- Testing on a podcast (episodic content)
+- Testing on a live radio stream (TuneIn, iHeartRadio)
 
 ### Expected Patterns
 

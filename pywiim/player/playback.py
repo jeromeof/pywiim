@@ -30,6 +30,8 @@ class PlaybackControl:
         Raises:
             WiiMError: If shuffle cannot be controlled on current source.
         """
+        import time
+
         from ..api.loop_mode import get_loop_mode_mapping
         from .properties import PlayerProperties
 
@@ -63,6 +65,9 @@ class PlaybackControl:
         if self.player._status_model:
             self.player._status_model.loop_mode = loop_mode
 
+        # Track when loop_mode was set for preserving optimistic update during refresh
+        self.player._last_loop_mode_set_time = time.time()
+
         # Call callback to notify state change
         if self.player._on_state_changed:
             self.player._on_state_changed()
@@ -77,6 +82,8 @@ class PlaybackControl:
             ValueError: If mode is not valid.
             WiiMError: If repeat cannot be controlled on current source.
         """
+        import time
+
         mode_lower = mode.lower().strip()
         if mode_lower not in ("off", "one", "all"):
             raise ValueError(f"Invalid repeat mode: {mode}. Valid values: 'off', 'one', 'all'")
@@ -113,6 +120,9 @@ class PlaybackControl:
         # Update cached state immediately (optimistic)
         if self.player._status_model:
             self.player._status_model.loop_mode = loop_mode
+
+        # Track when loop_mode was set for preserving optimistic update during refresh
+        self.player._last_loop_mode_set_time = time.time()
 
         # Call callback to notify state change
         if self.player._on_state_changed:

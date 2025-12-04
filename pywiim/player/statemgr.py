@@ -335,6 +335,35 @@ class StateManager:
             # Preserve existing source - device may have reported mode=0 which correctly doesn't set source="idle"
             # but we should keep the optimistic source that was set by set_source()
             status.source = self.player._status_model.source
+
+        # Preserve optimistic EQ preset if it was recently set
+        # Device status endpoint returns stale EQ data for a long time after a change
+        # (sometimes 30+ seconds). This prevents refresh() from overwriting the correct
+        # optimistic value with stale data.
+        eq_preservation_window = 60.0  # seconds to preserve optimistic EQ preset
+        if (
+            status
+            and self.player._status_model
+            and self.player._status_model.eq_preset
+            and self.player._last_eq_preset_set_time > 0
+            and (time.time() - self.player._last_eq_preset_set_time) < eq_preservation_window
+        ):
+            # Recently set EQ preset via set_eq_preset() - preserve the optimistic value
+            status.eq_preset = self.player._status_model.eq_preset
+
+        # Preserve optimistic loop_mode (shuffle/repeat) if it was recently set
+        # Device status endpoint may return stale loop_mode data after a change.
+        loop_mode_preservation_window = 60.0  # seconds to preserve optimistic loop_mode
+        if (
+            status
+            and self.player._status_model
+            and self.player._status_model.loop_mode is not None
+            and self.player._last_loop_mode_set_time > 0
+            and (time.time() - self.player._last_loop_mode_set_time) < loop_mode_preservation_window
+        ):
+            # Recently set loop_mode via set_shuffle()/set_repeat() - preserve the optimistic value
+            status.loop_mode = self.player._status_model.loop_mode
+
         self.player._status_model = status
 
         # Enrich metadata if playing a stream

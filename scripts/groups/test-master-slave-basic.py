@@ -121,6 +121,7 @@ async def main() -> int:
     except Exception as e:
         print(f"✗ Unexpected error: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 
@@ -176,7 +177,7 @@ async def main() -> int:
 
     # Test 3: Slave player controls route to master
     print_section("Test 3: Slave Player Controls Route to Master")
-    
+
     # Get initial master play state
     await master.refresh()
     initial_state = master.play_state
@@ -245,7 +246,7 @@ async def main() -> int:
         if master.group:
             # First, set individual volumes to known values (below 5% max)
             await master.set_volume(0.03)  # 3%
-            await slave.set_volume(0.04)   # 4%
+            await slave.set_volume(0.04)  # 4%
             await asyncio.sleep(1.0)
             await asyncio.gather(master.refresh(), slave.refresh(), return_exceptions=True)
             initial_master_vol = master.volume_level
@@ -255,22 +256,22 @@ async def main() -> int:
             print(f"    Master: {initial_master_vol}")
             print(f"    Slave: {initial_slave_vol}")
             print(f"    Group (max): {initial_group_vol}")
-            
+
             # Now set group volume (proportional adjustment) - max 5%
             target_group_vol = 0.05  # 5% max
             await master.group.set_volume_all(target_group_vol)
             await asyncio.sleep(2.0)  # Wait longer for volume changes
             await asyncio.gather(master.refresh(), slave.refresh(), return_exceptions=True)
-            
+
             master_vol = master.volume_level
             slave_vol = slave.volume_level
             group_vol = master.group.volume_level
-            
+
             print(f"  After group.set_volume_all({target_group_vol}):")
             print(f"    Master volume: {master_vol}")
             print(f"    Slave volume: {slave_vol}")
             print(f"    Group volume (max): {group_vol}")
-            
+
             # Verify group volume is close to target (proportional adjustment)
             if group_vol is not None and abs(group_vol - target_group_vol) < 0.02:
                 print(f"  ✓ Group volume control works (target: {target_group_vol}, got: {group_vol})")
@@ -356,6 +357,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n\nUnexpected error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
-

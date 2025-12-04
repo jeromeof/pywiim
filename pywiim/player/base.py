@@ -69,6 +69,14 @@ class PlayerBase:
         self._eq_presets: list[str] | None = None
         self._last_eq_presets_check: float = 0  # Track when EQ presets were last fetched
 
+        # Track when EQ preset was set (for preserving optimistic updates during refresh)
+        # Device status endpoint returns stale EQ data; we preserve the optimistic update for a few seconds
+        self._last_eq_preset_set_time: float = 0
+
+        # Track when loop_mode (shuffle/repeat) was set (for preserving optimistic updates during refresh)
+        # Device status endpoint may return stale loop_mode data
+        self._last_loop_mode_set_time: float = 0
+
         # Cached preset stations (playback presets - updated via refresh())
         self._presets: list[dict[str, Any]] | None = None
         self._last_presets_check: float = 0  # Track when presets were last fetched

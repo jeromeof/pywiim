@@ -1,0 +1,127 @@
+# pywiim Test Device Configuration
+# ================================
+#
+# This file defines devices available for testing and their capabilities.
+# The test runner uses this to determine which tests can run on which devices.
+#
+# Device Models:
+#   - wiim_pro: WiiM Pro (EQ, presets, multi-output)
+#   - wiim_pro_plus: WiiM Pro Plus (EQ, presets, multi-output, BT TX)
+#   - wiim_ultra: WiiM Ultra (EQ, presets, multi-output, BT TX, HDMI)
+#   - wiim_mini: WiiM Mini (presets only, no EQ)
+#   - wiim_amp: WiiM Amp (EQ, presets, speaker outputs)
+#   - arylic: Arylic/LinkPlay device (variable capabilities)
+#   - unknown: Auto-detect capabilities
+#
+# Capabilities (auto-detected from device, but can be overridden):
+#   - eq: Has EQ presets
+#   - presets: Has favorite presets
+#   - multi_output: Has multiple audio output modes
+#   - bt_output: Has Bluetooth transmitter (output)
+#   - hdmi: Has HDMI input
+#
+# Group Roles:
+#   - can_be_master: Device can be a group master
+#   - can_be_slave: Device can be a group slave
+#   - prefer_master: Prefer this device as master in group tests
+
+# =============================================================================
+# WiiM Devices (192.168.1.x network)
+# =============================================================================
+
+devices:
+  # Primary test device - WiiM Pro "Outdoor"
+  - ip: 192.168.1.115
+    name: "Outdoor"
+    model: wiim_pro
+    capabilities:
+      - eq
+      - presets
+      - multi_output
+      - grouping
+    group_role: prefer_master
+    notes: "Primary test device - WiiM Pro"
+
+  # Secondary WiiM Pro for group testing
+  - ip: 192.168.1.116
+    name: "WiiM 1.116"
+    model: wiim_pro
+    capabilities:
+      - eq
+      - presets
+      - multi_output
+    group_role: can_be_slave
+    notes: "Secondary device for group testing"
+
+  # Third device on .1 network
+  - ip: 192.168.1.68
+    name: "WiiM 1.68"
+    model: unknown
+    capabilities: []
+    group_role: can_be_slave
+    notes: "Third device on .1 network - auto-detect capabilities"
+
+# =============================================================================
+# Arylic/Mixed Devices (192.168.6.x network)
+# =============================================================================
+
+  # Arylic UP2STREAM AMP V4 "Dock"
+  - ip: 192.168.6.95
+    name: "Dock"
+    model: arylic
+    capabilities:
+      - presets
+    notes: "Arylic UP2STREAM_AMP_V4 - No EQ support"
+
+  # Arylic H50 "Main Deck"  
+  - ip: 192.168.6.50
+    name: "Main Deck"
+    model: arylic
+    capabilities:
+      - eq
+      - presets
+    notes: "Arylic H50 with EQ support"
+
+  # WiiM Pro "Cabin" on .6 network
+  - ip: 192.168.6.221
+    name: "Cabin"
+    model: wiim_pro
+    capabilities:
+      - eq
+      - presets
+      - multi_output
+      - grouping
+    notes: "WiiM Pro on .6 network"
+
+# =============================================================================
+# Test Configuration
+# =============================================================================
+
+# Default device for single-device tests (when --device not specified)
+default_device: 192.168.1.115
+
+# Default group configuration for multi-device tests
+default_group:
+  master: 192.168.1.115
+  slaves:
+    - 192.168.1.116
+
+# Timeouts (seconds)
+timeouts:
+  connect: 5.0
+  command: 10.0
+  group_operation: 15.0
+
+# Test behavior
+settings:
+  # Maximum volume to use during tests (safety limit)
+  max_test_volume: 0.15
+  
+  # Restore device state after tests
+  restore_state: true
+  
+  # Pause between tests (seconds) - gives device time to settle
+  inter_test_delay: 0.5
+  
+  # Skip tests that would change playback state
+  safe_mode: false

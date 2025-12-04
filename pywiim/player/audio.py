@@ -158,14 +158,39 @@ class AudioConfiguration:
         """Set equalizer preset.
 
         Args:
-            preset: Preset name.
+            preset: Preset name. Can be any case (e.g., "jazz", "Jazz", "JAZZ")
+                   or display name from get_eq_presets() (e.g., "Jazz").
+                   The method normalizes the preset name internally.
         """
+        import asyncio
+        import time
+
+        # Normalize preset name using client's normalization (handles any case)
+        normalized_preset = self.player.client._normalize_eq_preset_name(preset)
+
         # Call API (raises on failure)
         await self.player.client.set_eq_preset(preset)
 
-        # Update cached state immediately (optimistic)
+        # Update cached state immediately (optimistic) with normalized preset
         if self.player._status_model:
-            self.player._status_model.eq_preset = preset
+            self.player._status_model.eq_preset = normalized_preset
+
+        # Track when EQ was set for preserving optimistic update during refresh
+        # Device status endpoint returns stale EQ data for many seconds
+        self.player._last_eq_preset_set_time = time.time()
+
+        # Verify by querying the authoritative EQ endpoint after a brief delay
+        # This ensures we have the correct value even if status endpoint is stale
+        try:
+            await asyncio.sleep(0.3)  # Brief delay for device to apply
+            eq_data = await self.player.client.get_eq()
+            verified_preset = eq_data.get("Name") or eq_data.get("name")
+            if verified_preset and self.player._status_model:
+                self.player._status_model.eq_preset = verified_preset
+                _LOGGER.debug("EQ preset verified: %s", verified_preset)
+        except Exception as err:
+            # If verification fails, keep the optimistic update
+            _LOGGER.debug("EQ verification failed, keeping optimistic value: %s", err)
 
         # Call callback to notify state change
         if self.player._on_state_changed:

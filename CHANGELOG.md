@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.43] - 2025-12-04
+
+### Fixed
+- **EQ preset and shuffle/repeat state preservation during refresh** - Fixed issue where `refresh()` would overwrite optimistic EQ preset and loop_mode (shuffle/repeat) updates with stale data from the device status endpoint. The device's `getPlayerStatus` returns stale EQ data for several minutes after a change. Now:
+  - `set_eq_preset()` verifies the change with `get_eq()` (authoritative endpoint) after a 300ms delay
+  - Optimistic EQ preset updates are preserved for 60 seconds during `refresh()` calls
+  - Optimistic loop_mode updates from `set_shuffle()`/`set_repeat()` are similarly preserved for 60 seconds
+  - This prevents the UI from flickering back to old values after changing EQ or shuffle/repeat
+
+### Added
+- **Unified test runner** - New `scripts/run_tests.py` for comprehensive real-device testing with tiered test suites:
+  - **Tier 1 (Smoke)**: 8 tests - connectivity, volume, mute, state properties
+  - **Tier 2 (Playback)**: 5 tests - play/pause/resume, next/previous track
+  - **Tier 3 (Controls)**: 5 tests - shuffle toggle, repeat modes, state preservation
+  - **Tier 4 (Features)**: 5 tests - EQ presets, audio outputs, favorites
+  - **Tier 5 (Groups)**: 9 tests - group creation, metadata propagation, volume/mute sync, command routing
+  - Colorful real-time output with test progress and results
+  - Device configuration via `scripts/test_devices.yaml`
+  - Pre-release validation: `python scripts/run_tests.py --prerelease --device IP --yes`
+
+### Changed
+- **Reorganized test scripts** - Cleaned up `scripts/` directory:
+  - Removed 13 redundant test scripts now covered by unified runner
+  - Moved interactive tests to `scripts/manual/`
+  - Moved group tests to `scripts/groups/`
+  - Added comprehensive README documentation
+
+### Documentation
+- **Shuffle/repeat testing requirements** - Updated `docs/design/SHUFFLE_REPEAT_SUPPORT.md` with critical documentation about content-type requirements for testing:
+  - Spotify albums/playlists support shuffle/repeat, but radio stations/Daily Mix do not
+  - Added guidance for interpreting test results and distinguishing real bugs from expected content-type limitations
+
 ## [2.1.42] - 2025-12-04
 
 ### Fixed

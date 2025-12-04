@@ -593,7 +593,7 @@ async def test_metadata_propagation(players: dict[str, Player]) -> TestResult:
             await slave.join_group(master)
             await asyncio.sleep(2.0)
             await asyncio.gather(master.refresh(), slave.refresh(), return_exceptions=True)
-            
+
             # Verify join actually worked
             if slave.is_solo:
                 # Join failed - likely cross-subnet
@@ -715,13 +715,13 @@ async def test_slave_to_master_controls(players: dict[str, Player]) -> TestResul
 
         # Create group
         group = await master.create_group()
-        
+
         # Attempt to join slave - handle cross-subnet failures gracefully
         try:
             await slave.join_group(master)
             await asyncio.sleep(2.0)
             await asyncio.gather(master.refresh(), slave.refresh(), return_exceptions=True)
-            
+
             # Verify join actually worked
             if slave.is_solo:
                 # Join failed - likely cross-subnet or other issue
@@ -881,7 +881,7 @@ async def test_metadata_during_playback(players: dict[str, Player]) -> TestResul
             await slave.join_group(master)
             await asyncio.sleep(2.0)
             await asyncio.gather(master.refresh(), slave.refresh(), return_exceptions=True)
-            
+
             # Verify join actually worked
             if slave.is_solo:
                 master_subnet = ".".join(master_ip.split(".")[:3])
@@ -909,7 +909,7 @@ async def test_metadata_during_playback(players: dict[str, Player]) -> TestResul
                 result.fail(f"Unexpected error: {e}")
             await group.disband()
             return result
-        
+
         await asyncio.sleep(3.0)  # Wait longer for sync
 
         # Refresh both devices multiple times to check consistency
@@ -1011,7 +1011,7 @@ async def test_cross_subnet_combination(players: dict[str, Player], master_ip: s
         await ensure_all_solo([master, slave])
 
         group = await master.create_group()
-        
+
         try:
             await slave.join_group(master)
             await asyncio.sleep(2.0)

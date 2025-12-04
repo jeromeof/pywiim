@@ -2,99 +2,124 @@
 
 This directory contains utility scripts for development, testing, and release management.
 
-## Release & Publishing Scripts
+## Test Runner (Primary Testing Tool)
 
-### `prerelease-check.sh`
+### `run_tests.py`
 
-Pre-release integration test runner. Runs comprehensive tests against a real device before releasing.
+**The unified test runner for pywiim.** Supports tiered testing with colorful output.
 
-**Usage**:
 ```bash
-# Run pre-release checks against a device
-./scripts/prerelease-check.sh 192.168.1.100
+# List configured devices
+python scripts/run_tests.py --list-devices
 
-# Or use environment variable
-WIIM_TEST_DEVICE=192.168.1.100 ./scripts/prerelease-check.sh
+# Run smoke tests (Tier 1) - always works, no setup needed
+python scripts/run_tests.py --tier smoke --device 192.168.1.115
+
+# Run playback tests (Tier 2) - needs media playing
+python scripts/run_tests.py --tier playback --device 192.168.1.115 --yes
+
+# Run controls tests (Tier 3) - needs album/playlist (NOT radio)
+python scripts/run_tests.py --tier controls --device 192.168.1.115 --yes
+
+# Run features tests (Tier 4) - EQ, outputs, presets
+python scripts/run_tests.py --tier features --device 192.168.1.115 --yes
+
+# Run pre-release suite (Tiers 1-4)
+python scripts/run_tests.py --prerelease --device 192.168.1.115 --yes
+
+# Run all tiers
+python scripts/run_tests.py --all --device 192.168.1.115 --yes
 ```
 
-**What it does**:
-1. Checks device connectivity
-2. Runs core integration tests (fast, safe)
-3. Prompts for confirmation before running comprehensive tests
-4. Runs comprehensive pre-release tests (changes device state, restores it)
+**Test Tiers:**
+| Tier | Name | Tests | Prerequisites |
+|------|------|-------|---------------|
+| 1 | Smoke | 8 | None - always works |
+| 2 | Playback | 5 | Media playing on device |
+| 3 | Controls | 5 | Album/playlist (NOT radio/station) |
+| 4 | Features | 5 | Device-specific (EQ, outputs) |
+| 5 | Groups | 8 | Multiple devices (--master, --slave) |
+| 6 | Advanced | TBD | Manual setup (BT, etc.) |
 
-**When to use**:
-- Before major releases (X.0.0)
-- Before minor releases (X.Y.0) with new features
-- After significant refactoring
-- Optional for patch releases
+**Group Tests (Tier 5):**
+```bash
+# Run group tests with master and slave
+python scripts/run_tests.py --tier groups --master 192.168.1.115 --slave 192.168.1.116 --yes
+```
 
-**Note**: Comprehensive tests will change device state (volume, playback, etc.) but restore it afterward. Make sure no one is using the device during testing.
+Group tests verify:
+- Ensure devices start as solo
+- Create group on master
+- Slave joins group
+- Role detection (master/slave)
+- Volume propagation
+- Mute propagation (mute_all)
+- Command routing (slave commands → master)
+- Group disband (both return to solo)
+
+**Options:**
+- `--device IP` - Specify device IP (default from config)
+- `--yes` / `-y` - Skip confirmation prompts
+- `--list-devices` - Show configured test devices
+- `--config PATH` - Custom config file
+
+### `test_devices.yaml`
+
+Device configuration file for the test runner. Edit this to configure your test devices:
+
+```yaml
+devices:
+  - ip: 192.168.1.115
+    name: "Living Room Pro"
+    model: wiim_pro
+    capabilities:
+      - eq
+      - presets
+    notes: "Primary test device"
+
+default_device: 192.168.1.115
+```
+
+## Release & Publishing Scripts
 
 ### `release.sh`
 
 Automated release script that runs all checks, bumps version, and pushes to git.
 
-**Usage**:
 ```bash
-# Bump patch version (default)
-./scripts/release.sh
-
-# Or explicitly specify bump type
-./scripts/release.sh patch
-./scripts/release.sh minor
-./scripts/release.sh major
+./scripts/release.sh patch   # Bump patch version (default)
+./scripts/release.sh minor   # Bump minor version
+./scripts/release.sh major   # Bump major version
 ```
 
-**What it does**:
+**What it does:**
 1. Formats code with `black` and `isort`
 2. Runs linting with `ruff`
 3. Runs type checking with `mypy`
 4. Runs tests with `pytest`
-5. Bumps version in both `pyproject.toml` and `pywiim/__init__.py`
-6. Commits changes with a version bump message
-7. Creates a git tag
-8. Pushes to remote repository
+5. Bumps version in `pyproject.toml` and `pywiim/__init__.py`
+6. Commits changes with version bump message
+7. Creates git tag and pushes
 
-**Note**: The script will exit early if any step fails. All checks must pass before version bump and push.
+### `prerelease-check.sh`
 
-**Recommended workflow**:
+Pre-release integration test runner. Runs pytest integration tests against a real device.
+
 ```bash
-# 1. Run pre-release checks (optional but recommended)
-./scripts/prerelease-check.sh 192.168.1.100
-
-# 2. Run release script
-./scripts/release.sh patch
+./scripts/prerelease-check.sh 192.168.1.115
 ```
 
 ### `publish.sh`
 
-Manual PyPI publishing script (rarely needed - GitHub Actions handles this automatically).
-
-**Usage**:
-```bash
-./scripts/publish.sh
-```
-
-**Note**: Normally you don't need this. After pushing a tag, GitHub Actions automatically publishes to PyPI.
+Manual PyPI publishing (rarely needed - GitHub Actions handles this automatically).
 
 ### `create_releases_for_tags.sh`
 
-Creates GitHub releases for existing git tags that don't have releases yet.
-
-**Usage**:
-```bash
-./scripts/create_releases_for_tags.sh
-```
+Creates GitHub releases for existing git tags.
 
 ### `generate_changelog.py`
 
 Generates changelog entries from git commits.
-
-**Usage**:
-```bash
-python scripts/generate_changelog.py
-```
 
 ## Authentication Setup Scripts
 
@@ -102,143 +127,56 @@ python scripts/generate_changelog.py
 
 Sets up GitHub CLI authentication.
 
-**Usage**:
-```bash
-./scripts/gh-auth-token.sh
-```
-
 ### `setup_pypi_auth.sh`
 
 Configures PyPI authentication for manual publishing.
-
-**Usage**:
-```bash
-./scripts/setup_pypi_auth.sh
-```
 
 ## Git Hooks
 
 ### `pre-push.sh`
 
-Git pre-push hook script.
+Git pre-push hook script. Runs automatically when pushing (if configured).
 
-**Usage**: Automatically runs when pushing (if configured as a git hook).
+## Subdirectories
 
-## Device Testing Scripts
+### `manual/`
 
-### `test_my_devices.py`
+Interactive test scripts that require human interaction:
+- `interactive-playback-test.py` - Menu-driven playback control testing
+- `test-shuffle-repeat-by-source.py` - Interactive source testing
 
-Quick test script for testing pywiim against real devices.
+### `groups/`
 
-**Usage**:
-```bash
-# Test a single device
-python scripts/test_my_devices.py 192.168.1.100
+Multi-device group testing scripts (for Tier 5 implementation):
+- `test_group_join_unjoin.py` - Group join/leave testing
+- `test-group-real-devices.py` - Comprehensive group testing
+- `test-master-slave-basic.py` - Basic master/slave testing
 
-# Test multiple devices
-python scripts/test_my_devices.py 192.168.1.100 192.168.1.101
+### `debug/`
 
-# Debug capability detection (detailed endpoint testing)
-python scripts/test_my_devices.py --debug-capabilities 192.168.1.100
-```
-
-**Features**:
-- Connects to devices
-- Gets device information
-- Detects capabilities
-- Tests basic features
-- Shows summary
-- `--debug-capabilities` flag for detailed capability detection debugging
-
-### `test-group-real-devices.py`
-
-Comprehensive test script for multi-room group functionality against real devices.
-
-**Usage**:
-```bash
-python scripts/test-group-real-devices.py
-```
-
-**Features**:
-- Tests group operations with real devices
-- Tests various master/slave combinations
-- Validates group volume and mute controls
-- Tests group playback controls
-
-**Note**: Edit the `DEVICE_IPS` list in the script to specify your devices.
-
-### `test-playback-controls.py`
-
-Automated test script for verifying play/pause, shuffle, and repeat controls on real devices.
-
-**Usage**:
-```bash
-python scripts/test-playback-controls.py 192.168.1.100
-```
-
-**Features**:
-- Tests play/pause commands
-- Tests shuffle on/off with state preservation
-- Tests repeat modes (off/one/all) with state preservation
-- Restores initial device state after testing
-- Provides detailed test results summary
-
-**Requirements**: Device should have media in queue for best results.
-
-### `interactive-playback-test.py`
-
-Interactive manual testing tool for playback controls.
-
-**Usage**:
-```bash
-python scripts/interactive-playback-test.py 192.168.1.100
-```
-
-**Features**:
-- Interactive menu-driven interface
-- Manual control of play/pause/stop/resume
-- Next/previous track controls
-- Shuffle and repeat mode controls
-- Real-time status display
-
-**Note**: Press Ctrl+C or enter 'q' to quit.
-
-## Shuffle/Repeat Testing Scripts
-
-### `test-shuffle-repeat-by-source.py`
-
-Comprehensive interactive testing across multiple sources and content types.
-
-**Usage**:
-```bash
-python scripts/test-shuffle-repeat-by-source.py 192.168.1.100
-```
-
-**Features**:
-- Interactive testing across multiple sources and content types
-- Tests shuffle and repeat controls systematically
-- Compares library predictions vs actual behavior
-- Records detailed results including loop_mode values
-- Saves comprehensive JSON results for analysis
-
-**Workflow**:
-1. Start the script
-2. Use WiiM app to play content from a source
-3. Return to script and press `[t]` to test current source
-4. Describe what's playing: "Spotify Album - Rumors by Fleetwood Mac"
-5. Script tests shuffle/repeat and records results
-6. Repeat for different sources and content types
-7. Press `[q]` to save results and see summary
-
-**Results**: Saved to `tests/shuffle-repeat-results/` with detailed JSON data.
-
-## Debugging Scripts
-
-### `debug/` Directory
-
-Contains debugging scripts for specific features:
-
+Debugging utilities:
 - `test_http_volume.py` - Debug HTTP volume responses
 - `test_upnp_volume.py` - Debug UPnP volume implementation
+- `test_queue.py` - Debug queue handling
 
-These are development/debugging tools and may not be actively maintained.
+## Recommended Pre-Release Workflow
+
+```bash
+# 1. Run smoke tests on primary device
+python scripts/run_tests.py --tier smoke --device 192.168.1.115
+
+# 2. Start media playing on device, then run playback tests
+python scripts/run_tests.py --tier playback --device 192.168.1.115 --yes
+
+# 3. Ensure album/playlist is playing (NOT radio), run controls tests
+python scripts/run_tests.py --tier controls --device 192.168.1.115 --yes
+
+# 4. Run feature tests
+python scripts/run_tests.py --tier features --device 192.168.1.115 --yes
+
+# 5. Or run all at once with --prerelease
+python scripts/run_tests.py --prerelease --device 192.168.1.115 --yes
+
+# 6. Do the release
+./scripts/release.sh patch
+```
