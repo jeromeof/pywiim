@@ -15,16 +15,16 @@ Documentation for end users of the library:
 ### 🏗️ [Design & Architecture](design/)
 Design documentation, architecture decisions, and patterns:
 - **ARCHITECTURE.md** - System architecture overview
+- **ARCHITECTURE_DATA_FLOW.md** - State synchronization, data flow, and play state identification
 - **DESIGN_PRINCIPLES.md** - Design principles, goals, and patterns
-- **DEVICE_VARIATIONS.md** - Vendor detection, endpoint abstraction, and device compatibility
-- **STATE_MANAGEMENT.md** - State synchronization, play state identification, position tracking, and caching
+- **DEVICE_PROFILES.md** - Device profiles, vendor detection, endpoint abstraction, and device compatibility
 - **LESSONS_LEARNED.md** - Key lessons from HA integration
 - **API_DESIGN_PATTERNS.md** - API design patterns and defensive programming
-- **UPNP_INTEGRATION.md** - UPnP integration patterns and architecture
+- **UPNP_INTEGRATION.md** - UPnP integration patterns, architecture, and health tracking
+- **LINKPLAY_ARCHITECTURE.md** - In-depth analysis of LinkPlay/WiiM streaming architecture and shuffle/repeat support
 - **SOURCE_ENUMERATION_VS_SELECTION.md** - Source system documentation
 - **OPERATION_PATTERNS.md** - Operation implementation patterns (trust API, handle preconditions)
 - **PROTOCOL_DETECTION.md** - Protocol/port detection strategy
-- **LINKPLAY_ARCHITECTURE.md** - In-depth analysis of LinkPlay/WiiM streaming architecture
 
 ### 💻 [Development Guides](development/)
 Guides for developers working on the project:
@@ -39,10 +39,12 @@ Guides for integrating the library with frameworks:
 ## Quick Navigation
 
 - **New to the project?** Start with [QUICK_START.md](user/QUICK_START.md)
-- **Want to understand the design?** Read [ARCHITECTURE.md](design/ARCHITECTURE.md)
+- **Want to understand the design?** Read [ARCHITECTURE.md](design/ARCHITECTURE.md) and [ARCHITECTURE_DATA_FLOW.md](design/ARCHITECTURE_DATA_FLOW.md)
 - **Setting up development?** See [DEVELOPMENT.md](development/DEVELOPMENT.md)
 - **Integrating with Home Assistant?** Check [HA_INTEGRATION.md](integration/HA_INTEGRATION.md)
-- **Looking for device compatibility?** See [DEVICE_VARIATIONS.md](design/DEVICE_VARIATIONS.md)
+- **Looking for device compatibility?** See [DEVICE_PROFILES.md](design/DEVICE_PROFILES.md)
+- **Understanding state synchronization?** See [ARCHITECTURE_DATA_FLOW.md](design/ARCHITECTURE_DATA_FLOW.md)
+- **UPnP integration details?** See [UPNP_INTEGRATION.md](design/UPNP_INTEGRATION.md)
 
 ## Documentation Standards
 

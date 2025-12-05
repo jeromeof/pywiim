@@ -256,6 +256,132 @@ def shuffle_state(self) -> bool | None:
 
 This pattern makes the architectural limitation **explicit** rather than hiding it behind misleading return values.
 
+## Implementation Details
+
+### Current Implementation (v2.1.2+)
+
+The library uses a **blacklist approach** (permissive by default):
+
+```python
+def _is_device_controlled_source(self) -> bool:
+    """Check if current source allows device-controlled playback.
+    
+    Uses a blacklist approach: most sources support device control,
+    but some external sources don't.
+    """
+    source = self.source
+    if source is None:
+        return False
+    
+    source_lower = source.lower()
+    
+    # Blacklist: Sources where device CANNOT control shuffle/repeat
+    external_controlled = {
+        "tunein",       # Radio streams - no shuffle/repeat
+        "iheartradio",  # Radio streams - no shuffle/repeat
+        "multiroom",    # Slave device - can't control playback
+    }
+    
+    if source_lower in external_controlled:
+        return False
+    
+    # Radio-like sources typically don't support controls
+    radio_keywords = ["radio", "stream"]
+    if any(keyword in source_lower for keyword in radio_keywords):
+        return False
+    
+    return True
+```
+
+### Historical Issues and Fixes
+
+**v2.1.2 (November 2025) - Issue #111:**
+- **Problem**: Critical misinterpretation of `loop_mode` values
+- WiiM and Arylic devices use different loop_mode schemes
+- pywiim was treating loop_mode as bitfields, incorrectly flagging loop_mode=3 as invalid
+- **Solution**: Added vendor-specific loop mode mappings in `pywiim/api/loop_mode.py`
+
+**v2.1.1 (November 2025):**
+- **Problem**: Restrictive whitelist approach blocked too many sources
+- **Solution**: Changed to blacklist approach (permissive by default)
+
+**v1.0.71 (January 2025):**
+- **Problem**: Sources where external apps control playback returning stale values
+- **Solution**: Added source-aware shuffle/repeat control, return `None` for unsupported sources
+
+### The Content Type Problem
+
+**Key Insight**: The source alone doesn't determine support. Content type matters!
+
+**Examples:**
+- **Spotify Album/Playlist**: ✅ Should support shuffle/repeat (queue-based)
+- **Spotify Radio/Mix**: ❌ Won't work (algorithmic streaming, no fixed queue)
+- **Amazon Music Album**: ✅ Should work (user's queue)
+- **Amazon Music Station**: ❌ Won't work (algorithm-generated)
+- **TuneIn Live Radio**: ❌ Won't work (live stream, no queue)
+
+The `setPlayerCmd:loopmode` endpoint only works when:
+- Device is the control point (owns the queue)
+- Content is queue-based (not algorithmic streaming)
+- Protocol allows device-side control
+
+### Testing Strategy
+
+**⚠️ CRITICAL: Testing Requirements**
+
+Before running shuffle/repeat tests, ensure the device is playing appropriate content:
+
+1. **For Spotify/Apple Music/Amazon Music:**
+   - ✅ **Use an album or playlist** - Queue-based content where shuffle/repeat make sense
+   - ❌ **NOT a radio station or "Daily Mix"** - These are algorithmic streams with no fixed queue
+   - ❌ **NOT podcasts or audiobooks** - Episodic content doesn't support shuffle
+
+2. **How to verify content type:**
+   - Check the `media_content_id` in player status
+   - `spotify:album:*` or `spotify:playlist:*` → Good for testing
+   - `spotify:station:*` or radio-like content → Will NOT work
+
+**Test Script:**
+```bash
+source .venv/bin/activate
+python scripts/test-shuffle-repeat-by-source.py <device_ip>
+```
+
+**What to Test:**
+- USB, Line In, Optical → ✅ Should work (device owns queue)
+- Spotify albums/playlists → ✅ Should work (queue-based)
+- Spotify radio/mix → ❌ Won't work (algorithmic)
+- AirPlay → ❌ Won't work (iOS controls it)
+- Live radio streams → ❌ Won't work (no queue)
+
+### Integration Guidelines
+
+**Home Assistant Pattern:**
+```python
+@property
+def supported_features(self):
+    features = (
+        MediaPlayerEntityFeature.VOLUME_SET
+        | MediaPlayerEntityFeature.PLAY
+        | MediaPlayerEntityFeature.PAUSE
+    )
+    
+    # Only show shuffle/repeat if supported for current source
+    if self._player.shuffle_supported:
+        features |= MediaPlayerEntityFeature.SHUFFLE_SET
+    
+    if self._player.repeat_supported:
+        features |= MediaPlayerEntityFeature.REPEAT_SET
+    
+    return features
+```
+
+**Best Practices:**
+1. **Check support first**: Use `shuffle_supported` / `repeat_supported`
+2. **Hide unavailable controls**: Don't show shuffle button if not supported
+3. **Handle None gracefully**: Properties return `None` when not supported
+4. **Don't cache support**: Check on each state update (source can change)
+
 ## Key Takeaways
 
 1. **Context is Everything**: Transport protocol determines control authority, not device capabilities
@@ -273,6 +399,8 @@ This analysis synthesizes findings from:
 - Community diagnostic logs (Home Assistant, Music Assistant)
 - Spotify Embedded SDK integration behaviors
 - UPnP/DLNA protocol specifications
+- GitHub Issue #111: Shuffle/repeat broken (v2.1.2 fix)
+- CHANGELOG entries: v2.1.2, v2.1.1, v1.0.71
 
 ## Conclusion
 

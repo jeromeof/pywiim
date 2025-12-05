@@ -254,4 +254,3 @@ Before committing, check that your logging:
 - Missing context (just "Error: failed")
 
 Remember: **The best debug log is one that helps you find bugs without drowning in noise.**
-

@@ -4,127 +4,126 @@ This guide covers testing pywiim functionality against real WiiM/LinkPlay device
 
 ## Prerequisites
 
-1. Ensure the virtual environment is activated:
+1. **Activate the virtual environment:**
 ```bash
 cd /home/mike/projects/pywiim
 source .venv/bin/activate
 ```
 
-2. Find your device IP address (check your router or WiiM app)
+2. **Find your device IP address** (check your router or WiiM app)
 
-3. Ensure device is on the network and accessible
+3. **Ensure device is on the network and accessible**
 
-## Quick Verification - Play/Pause/Shuffle/Repeat
+4. **For HTTPS devices**, use port 443 (most modern devices)
 
-### ✅ Unit Tests (All Passed)
+## Quick Start: Unified Test Runner
 
-All unit tests for play/pause/shuffle/repeat methods have been verified:
-
-```bash
-# Run specific playback control tests
-pytest tests/unit/test_player.py::TestPlayerPlaybackControl -v
-
-# Results: 6/6 tests passed ✓
-# - test_play ✓
-# - test_pause ✓
-# - test_set_shuffle ✓
-# - test_set_shuffle_off ✓
-# - test_set_repeat ✓
-# - test_set_repeat_off ✓
-```
-
-### 🎯 Automated Real Device Testing
-
-Use the automated test script to verify all playback controls:
+The **recommended way** to test pywiim is using the unified test runner:
 
 ```bash
-python scripts/test-playback-controls.py <device_ip>
+# List configured devices
+python scripts/run_tests.py --list-devices
+
+# Run smoke tests (Tier 1) - always works, no setup needed
+python scripts/run_tests.py --tier smoke --device 192.168.1.115
+
+# Run playback tests (Tier 2) - needs media playing
+python scripts/run_tests.py --tier playback --device 192.168.1.115 --yes
+
+# Run all tiers (1-4) for pre-release validation
+python scripts/run_tests.py --prerelease --device 192.168.1.115 --yes
 ```
 
-**Example:**
+See [Unified Test Runner](#unified-test-runner) section below for details.
+
+## Unified Test Runner
+
+The **unified test runner** (`scripts/run_tests.py`) is the primary tool for comprehensive real-device testing. It supports tiered test suites with colorful real-time output.
+
+### Test Tiers
+
+| Tier | Name | Tests | Prerequisites |
+|------|------|-------|---------------|
+| 1 | Smoke | 8 | None - always works |
+| 2 | Playback | 5 | Media playing on device |
+| 3 | Controls | 5 | Album/playlist (NOT radio/station) |
+| 4 | Features | 5 | Device-specific (EQ, outputs) |
+| 5 | Groups | 9 | Multiple devices (--master, --slave) |
+| 6 | Advanced | TBD | Manual setup (BT, etc.) |
+
+### Basic Usage
+
 ```bash
-python scripts/test-playback-controls.py 192.168.1.100
+# Run smoke tests (Tier 1) - always works
+python scripts/run_tests.py --tier smoke --device 192.168.1.115
+
+# Run playback tests (Tier 2) - needs media playing
+python scripts/run_tests.py --tier playback --device 192.168.1.115 --yes
+
+# Run controls tests (Tier 3) - needs album/playlist (NOT radio)
+python scripts/run_tests.py --tier controls --device 192.168.1.115 --yes
+
+# Run features tests (Tier 4) - EQ, outputs, presets
+python scripts/run_tests.py --tier features --device 192.168.1.115 --yes
+
+# Run pre-release suite (Tiers 1-4)
+python scripts/run_tests.py --prerelease --device 192.168.1.115 --yes
+
+# Run all tiers
+python scripts/run_tests.py --all --device 192.168.1.115 --yes
 ```
 
-**What it tests:**
-- ✅ Play command
-- ✅ Pause command
-- ✅ Shuffle ON/OFF (verifies state preservation)
-- ✅ Repeat modes: OFF/ONE/ALL (verifies state preservation)
-- ✅ Automatic state restoration after tests
+### Group Tests (Tier 5)
 
-**Expected output:**
-```
-🎵 Testing Playback Controls on 192.168.1.100
-======================================================================
-
-📋 Connecting to device...
-   ✓ Connected: Living Room
-   ✓ Model: WiiM Mini
-   ✓ Firmware: 4.8.502906
-
-📊 Initial State:
-   Play State: play
-   Shuffle: False
-   Repeat: off
-
-🎯 Test 1: Play Command
-   ✓ Play command sent
-   State after play: play
-
-🎯 Test 2: Pause Command
-   ✓ Pause command sent
-   State after pause: pause
-
-🎯 Test 3: Shuffle Control
-   Testing shuffle ON...
-   ✓ Set shuffle ON
-   Shuffle state: True
-   Repeat preserved: off
-   Testing shuffle OFF...
-   ✓ Set shuffle OFF
-   Shuffle state: False
-   Repeat preserved: off
-
-🎯 Test 4: Repeat Control
-   Testing repeat ALL...
-   ✓ Set repeat ALL
-   Repeat mode: all
-   Shuffle preserved: False
-   Testing repeat ONE...
-   ✓ Set repeat ONE
-   Repeat mode: one
-   Shuffle preserved: False
-   Testing repeat OFF...
-   ✓ Set repeat OFF
-   Repeat mode: off
-   Shuffle preserved: False
-
-🔄 Restoring initial state...
-   ✓ State restored
-
-======================================================================
-✅ All tests completed!
-======================================================================
+```bash
+# Run group tests with master and slave
+python scripts/run_tests.py --tier groups --master 192.168.1.115 --slave 192.168.1.116 --yes
 ```
 
-### 🎮 Interactive Manual Testing
+Group tests verify:
+- Ensure devices start as solo
+- Create group on master
+- Slave joins group
+- Role detection (master/slave)
+- Volume propagation
+- Mute propagation (mute_all)
+- Command routing (slave commands → master)
+- Metadata propagation
+- Group disband (both return to solo)
+
+### Device Configuration
+
+Configure devices in `scripts/test_devices.yaml`:
+
+```yaml
+devices:
+  - ip: 192.168.1.115
+    name: "Living Room Pro"
+    model: wiim_pro
+    capabilities:
+      - eq
+      - presets
+    notes: "Primary test device"
+
+default_device: 192.168.1.115
+```
+
+### Options
+
+- `--device IP` - Specify device IP (default from config)
+- `--yes` / `-y` - Skip confirmation prompts
+- `--list-devices` - Show configured test devices
+- `--config PATH` - Custom config file
+- `--master IP` - Master device for group tests
+- `--slave IP` - Slave device for group tests
+
+### Interactive Manual Testing
 
 For hands-on manual testing and exploration:
 
 ```bash
-python scripts/interactive-playback-test.py <device_ip>
+python scripts/manual/interactive-playback-test.py <device_ip>
 ```
-
-**Example:**
-```bash
-python scripts/interactive-playback-test.py 192.168.1.100
-```
-
-**Features:**
-- Interactive menu-driven interface
-- Real-time status display
-- Manual control of all playback functions
 
 **Available commands:**
 ```
@@ -226,69 +225,120 @@ The Player class automatically manages these combinations to preserve state when
 - Call `await player.refresh()` to force state update
 - Some older firmware versions may have delays
 
-## Integration Test Configuration
+## Integration Tests (pytest)
 
-For pytest integration tests:
+For pytest-based integration tests:
+
+### Single Device Tests
 
 ```bash
 # Set environment variable
-export WIIM_TEST_DEVICE=192.168.1.100
+export WIIM_TEST_DEVICE=192.168.1.115
 
-# Run integration tests
-pytest tests/integration/test_real_device.py -v -m integration
+# Run core integration tests (fast, safe)
+pytest tests/integration/test_real_device.py -v -m core
+
+# Run pre-release integration tests (comprehensive)
+pytest tests/integration/test_prerelease.py -v -m prerelease
 
 # For HTTPS devices
+export WIIM_TEST_PORT=443
 export WIIM_TEST_HTTPS=true
 pytest tests/integration/test_real_device.py -v -m integration
 ```
 
-## Multi-Device Group Validation
+### Multi-Device Group Tests
 
-Use the multi-room regression test to prove master/slave logic, volume/mute propagation, and command routing:
+Use the multi-room integration test to verify master/slave logic, volume/mute propagation, and command routing:
 
-### Environment
-
+**Environment Setup:**
 ```bash
 export WIIM_TEST_GROUP_MASTER=192.168.1.115
 export WIIM_TEST_GROUP_SLAVES="192.168.1.116,192.168.1.117"
-# Optional overrides reused from single-device tests:
+# Optional overrides:
 export WIIM_TEST_PORT=443
 export WIIM_TEST_HTTPS=true
 ```
 
-### Test Run
-
+**Run Tests:**
 ```bash
 pytest tests/integration/test_multiroom_group.py -v
 ```
 
-### What It Verifies
-
+**What It Verifies:**
 - SOLO ➜ MASTER ➜ SLAVE transitions via `Player.create_group()` / `join_group()`
 - `get_device_group_info()` consistency for master and every slave
 - Virtual master state feeding slaves (metadata + source pointer)
 - Group volume/mute rules (`Group.set_volume_all` & `Group.mute_all`)
 - Routing of `Group.next_track()` / `Group.previous_track()` back to the physical master
 
-### Checklist Before Running
-
+**Checklist Before Running:**
 1. All devices reachable on the same network (no existing group sessions)
 2. Optional: start playback so next/previous commands succeed
-3. Virtualenv activated:  
+3. Virtualenv activated
+4. Run the test and watch the console for PASS/SKIP results
+
+### Group Testing CLI Tool
+
+For focused group testing, use the CLI tool:
+
+```bash
+# Interactive mode with visual verification
+wiim-group-test 192.168.1.115 192.168.1.116 --interactive
+
+# Automated test with pauses
+wiim-group-test 192.168.1.115 192.168.1.116 --pause 5
+
+# See GROUP_TEST_CLI.md for full documentation
+```
+
+See [GROUP_TEST_CLI.md](GROUP_TEST_CLI.md) for complete CLI tool documentation.
+
+## Testing Workflow Recommendations
+
+### Pre-Release Validation
+
+1. **Run smoke tests** (Tier 1) - Always works, no setup needed
    ```bash
-   cd /home/mike/projects/pywiim
-   source .venv/bin/activate
+   python scripts/run_tests.py --tier smoke --device 192.168.1.115
    ```
-4. Run the test and watch the console for PASS/SKIP results. Any assertion failure indicates a regression in the group handling rules.
 
-## Next Steps
+2. **Start media playing**, then run playback tests (Tier 2)
+   ```bash
+   python scripts/run_tests.py --tier playback --device 192.168.1.115 --yes
+   ```
 
-After verifying basic playback controls:
-1. Test group operations (if you have multiple devices)
-2. Test preset playback
-3. Test URL/stream playback
-4. Test volume and mute controls
-5. Test EQ settings
+3. **Ensure album/playlist is playing** (NOT radio), run controls tests (Tier 3)
+   ```bash
+   python scripts/run_tests.py --tier controls --device 192.168.1.115 --yes
+   ```
 
-See `docs/testing/` for more testing guides.
+4. **Run feature tests** (Tier 4) - EQ, outputs, presets
+   ```bash
+   python scripts/run_tests.py --tier features --device 192.168.1.115 --yes
+   ```
+
+5. **Or run all at once** with pre-release suite
+   ```bash
+   python scripts/run_tests.py --prerelease --device 192.168.1.115 --yes
+   ```
+
+6. **Test groups** (if you have multiple devices) - Tier 5
+   ```bash
+   python scripts/run_tests.py --tier groups --master 192.168.1.115 --slave 192.168.1.116 --yes
+   ```
+
+### Quick Verification
+
+For quick verification of specific features:
+- **Playback controls**: Use `scripts/manual/interactive-playback-test.py`
+- **Group operations**: Use `wiim-group-test` CLI tool
+- **Integration tests**: Use pytest with environment variables
+
+## Related Documentation
+
+- [GROUP_TEST_CLI.md](GROUP_TEST_CLI.md) - Group testing CLI tool guide
+- [GROUP_ROUTING_TESTS.md](GROUP_ROUTING_TESTS.md) - Group routing and testing details
+- [tests/README.md](../../tests/README.md) - Test suite documentation
+- [scripts/README.md](../../scripts/README.md) - Scripts documentation
 

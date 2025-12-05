@@ -13,7 +13,6 @@ These endpoints work on **all LinkPlay devices** and form the foundation:
 | Endpoint                  | Purpose             | Critical Notes                                                                                   |
 | ------------------------- | ------------------- | ------------------------------------------------------------------------------------------------ |
 | **`getPlayerStatus`**     | Core playback state | **Most critical - always poll this** ⚠️ **Exception: Audio Pro MkII uses `getStatusEx` instead** |
-| **`wlanGetConnectState`** | WiFi connection     | Network diagnostics                                                                              |
 
 ### ⚠️ WiiM-Enhanced Endpoints (Probe Required)
 

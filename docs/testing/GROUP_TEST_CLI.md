@@ -2,34 +2,57 @@
 
 ## Overview
 
-The `wiim-group-test` CLI tool tests group join/unjoin operations with multiple WiiM devices.
+The `wiim-group-test` CLI tool tests group join/unjoin operations and metadata propagation with multiple WiiM devices. This is a standalone CLI tool for focused group testing.
+
+> **Note**: For comprehensive tiered testing including groups, see the [Unified Test Runner](../testing/REAL-DEVICE-TESTING.md#unified-test-runner) (`scripts/run_tests.py --tier groups`).
 
 ## Features
 
-✅ **Multi-player support**: Test with 2, 3, or more players
+✅ **Multi-player support**: Test with 2, 3, or more players  
 ✅ **Automated testing**: Run full test suite automatically  
-✅ **Visual verification**: Pause between operations to check WiiM app
-✅ **Interactive mode**: Step-by-step with detailed status display
-✅ **Defensive verification**: Checks library state matches device state
+✅ **Visual verification**: Pause between operations to check WiiM app  
+✅ **Interactive mode**: Step-by-step with detailed status display  
+✅ **Defensive verification**: Checks library state matches device state  
+✅ **Metadata propagation**: Tests metadata sync from master to slaves
+
+## Installation
+
+The CLI tool is installed automatically with pywiim:
+
+```bash
+pip install pywiim
+```
+
+Or if developing from source, it's available after installation:
+
+```bash
+pip install -e .
+```
 
 ## Usage
 
 ### Basic Test (2 players)
 
 ```bash
-wiim-group-test 192.168.1.115 192.168.1.116 --port 443
+wiim-group-test 192.168.1.115 192.168.1.116
 ```
 
-### Test with 3 Players
+### Test with 3+ Players
 
 ```bash
-wiim-group-test 192.168.1.115 192.168.1.116 192.168.1.68 --port 443
+wiim-group-test 192.168.1.115 192.168.1.116 192.168.1.68
+```
+
+### HTTPS Devices
+
+```bash
+wiim-group-test 192.168.1.115 192.168.1.116 --port 443
 ```
 
 ### With Pauses (Visual Verification)
 
 ```bash
-wiim-group-test 192.168.1.115 192.168.1.116 192.168.1.68 --pause 5 --port 443
+wiim-group-test 192.168.1.115 192.168.1.116 192.168.1.68 --pause 5
 ```
 
 Pauses 5 seconds between operations so you can verify in the WiiM app.
@@ -37,13 +60,14 @@ Pauses 5 seconds between operations so you can verify in the WiiM app.
 ### Interactive Mode
 
 ```bash
-wiim-group-test 192.168.1.115 192.168.1.116 192.168.1.68 --interactive --port 443
+wiim-group-test 192.168.1.115 192.168.1.116 192.168.1.68 --interactive
 ```
 
-Shows detailed status after each operation:
+Shows detailed status after each operation with 5-second pauses:
+
 ```
 1️⃣  Creating group on leader...
-   ✓ Group created
+   ✓ Group created: 192.168.1.115 is now ready to accept followers
 
 Current State:
 ------------------------------------------------------------
@@ -53,7 +77,7 @@ Current State:
 ------------------------------------------------------------
 Pausing 5s for visual verification in WiiM app...
 
-2️⃣  Joining follower 1 to leader...
+2️⃣  Joining follower 1 (192.168.1.116) to leader...
    ✓ Follower 1 joined group
 
 Current State:
@@ -64,7 +88,17 @@ Current State:
 ------------------------------------------------------------
 ```
 
+### Verbose Output
+
+```bash
+wiim-group-test 192.168.1.115 192.168.1.116 --verbose
+```
+
+Shows debug logs from the library.
+
 ## Test Sequence
+
+The automated test suite runs these tests in order:
 
 1. **Initial State**: Verify all players are SOLO
 2. **Create Group**: Leader creates group (becomes MASTER)
@@ -89,13 +123,15 @@ Pause between operations: 5.0s (for visual verification)
   ✓ Leader player initial state: SOLO
   ✓ Follower 1 initial state: SOLO
   ✓ Follower 2 initial state: SOLO
-  ✓ Create group: Leader became MASTER
+  ✓ Create group: Leader became MASTER at 192.168.1.115
   ✓ Join follower 1: Became SLAVE in group
   ✓ Join follower 2: Became SLAVE in group
   ✓ Group size: Group has 3 players
   ✓ All players in group: PASS
+  ✓ Metadata propagation (all slaves): All slaves match master metadata
   ✓ Leave follower 2: Became SOLO
   ✓ Leave follower 1: Became SOLO
+  ✓ Leave group (leader): MASTER became SOLO, group disbanded
   ✓ Final state - leader: SOLO
   ✓ Final state - follower 1: SOLO
   ✓ Final state - follower 2: SOLO
@@ -103,8 +139,8 @@ Pause between operations: 5.0s (for visual verification)
 ============================================================
 Test Summary
 ============================================================
-Total tests: 13
-Passed: 13
+Total tests: 15
+Passed: 15
 Failed: 0
 Skipped: 0
 ============================================================
@@ -128,15 +164,21 @@ Tests verify:
 3. **Group membership** is correct (master knows slaves, slaves know master)
 4. **Metadata propagation** works (if devices are playing)
 
-## Debugging
+## Command-Line Options
 
-### Verbose Mode
+```
+positional arguments:
+  master_ip             Master device IP address or hostname
+  slave_ips            Slave device IP addresses or hostnames (one or more)
 
-```bash
-wiim-group-test 192.168.1.115 192.168.1.116 --verbose --port 443
+optional arguments:
+  --port PORT          Device port (default: auto-detect, use 80 for HTTP or 443 for HTTPS)
+  --verbose, -v        Enable verbose logging
+  --pause SECONDS, -p  Pause between operations (for visual verification in WiiM app)
+  --interactive, -i    Interactive mode with detailed status after each operation
 ```
 
-Shows debug logs from the library.
+## Debugging
 
 ### What to Check in WiiM App
 
@@ -147,26 +189,40 @@ When using `--pause` or `--interactive`:
 3. **After leave**: Follower should return to normal (ungrouped)
 4. **Final**: All players should be ungrouped
 
-## Common Issues
+### Common Issues
 
 **If tests fail**:
 1. Check devices are on same network
-2. Ensure HTTPS port (443) is correct
+2. Ensure port is correct (80 for HTTP, 443 for HTTPS)
 3. Try disbanding any existing groups first (use WiiM app)
 4. Check device firmware is up to date
+5. Use `--verbose` to see detailed error messages
 
 **If group persists after test**:
 - Tests auto-disband at the end
 - If interrupted (Ctrl+C), manually disband in WiiM app
 
+## Comparison with Unified Test Runner
+
+| Feature | `wiim-group-test` | `run_tests.py --tier groups` |
+|---------|-------------------|------------------------------|
+| Focus | Group operations only | Comprehensive tiered testing |
+| Metadata testing | ✅ Yes | ✅ Yes |
+| Interactive mode | ✅ Yes | ❌ No |
+| Visual verification | ✅ Yes (--pause) | ❌ No |
+| Integration with other tests | ❌ No | ✅ Yes (tiers 1-6) |
+| Device configuration | Command-line only | YAML config file |
+| Best for | Quick group testing | Pre-release validation |
+
 ## Summary
 
-The test script demonstrates that the `pywiim` library correctly handles:
+The `wiim-group-test` CLI tool demonstrates that the `pywiim` library correctly handles:
 - Creating groups
 - Joining players (with automatic preconditions)
 - Leaving groups
 - Auto-disbanding empty groups
 - Maintaining sync between library and device state
+- Metadata propagation from master to slaves
 
 Users of the library can simply call operations - the library handles all complexity automatically.
 

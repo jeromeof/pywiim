@@ -269,32 +269,160 @@ When UPnP is unavailable:
 
 This is the same polling strategy used when UPnP is working (UPnP events supplement polling, don't replace it).
 
-## UPnP Health Detection
+## UPnP Health Tracking
 
 ### The Challenge
 
-UPnP has **no heartbeat** - events only occur on state changes. This makes it impossible to reliably detect if UPnP is working when the device is idle.
+UPnP has **no heartbeat** - events only occur on state changes. This makes it impossible to reliably detect if UPnP is working when the device is idle using time-based methods alone.
 
-### Standard UPnP Detection Mechanisms
+### Why Time-Based Detection Fails
 
-The UPnP specification provides several mechanisms for detecting failures:
+**Naive Approach (❌ WRONG):**
+```python
+if time_since_last_upnp_event > 5.0:
+    upnp_working = False  # Assume broken
+```
 
-1. **Event Key Tracking** (UPnP spec): Each event includes a sequence number (event key) that increments. Gaps indicate missed events. However, async-upnp-client's DmrDevice pattern abstracts away HTTP headers, so we don't have direct access to event keys.
+**Why It Fails:**
+- **False Negative**: When device is idle (not playing), there are no state changes, so no UPnP events are sent
+- An idle device with working UPnP will be incorrectly flagged as "broken"
+- Can't distinguish between "UPnP is broken" vs "UPnP is working but device is idle"
 
-2. **Subscription Renewal Failures**: If subscription renewal fails (HTTP 412 Precondition Failed), the subscription is invalid. async-upnp-client's `auto_resubscribe=True` handles this automatically.
+### The Solution: Change-Based Detection
 
-3. **Empty state_variables**: Indicates resubscription failure (already detected).
+**Smart Approach (✅ CORRECT):**
+```python
+# ✅ CORRECT: Change-based detection
+if polling_detected_change and not upnp_reported_change:
+    missed_changes += 1  # Evidence that UPnP missed something
+```
 
-### Our Approach
+**Why It Works:**
+- Only checks UPnP health when there's actual proof (a missed change)
+- Idle device = no changes = no false negatives
+- Active device with broken UPnP = missed changes = correctly detected
+- Self-healing: Can detect when UPnP recovers
 
-Following the **DLNA DMR pattern**:
-- **No health checking when idle**: Can't detect if UPnP is working when device is idle (no events = normal)
-- **Heuristic when playing**: If playing and no events received in 5 seconds, assume UPnP not working
-- **Expected events pattern**: If HTTP polling shows state change but no UPnP event arrives, that's a failure indicator
-- **Optimistic flag**: Use `check_available` flag, not pessimistic `failed` flag
-- **Trust auto_resubscribe**: Trust `auto_resubscribe=True` to recover from temporary failures
-- **Long timeout**: 300s timeout when idle (events only on changes), 5s when playing (expect continuous events)
-- **HTTP as fallback**: HTTP polling becomes authoritative when UPnP fails
+### How Health Tracking Works
+
+#### 1. State Monitoring
+
+The health tracker monitors specific fields that UPnP should **always** notify about:
+
+```python
+UPNP_MONITORED_FIELDS = {
+    "play_state",  # play/pause/stop always fires UPnP event
+    "volume",      # Volume changes always fire UPnP event
+    "muted",       # Mute changes always fire UPnP event
+    "title",       # Track changes include metadata updates
+    "artist",      # Track changes include metadata updates
+    "album",       # Track changes include metadata updates
+}
+```
+
+**Note:** We deliberately **don't** monitor `position`/`duration` because:
+- UPnP only sends these on track start, not continuously during playback
+- Position during playback is estimated locally, not via UPnP events
+
+#### 2. Change Detection Flow
+
+```
+┌─────────────────┐
+│  HTTP Poll #1   │  play_state: "pause", volume: 50
+└────────┬────────┘
+         │ (store state)
+         ▼
+┌─────────────────┐
+│  HTTP Poll #2   │  play_state: "play", volume: 60  ← CHANGE DETECTED!
+└────────┬────────┘
+         │
+         ├─► Check: Did UPnP report play_state="play"?
+         │          ├─ Yes (within 2s) → ✅ UPnP caught it
+         │          └─ No → ❌ UPnP missed it (missed_changes++)
+         │
+         └─► Check: Did UPnP report volume=60?
+                    ├─ Yes (within 2s) → ✅ UPnP caught it
+                    └─ No → ❌ UPnP missed it (missed_changes++)
+```
+
+#### 3. Health Assessment
+
+The tracker uses **hysteresis** to avoid flapping between healthy/unhealthy:
+
+```python
+if miss_rate > 50%:  # More than half of changes missed
+    status = UNHEALTHY  # Mark as degraded
+elif miss_rate < 20%:  # Catching most changes
+    status = HEALTHY    # Mark as healthy
+# Between 20-50%: Keep current status (hysteresis)
+```
+
+#### 4. Adaptive Polling Response
+
+When UPnP is detected as unhealthy:
+
+```python
+# Normal polling (UPnP working)
+interval = 5.0  # Poll every 5 seconds (when playing)
+
+# Fast polling (UPnP degraded)
+if is_playing and not upnp_healthy:
+    interval = 1.0  # Poll every 1 second to compensate
+```
+
+### Implementation: UpnpHealthTracker
+
+Located in `pywiim/upnp/health.py`:
+
+```python
+from pywiim.upnp.health import UpnpHealthTracker
+
+# Initialize tracker
+tracker = UpnpHealthTracker(
+    grace_period=2.0,  # Wait 2 seconds for UPnP event to arrive
+    min_samples=3,     # Need 3 changes before making decisions
+)
+
+# After each HTTP poll
+tracker.on_poll_update({
+    "play_state": player.play_state,
+    "volume": player.volume,
+    "muted": player.muted,
+    "title": player.media_title,
+    "artist": player.media_artist,
+    "album": player.media_album,
+})
+
+# When UPnP event arrives
+tracker.on_upnp_event({
+    "play_state": player.play_state,
+    "volume": player.volume,
+    # ... same fields
+})
+
+# Check health status
+if tracker.is_healthy:
+    print("✅ UPnP working!")
+else:
+    print("❌ UPnP degraded, switching to fast polling")
+
+# Get detailed statistics
+stats = tracker.statistics
+print(f"Miss rate: {stats['miss_rate']*100:.1f}%")
+```
+
+### Key Features
+
+1. **Grace Period for Race Conditions**: 2-second window to handle network latency and asynchronous timing
+2. **Minimum Sample Requirement**: Requires at least 3 detected changes before making health decisions
+3. **Self-Healing / Recovery Detection**: Detects when UPnP recovers and resets statistics
+4. **Hysteresis**: 20-50% gap prevents flapping between healthy/unhealthy states
+
+### Design Decisions
+
+- **Why 2-Second Grace Period?** Network latency typically < 500ms, event processing < 500ms, 2 seconds provides comfortable margin
+- **Why 50% Threshold for Unhealthy?** Conservative threshold - occasional missed event (< 20%) = acceptable, consistent missing (> 50%) = clearly broken
+- **Why Hysteresis?** Prevents "flapping" between states when miss rate hovers around threshold
 
 ### Resubscription Failure Detection
 
@@ -351,8 +479,7 @@ def _on_event(self, service, state_variables):
 
 ## Related Documentation
 
-- **[STATE_MANAGEMENT.md](STATE_MANAGEMENT.md)** - How HTTP and UPnP state is merged
+- **[ARCHITECTURE_DATA_FLOW.md](ARCHITECTURE_DATA_FLOW.md)** - How HTTP and UPnP state is merged
 - **[API_DESIGN_PATTERNS.md](API_DESIGN_PATTERNS.md)** - HTTP API reference (used for all control)
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - Overall library architecture
-- **[HA_INTEGRATION.md](../integration/HA_INTEGRATION.md)** - Polling strategy implementation and usage
 

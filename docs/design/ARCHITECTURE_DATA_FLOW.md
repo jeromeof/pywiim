@@ -27,9 +27,11 @@ These two sources are merged together to provide the most current state.
 │  └────────────────┘      └─────────────┘      └─────────────────┘  │
 │         │                       │                      │             │
 │         │ Conflict Resolution:  │                      │             │
-│         │  • play_state: prefer UPnP (immediate)       │             │
-│         │  • metadata: prefer HTTP (complete)          │             │
-│         │  • position: estimate between updates        │             │
+│         │  • Device profile-driven (explicit per device) │          │
+│         │  • Fallback to freshness-based (legacy)        │             │
+│         │  • play_state: profile-defined (often UPnP)    │             │
+│         │  • metadata: profile-defined (often HTTP)       │             │
+│         │  • position: raw device value (no estimation)   │             │
 │         └───────────────────────┴──────────────────────┘             │
 └─────────────────────────────────────────────────────────────────────┘
                          │ updates (for backwards compat)
@@ -123,14 +125,22 @@ This contains **merged data** from both HTTP and UPnP, resolved using smart conf
 
 ### Conflict Resolution Rules
 
-When both HTTP and UPnP have data for the same field:
+The StateSynchronizer uses **device profile-driven resolution** when available, with fallback to freshness-based logic for legacy compatibility.
 
-| Field | Priority | Reason |
-|-------|----------|--------|
+**Profile-Driven Resolution (Recommended):**
+When a `DeviceProfile` is set (detected automatically from device info), the synchronizer uses explicit source preferences defined in the profile's `state_sources` configuration. This eliminates guessing and makes behavior predictable per device type.
+
+Example: Audio Pro MkII devices require UPnP for `play_state` because HTTP API is unreliable. The profile explicitly sets `state_sources.play_state = "upnp"`.
+
+**Legacy Resolution (Fallback):**
+When no profile is available, the synchronizer uses global priority rules with freshness windows:
+
+| Field | Default Priority | Reason |
+|-------|------------------|--------|
 | `play_state` | **UPnP** > HTTP | Real-time state changes are immediate via UPnP |
 | `volume` | **UPnP** > HTTP | Volume changes are immediate via UPnP |
 | `muted` | **UPnP** > HTTP | Mute changes are immediate via UPnP |
-| `position` | **UPnP** > HTTP | UPnP fires on track start, then estimated locally |
+| `position` | **UPnP** > HTTP | UPnP fires on track start, HTTP polls periodically |
 | `duration` | **UPnP** > HTTP | UPnP fires on track start |
 | `title` | **HTTP** > UPnP | HTTP metadata is more complete |
 | `artist` | **HTTP** > UPnP | HTTP metadata is more complete |
@@ -139,6 +149,8 @@ When both HTTP and UPnP have data for the same field:
 | `source` | **HTTP** > UPnP | HTTP source reporting is more accurate |
 
 **Exception:** For Spotify, metadata ONLY comes from UPnP events. HTTP API does not provide Spotify metadata.
+
+**Note:** Position is returned as **raw device value** (no estimation). Integrations must track `media_position_updated_at` timestamp and handle position advancement in the UI layer.
 
 ### Freshness Windows
 
@@ -182,68 +194,105 @@ If data exceeds its freshness window, it's considered stale and the other source
 - `_bluetooth_history` - Paired BT devices (checked every 60s)
 - `_cover_art_cache` - Downloaded album art images (1hr TTL)
 
-## Position Estimation: Now Unified! ✅
+## Position Handling: Raw Device Values
 
-Position estimation is now **centralized** in one place:
+**As of v2.1.0, position estimation was removed.** PyWiim now returns **raw position values** directly from the device (via HTTP polling or UPnP events).
 
-### StateSynchronizer Position Estimation (The One Source)
-```python
-StateSynchronizer._get_estimated_position()
-    _estimation_base_position = 100  # Last known position
-    _estimation_start_time = 123456  # When we got that position
-    
-    # While playing:
-    elapsed = now - _estimation_start_time
-    estimated = _estimation_base_position + elapsed
-```
+### Why Position Estimation Was Removed
 
-### How Other Components Use It
+Position estimation caused jitter by fighting with integration frontend advancement logic. The correct separation of concerns is:
+- **PyWiim**: Returns "what device said" (raw position value)
+- **Integration**: Tracks "when we read it" (`media_position_updated_at` timestamp)
+- **Frontend**: Handles smooth display advancement
+
+This matches the pattern used by all other Home Assistant media player integrations (Sonos, LinkPlay, etc.).
+
+### How Position Works Now
 
 **Player.media_position Property:**
 ```python
 @property
-def media_position(self):
-    # Reads position from merged state (already estimated)
-    merged = self._state_synchronizer.get_merged_state()
-    return merged.get("position")  # ✅ Single source of truth
+def media_position(self) -> int | None:
+    # Reads raw position from merged state (no estimation)
+    merged = self.player._state_synchronizer.get_merged_state()
+    position = merged.get("position")
+    return int(float(position)) if position is not None else None
 ```
 
-**Player Position Timer:**
-```python
-async def _position_timer_loop(self):
-    # Ticks position forward in StateSynchronizer, triggers callbacks
-    position = self._state_synchronizer.tick_position_estimation()
-    # ✅ Explicitly updates estimation every second (fills in between HTTP polls)
-    if position_changed:
-        self._on_state_changed()  # Notify clients
-```
+**Integration Responsibility:**
+Integrations must:
+1. Track `media_position_updated_at` timestamp when reading position
+2. Calculate elapsed time: `elapsed = now - media_position_updated_at`
+3. Display: `display_position = media_position + elapsed` (if playing)
+4. Update timestamp on each poll/event
 
-**Result:** One estimation algorithm, multiple consumers. Clean architecture! ✅
+This gives integrations full control over position advancement and eliminates jitter.
 
-### How Position Updates Between HTTP Polls
+## Play State Identification
 
-While playing, position needs to be updated every second even though HTTP polls only happen every 5 seconds:
+Determining the correct player state (play, pause, stop, idle) is challenging because different sources use different field names and value formats, and some devices don't provide state via HTTP.
 
-```
-Time 0: HTTP poll → position = 100
-         ↓ StateSynchronizer stores: base_position=100, start_time=0
+### HTTP API State Identification
 
-Time 1: Timer tick → tick_position_estimation()
-         ↓ Calculates: 100 + (1 - 0) = 101
-         ↓ Updates _last_position = 101
-         ↓ Triggers callback → Monitor displays 101
+#### Field Names
 
-Time 2: Timer tick → tick_position_estimation()  
-         ↓ Calculates: 100 + (2 - 0) = 102
-         ↓ Updates _last_position = 102
-         ↓ Triggers callback → Monitor displays 102
+The HTTP API uses multiple field names for play state:
+- `"status"`, `"state"`, `"player_state"` all map to play state
+- Parser checks all possible field names
 
-Time 5: HTTP poll → position = 105
-         ↓ Updates: base_position=105, start_time=5
-         ↓ (Accounts for any drift that accumulated)
-```
+#### Value Formats and Normalization
 
-The timer **fills in the gaps** between HTTP polls, providing smooth second-by-second updates.
+HTTP API returns various value formats that need normalization:
+
+**Raw Values:**
+- `"play"`, `"playing"` → normalized to `"play"`
+- `"pause"`, `"paused"` → normalized to `"pause"`
+- `"stop"`, `"stopped"` → normalized to `"pause"` (modern UX: stop == pause)
+- `"none"` → normalized to `"idle"` (no media loaded)
+- `"load"`, `"loading"`, `"transitioning"`, `"buffering"` → normalized to `"buffering"`
+
+**Rationale for stop→pause mapping:**
+Modern streaming devices maintain playback position whether "paused" or "stopped". Users think in terms of "playing" vs "not playing", not three separate states. This aligns with Home Assistant conventions (no STATE_STOPPED) and Sonos behavior.
+
+#### Device-Specific Behavior
+
+- **WiiM Devices**: HTTP provides play_state via `getPlayerStatusEx` or `getStatusEx`
+- **Audio Pro Original/W-Generation**: HTTP provides play_state via `getStatusEx`
+- **Audio Pro MkII**: ❌ HTTP does NOT provide play_state - must use UPnP (profile-driven)
+
+### UPnP State Identification
+
+#### Field Names
+
+UPnP uses `TransportState` variable in AVTransport service.
+
+#### Value Formats
+
+UPnP uses DLNA standard state values with underscores:
+- `"PLAYING"` → `"play"`
+- `"PAUSED_PLAYBACK"` → `"pause"`
+- `"STOPPED"` → `"pause"` (modern UX)
+- `"NO_MEDIA_PRESENT"` → `"idle"`
+- `"TRANSITIONING"`, `"LOADING"` → `"buffering"`
+
+Normalization: lowercase, replace underscores with spaces, then map to standard values.
+
+### State Identification Rules
+
+1. **Source Availability**: If only one source has state → use that source
+2. **Freshness Check**: If one is stale and one is fresh → use fresh one
+3. **Source Priority**: For play_state, UPnP preferred (more timely) unless profile says otherwise
+4. **State Normalization**: Normalize all values to standard set ("play", "pause", "idle", "buffering")
+5. **Device-Specific**: Audio Pro MkII always uses UPnP (profile-driven)
+
+### Key Takeaways
+
+- HTTP field names vary: check `"state"`, `"status"`, `"player_state"`
+- HTTP value normalization: `"none"` → `"idle"`, lowercase all values
+- UPnP value normalization: replace underscores, lowercase, map to standard values
+- Device variations: Audio Pro MkII doesn't provide HTTP play_state (use profile)
+- Source priority: Profile-driven (explicit) > UPnP (default for play_state) > HTTP
+- Conflict resolution: Freshness > Priority > Recency
 
 ## Why Did We Have This Mess?
 

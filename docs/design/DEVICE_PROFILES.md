@@ -305,9 +305,193 @@ mapping = get_loop_mode_mapping(player.profile)
 
 ---
 
+---
+
+## Endpoint Abstraction
+
+### Problem Statement
+
+Different LinkPlay implementations use different endpoint paths and formats:
+- **Vendor Variations**: Arylic, WiiM, Audio Pro may use different endpoint formats
+- **Generation Variations**: Audio Pro MkII vs W-Generation vs Original have different endpoint support
+- **Firmware Variations**: Different firmware versions may add/remove/modify endpoints
+- **Fallback Requirements**: Need to try multiple endpoint variants when primary fails
+
+### Design Pattern: Endpoint Registry with Fallback Chains
+
+We use an **Endpoint Registry** pattern with **Fallback Chains** to handle endpoint variations:
+
+1. **Endpoint Registry**: Maps logical operations to endpoint variants by vendor/generation
+2. **Fallback Chains**: Ordered list of endpoints to try when primary fails
+3. **Capability-Aware Selection**: Select endpoints based on detected capabilities
+4. **Runtime Probing**: Probe endpoints to determine actual availability
+
+### Logical Endpoint Names
+
+Endpoints are identified by logical names, not literal paths:
+
+```python
+# Logical endpoint names
+ENDPOINT_PLAYER_STATUS = "player_status"  # Get playback status
+ENDPOINT_DEVICE_STATUS = "device_status"  # Get device info
+ENDPOINT_METADATA = "metadata"  # Get track metadata
+```
+
+### Endpoint Registry Structure
+
+Each logical endpoint can have multiple variants:
+
+```python
+ENDPOINT_REGISTRY: dict[str, dict[str, list[str]]] = {
+    "player_status": {
+        "default": [
+            "/httpapi.asp?command=getPlayerStatusEx",  # Primary (WiiM, most devices)
+            "/httpapi.asp?command=getStatusEx",  # Fallback (Audio Pro MkII)
+            "/httpapi.asp?command=getPlayerStatus",  # Legacy fallback
+        ],
+        "audio_pro_mkii": [
+            "/httpapi.asp?command=getStatusEx",  # Primary (MkII doesn't support getPlayerStatusEx)
+            "/httpapi.asp?command=getStatus",  # Fallback
+        ],
+        "audio_pro_w_generation": [
+            "/httpapi.asp?command=getPlayerStatusEx",  # Primary
+            "/httpapi.asp?command=getStatusEx",  # Fallback
+        ],
+    },
+    "metadata": {
+        "default": [
+            "/httpapi.asp?command=getMetaInfo",  # Primary
+        ],
+        "audio_pro_mkii": [],  # Not supported - empty list means unsupported
+    },
+}
+```
+
+The endpoint resolver automatically selects the appropriate chain based on the device profile.
+
+---
+
+## Device Catalog
+
+This section catalogs known device models, their quirks, compatibility issues, and workarounds.
+
+### WiiM Devices
+
+WiiM devices are newer LinkPlay-based devices with enhanced features and better API support.
+
+#### WiiM Pro / Mini / Amp / Ultra
+- **Model**: `WiiM Pro`, `WiiM Mini`, `WiiM Amp`, `WiiM Ultra`
+- **Firmware**: 4.0+ recommended
+- **Features**: Full feature support
+- **HTTPS**: Supported (self-signed cert)
+- **Client Cert**: Not required
+- **Profile**: `PROFILE_WIIM`
+- **Known Issues**: None
+
+### Arylic Devices
+
+Arylic devices are LinkPlay-based devices with vendor-specific API variations.
+
+#### Arylic Up2Stream / S10+
+- **Model**: `Arylic Up2Stream Amp 2.0/2.1`, `Arylic S10+`
+- **Vendor**: `arylic`
+- **Profile**: `PROFILE_ARYLIC`
+- **Known Issues**:
+  - Uses different LED command format (`MCU+PAS+RAKOIT:LED:` instead of `setLED:`)
+  - Prefers hyphen format for source names (e.g., "line-in" vs "line_in")
+- **Workarounds**:
+  - Try Arylic-specific LED commands first, fallback to standard if they fail
+  - Normalize source names to hyphen format for Arylic devices
+
+### Audio Pro Devices
+
+Audio Pro devices have **three generations** with distinct capabilities. See [Audio Pro Generations](#audio-pro-generations) for details.
+
+#### Audio Pro Addon C5/C10 (Original)
+- **Model**: `Addon C5` or `Addon C10`
+- **Generation**: `original`
+- **Profile**: `PROFILE_AUDIO_PRO_ORIGINAL`
+- **Features**: Basic LinkPlay features, limited endpoint support
+- **Known Issues**: May not support getMetaInfo, limited EQ support
+
+#### Audio Pro Addon C5A/C10A (W-Generation)
+- **Model**: `Addon C5A` or `Addon C10A`
+- **Generation**: `w_generation`
+- **Profile**: `PROFILE_AUDIO_PRO_W_GENERATION`
+- **Features**: Enhanced support compared to original
+- **HTTPS**: Supported (self-signed cert)
+
+#### Audio Pro Addon C5 MkII
+- **Model**: `Addon C5 MkII`, `A10`, `A15`, `A28`, `C10` (with MkII firmware)
+- **Generation**: `mkii`
+- **Profile**: `PROFILE_AUDIO_PRO_MKII`
+- **Features**: Very limited support - **significantly different endpoints**
+- **HTTPS**: Required (port 4443)
+- **Client Cert**: **REQUIRED** (mTLS)
+- **Critical**: HTTP does NOT provide play_state or volume - must use UPnP (profile handles this)
+
+---
+
+## API Endpoint Compatibility
+
+### getStatusEx
+- **WiiM Devices**: ✅ Supported
+- **Arylic Devices**: ✅ Supported
+- **Audio Pro MkII**: ✅ Supported (preferred over getPlayerStatusEx)
+- **Audio Pro W-Generation**: ✅ Supported
+- **Notes**: Core endpoint, always available
+
+### getPlayerStatusEx
+- **WiiM Devices**: ✅ Supported
+- **Arylic Devices**: ✅ Supported
+- **Audio Pro MkII**: ❌ Not supported (use getStatusEx)
+- **Audio Pro W-Generation**: ✅ Supported
+- **Notes**: Enhanced status endpoint, not available on all devices
+
+### getMetaInfo
+- **WiiM Devices**: ✅ Supported
+- **Arylic Devices**: ⚠️ May not be supported
+- **Audio Pro MkII**: ❌ Not supported (returns 404)
+- **Audio Pro W-Generation**: ⚠️ May not be supported
+- **Notes**: Metadata endpoint, gracefully handle 404
+
+### EQ Endpoints
+- **WiiM Devices**: ✅ Supported
+- **Arylic Devices**: ⚠️ Read-only (GET works, SET returns "unknown command")
+- **Audio Pro MkII**: ❌ Not supported
+- **Audio Pro W-Generation**: ⚠️ Limited support
+
+### Preset Endpoints
+- **WiiM Devices**: ✅ Supported (6-20 slots, varies by model/firmware)
+- **Arylic Devices**: ⚠️ May not be supported
+- **Audio Pro MkII**: ❌ Not supported (getPresetInfo returns 404)
+- **Audio Pro W-Generation**: ⚠️ May not be supported
+
+---
+
+## Protocol Support
+
+### HTTP
+- **WiiM Devices**: ✅ Supported (port 80)
+- **Arylic Devices**: ✅ Supported (port 80)
+- **Audio Pro MkII**: ✅ Supported (fallback, prefer HTTPS)
+- **Audio Pro W-Generation**: ✅ Supported (port 80)
+
+### HTTPS
+- **WiiM Devices**: ✅ Supported (self-signed cert, port 443)
+- **Arylic Devices**: ✅ Supported (self-signed cert, port 443)
+- **Audio Pro MkII**: ✅ Required (port 4443, requires client cert)
+- **Audio Pro W-Generation**: ✅ Supported (self-signed cert, port 443)
+
+### UPnP/DLNA
+- **All Devices**: ✅ Supported
+- **Notes**: Real-time event subscriptions, preferred for volume/play state on Audio Pro MkII
+
+---
+
 ## Related Documentation
 
-- **[DEVICE_VARIATIONS.md](DEVICE_VARIATIONS.md)** - Vendor detection and endpoint variations
-- **[STATE_MANAGEMENT.md](STATE_MANAGEMENT.md)** - State synchronization design
+- **[ARCHITECTURE_DATA_FLOW.md](ARCHITECTURE_DATA_FLOW.md)** - State synchronization design (profiles used for source selection)
 - **[LESSONS_LEARNED.md](LESSONS_LEARNED.md)** - Key design requirements
+- **[API_DESIGN_PATTERNS.md](API_DESIGN_PATTERNS.md)** - API reliability and defensive programming
 

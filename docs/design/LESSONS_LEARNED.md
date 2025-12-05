@@ -6,11 +6,11 @@ Critical design requirements and patterns learned from the WiiM integration to e
 
 ## Key Takeaways
 
-1. **State Synchronization is Critical**: Most issues relate to HTTP/UPnP state merging. See `STATE_MANAGEMENT.md` for details.
-2. **Audio Pro Devices Need Special Handling**: Client certs, protocol detection, endpoint variations. See `DEVICE_VARIATIONS.md`.
+1. **State Synchronization is Critical**: Most issues relate to HTTP/UPnP state merging. See `ARCHITECTURE_DATA_FLOW.md` for details.
+2. **Audio Pro Devices Need Special Handling**: Client certs, protocol detection, endpoint variations. See `DEVICE_PROFILES.md`.
 3. **Metadata Preservation is Essential**: Don't clear metadata during transitions - check play_state before clearing.
-4. **UPnP Health Checking is Unreliable**: Events only on changes, no heartbeat - use long timeouts (300s).
-5. **Endpoint Variations are Common**: Need abstraction and fallback chains. See `DEVICE_VARIATIONS.md`.
+4. **UPnP Health Checking is Unreliable**: Events only on changes, no heartbeat - use long timeouts (300s). See `UPNP_INTEGRATION.md`.
+5. **Endpoint Variations are Common**: Need abstraction and fallback chains. See `DEVICE_PROFILES.md`.
 6. **Discovery Must be Robust**: Multi-protocol fallback, graceful validation failures.
 7. **Trust the API**: If HTTP call succeeds, operation worked - update state immediately. See `OPERATION_PATTERNS.md`.
 
@@ -23,7 +23,7 @@ Critical design requirements and patterns learned from the WiiM integration to e
 - ✅ Metadata preservation (don't clear during play/transition)
 - ✅ Conflict resolution (freshness > priority > recency)
 
-**Implementation**: `STATE_MANAGEMENT.md`, `StateSynchronizer` class
+**Implementation**: `ARCHITECTURE_DATA_FLOW.md`, `StateSynchronizer` class
 
 ### Audio Pro Device Handling
 - ✅ Client certificate authentication for MkII devices
@@ -31,7 +31,7 @@ Critical design requirements and patterns learned from the WiiM integration to e
 - ✅ Generation detection (MkII, W-Generation, Original)
 - ✅ Capability detection (probe endpoints before using)
 
-**Implementation**: `DEVICE_VARIATIONS.md`, endpoint abstraction
+**Implementation**: `DEVICE_PROFILES.md`, endpoint abstraction
 
 ### UPnP Subscription Management
 - ✅ No health checking (UPnP has no heartbeat)
@@ -39,14 +39,14 @@ Critical design requirements and patterns learned from the WiiM integration to e
 - ✅ HTTP polling becomes authoritative when UPnP fails
 - ✅ Cooperative sources (UPnP supplements HTTP, doesn't replace)
 
-**Implementation**: `UPNP_INTEGRATION.md`, `StateSynchronizer`
+**Implementation**: `UPNP_INTEGRATION.md` (includes health tracking), `StateSynchronizer`
 
 ### Endpoint Variations
 - ✅ Endpoint abstraction with fallback chains
 - ✅ Capability detection (probe before using)
 - ✅ Field mapping (handle missing fields gracefully)
 
-**Implementation**: `DEVICE_VARIATIONS.md`, `EndpointResolver` class
+**Implementation**: `DEVICE_PROFILES.md`, `EndpointResolver` class
 
 ## Design Patterns
 
@@ -71,7 +71,7 @@ Some commands (e.g., `reboot`) don't return responses - handle gracefully.
 
 ## Related Documentation
 
-- **[STATE_MANAGEMENT.md](STATE_MANAGEMENT.md)** - State synchronization details
-- **[DEVICE_VARIATIONS.md](DEVICE_VARIATIONS.md)** - Device compatibility and endpoint abstraction
+- **[ARCHITECTURE_DATA_FLOW.md](ARCHITECTURE_DATA_FLOW.md)** - State synchronization details
+- **[DEVICE_PROFILES.md](DEVICE_PROFILES.md)** - Device compatibility and endpoint abstraction
 - **[OPERATION_PATTERNS.md](OPERATION_PATTERNS.md)** - Operation implementation patterns
-- **[UPNP_INTEGRATION.md](UPNP_INTEGRATION.md)** - UPnP integration details
+- **[UPNP_INTEGRATION.md](UPNP_INTEGRATION.md)** - UPnP integration and health tracking
