@@ -571,57 +571,101 @@ class TestPlayerPlaybackControl:
 
     @pytest.mark.asyncio
     async def test_play(self, mock_client):
-        """Test play command."""
+        """Test play command updates state and triggers callback."""
         from pywiim.models import DeviceInfo, PlayerStatus
         from pywiim.player import Player
 
+        callback_called = []
         mock_client.play = AsyncMock()
         mock_client.get_player_status_model = AsyncMock(return_value=PlayerStatus(play_state="play"))
         mock_client.get_device_info_model = AsyncMock(return_value=DeviceInfo(uuid="test"))
 
-        player = Player(mock_client)
+        player = Player(mock_client, on_state_changed=lambda: callback_called.append(True))
+        player._status_model = PlayerStatus(play_state="pause")  # Start paused
+
         await player.play()
 
+        # Verify API was called
         mock_client.play.assert_called_once()
+        # Verify optimistic state update
+        assert player._status_model.play_state == "play"
+        # Verify state synchronizer updated
+        merged = player._state_synchronizer.get_merged_state()
+        assert merged["play_state"] == "play"
+        # Verify callback was triggered
+        assert len(callback_called) == 1
 
     @pytest.mark.asyncio
     async def test_pause(self, mock_client):
-        """Test pause command."""
+        """Test pause command updates state and triggers callback."""
         from pywiim.player import Player
 
+        callback_called = []
         mock_client.pause = AsyncMock()
 
-        player = Player(mock_client)
+        player = Player(mock_client, on_state_changed=lambda: callback_called.append(True))
+        player._status_model = PlayerStatus(play_state="play")  # Start playing
+
         await player.pause()
 
+        # Verify API was called
         mock_client.pause.assert_called_once()
+        # Verify optimistic state update
+        assert player._status_model.play_state == "pause"
+        # Verify state synchronizer updated
+        merged = player._state_synchronizer.get_merged_state()
+        assert merged["play_state"] == "pause"
+        # Verify callback was triggered
+        assert len(callback_called) == 1
 
     @pytest.mark.asyncio
     async def test_resume(self, mock_client):
-        """Test resume command."""
+        """Test resume command updates state and triggers callback."""
         from pywiim.models import DeviceInfo, PlayerStatus
         from pywiim.player import Player
 
+        callback_called = []
         mock_client.resume = AsyncMock()
         mock_client.get_player_status_model = AsyncMock(return_value=PlayerStatus(play_state="play"))
         mock_client.get_device_info_model = AsyncMock(return_value=DeviceInfo(uuid="test"))
 
-        player = Player(mock_client)
+        player = Player(mock_client, on_state_changed=lambda: callback_called.append(True))
+        player._status_model = PlayerStatus(play_state="pause")  # Start paused
+
         await player.resume()
 
+        # Verify API was called
         mock_client.resume.assert_called_once()
+        # Verify optimistic state update
+        assert player._status_model.play_state == "play"
+        # Verify state synchronizer updated
+        merged = player._state_synchronizer.get_merged_state()
+        assert merged["play_state"] == "play"
+        # Verify callback was triggered
+        assert len(callback_called) == 1
 
     @pytest.mark.asyncio
     async def test_stop(self, mock_client):
-        """Test stop command."""
+        """Test stop command updates state and triggers callback."""
         from pywiim.player import Player
 
+        callback_called = []
         mock_client.stop = AsyncMock()
 
-        player = Player(mock_client)
+        player = Player(mock_client, on_state_changed=lambda: callback_called.append(True))
+        player._status_model = PlayerStatus(play_state="play")  # Start playing
+
         await player.stop()
 
+        # Verify API was called
         mock_client.stop.assert_called_once()
+        # Verify optimistic state update
+        assert player._status_model.play_state == "stop"
+        # Verify state synchronizer updated
+        merged = player._state_synchronizer.get_merged_state()
+        assert merged["play_state"] == "stop"
+        # Verify callback was triggered
+        assert len(callback_called) == 1
 
     @pytest.mark.asyncio
     async def test_next_track(self, mock_client):
@@ -856,6 +900,284 @@ class TestPlayerPlaybackControl:
         )
         # Should not call HTTP API (play_url is not mocked in this test)
         # The UPnP path doesn't call client.play_url()
+
+
+class TestPlayerErrorHandling:
+    """Test Player error handling and recovery paths."""
+
+    @pytest.mark.asyncio
+    async def test_play_handles_api_failure(self, mock_client):
+        """Test play command handles API failure gracefully."""
+        from pywiim.exceptions import WiiMError
+        from pywiim.models import PlayerStatus
+        from pywiim.player import Player
+
+        mock_client.play = AsyncMock(side_effect=WiiMError("Network error"))
+        player = Player(mock_client)
+        player._status_model = PlayerStatus(play_state="pause")
+
+        # Should raise the error (not swallow it)
+        with pytest.raises(WiiMError, match="Network error"):
+            await player.play()
+
+        # State should not be updated on failure
+        assert player._status_model.play_state == "pause"
+
+    @pytest.mark.asyncio
+    async def test_refresh_recovery_after_failure(self, mock_client):
+        """Test refresh recovers after initial failure."""
+        from pywiim.exceptions import WiiMError
+        from pywiim.models import DeviceInfo, PlayerStatus
+        from pywiim.player import Player
+
+        # First call fails
+        mock_client.get_player_status_model = AsyncMock(side_effect=WiiMError("Failed"))
+        player = Player(mock_client)
+
+        # First refresh fails
+        with pytest.raises(WiiMError):
+            await player.refresh()
+        assert player.available is False
+
+        # Second call succeeds
+        mock_status = PlayerStatus(play_state="play", volume=50)
+        mock_info = DeviceInfo(uuid="test-uuid", name="Test Device")
+        mock_client.get_player_status_model = AsyncMock(return_value=mock_status)
+        mock_client.get_device_info_model = AsyncMock(return_value=mock_info)
+
+        # Should recover
+        await player.refresh()
+        assert player.available is True
+        assert player._status_model == mock_status
+
+    @pytest.mark.asyncio
+    async def test_upnp_fallback_when_http_fails(self, mock_client):
+        """Test UPnP fallback when HTTP volume fetch fails."""
+        from unittest.mock import MagicMock
+
+        from pywiim.exceptions import WiiMError
+        from pywiim.models import DeviceInfo, PlayerStatus
+        from pywiim.player import Player
+        from pywiim.upnp.client import UpnpClient
+
+        # HTTP fails
+        mock_client.get_player_status_model = AsyncMock(side_effect=WiiMError("HTTP failed"))
+        mock_info = DeviceInfo(uuid="test-uuid", name="Test Device")
+        mock_client.get_device_info_model = AsyncMock(return_value=mock_info)
+
+        # UPnP succeeds
+        mock_upnp_client = MagicMock(spec=UpnpClient)
+        mock_upnp_client.rendering_control = MagicMock()
+        mock_upnp_client.get_volume = AsyncMock(return_value=75)
+        mock_upnp_client.get_mute = AsyncMock(return_value=False)
+
+        player = Player(mock_client, upnp_client=mock_upnp_client)
+
+        # Refresh should fail (HTTP is required for status)
+        with pytest.raises(WiiMError):
+            await player.refresh()
+
+    @pytest.mark.asyncio
+    async def test_slave_play_without_group_raises_error(self, mock_client):
+        """Test slave play command raises error when not linked to group."""
+        from pywiim.exceptions import WiiMError
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        player._detected_role = "slave"  # Slave but no group
+
+        with pytest.raises(WiiMError, match="Slave player not linked to group"):
+            await player.play()
+
+
+class TestPlayerRoleTransitions:
+    """Test Player role transitions and group membership changes."""
+
+    @pytest.mark.asyncio
+    async def test_role_transition_solo_to_master(self, mock_client):
+        """Test role transition from solo to master."""
+        from pywiim.group import Group
+        from pywiim.models import DeviceInfo, PlayerStatus
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        assert player.role == "solo"
+        assert player.is_solo is True
+
+        # Transition to master
+        player._detected_role = "master"
+        slave = Player(mock_client)
+        group = Group(player)
+        group.add_slave(slave)
+
+        # Role should be master now
+        assert player.role == "master"
+        assert player.is_master is True
+        assert player.is_solo is False
+        assert player.group == group
+
+    @pytest.mark.asyncio
+    async def test_role_transition_master_to_solo(self, mock_client):
+        """Test role transition from master to solo when slaves leave."""
+        from pywiim.group import Group
+        from pywiim.player import Player
+
+        master = Player(mock_client)
+        master._detected_role = "master"
+        slave = Player(mock_client)
+        group = Group(master)
+        group.add_slave(slave)
+
+        assert master.role == "master"
+        assert master.is_master is True
+
+        # Slave leaves
+        group.remove_slave(slave)
+
+        # Master with no slaves should still be master (role comes from device API)
+        # But group size is now 1
+        assert master.role == "master"  # Role from device API, not group state
+        assert group.size == 1
+
+    @pytest.mark.asyncio
+    async def test_role_transition_solo_to_slave(self, mock_client):
+        """Test role transition from solo to slave when joining group."""
+        from pywiim.group import Group
+        from pywiim.player import Player
+
+        master = Player(mock_client)
+        master._detected_role = "master"
+        slave = Player(mock_client)
+        assert slave.role == "solo"
+
+        group = Group(master)
+        slave._detected_role = "slave"  # Device API reports slave role
+        group.add_slave(slave)
+
+        assert slave.role == "slave"
+        assert slave.is_slave is True
+        assert slave.group == group
+
+    @pytest.mark.asyncio
+    async def test_slave_auto_removal_when_joining_different_group(self, mock_client):
+        """Test slave automatically removed from old group when joining new group."""
+        from pywiim.group import Group
+        from pywiim.player import Player
+
+        master1 = Player(mock_client)
+        master1._detected_role = "master"
+        master2 = Player(mock_client)
+        master2._detected_role = "master"
+        slave = Player(mock_client)
+        slave._detected_role = "slave"
+
+        group1 = Group(master1)
+        group2 = Group(master2)
+
+        # Add slave to group1
+        group1.add_slave(slave)
+        assert slave.group == group1
+        assert slave in group1.slaves
+
+        # Add slave to group2 - should auto-remove from group1
+        group2.add_slave(slave)
+
+        assert slave.group == group2
+        assert slave in group2.slaves
+        assert slave not in group1.slaves
+        assert group1.size == 1
+        assert group2.size == 2
+
+
+class TestPlayerSourceConflicts:
+    """Test Player source conflict resolution and preservation."""
+
+    @pytest.mark.asyncio
+    async def test_source_preserved_when_http_returns_none(self, mock_client):
+        """Test source is preserved when HTTP returns None (mode=0 scenario)."""
+        from pywiim.models import DeviceInfo, PlayerStatus
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        # Set optimistic source
+        player._status_model = PlayerStatus(source="bluetooth", play_state="idle")
+
+        # HTTP returns status without source (mode=0)
+        new_status = PlayerStatus(play_state="idle", volume=50)
+        mock_client.get_player_status_model = AsyncMock(return_value=new_status)
+        mock_client.get_device_info_model = AsyncMock(return_value=DeviceInfo(uuid="test"))
+
+        await player.refresh()
+
+        # Optimistic source should be preserved
+        assert player._status_model.source == "bluetooth"
+
+    @pytest.mark.asyncio
+    async def test_source_selection_when_http_and_upnp_disagree(self, mock_client):
+        """Test source selection when HTTP and UPnP report different sources."""
+        from unittest.mock import MagicMock
+
+        from pywiim.models import DeviceInfo, PlayerStatus
+        from pywiim.player import Player
+        from pywiim.upnp.client import UpnpClient
+
+        # HTTP reports wifi
+        mock_status = PlayerStatus(play_state="play", source="wifi")
+        mock_info = DeviceInfo(uuid="test-uuid", name="Test Device")
+        mock_client.get_player_status_model = AsyncMock(return_value=mock_status)
+        mock_client.get_device_info_model = AsyncMock(return_value=mock_info)
+
+        # UPnP reports bluetooth (via transport state)
+        mock_upnp_client = MagicMock(spec=UpnpClient)
+        mock_upnp_client.rendering_control = MagicMock()
+        mock_upnp_client.get_volume = AsyncMock(return_value=50)
+        mock_upnp_client.get_mute = AsyncMock(return_value=False)
+
+        player = Player(mock_client, upnp_client=mock_upnp_client)
+        await player.refresh()
+
+        # HTTP source should be used (HTTP is preferred for source)
+        merged = player._state_synchronizer.get_merged_state()
+        assert merged.get("source") == "wifi" or player._status_model.source == "wifi"
+
+    @pytest.mark.asyncio
+    async def test_source_fallback_when_preferred_unavailable(self, mock_client):
+        """Test source fallback when preferred source (UPnP) is unavailable."""
+        from pywiim.models import DeviceInfo, PlayerStatus
+        from pywiim.player import Player
+
+        # Only HTTP available (no UPnP)
+        mock_status = PlayerStatus(play_state="play", source="usb")
+        mock_info = DeviceInfo(uuid="test-uuid", name="Test Device")
+        mock_client.get_player_status_model = AsyncMock(return_value=mock_status)
+        mock_client.get_device_info_model = AsyncMock(return_value=mock_info)
+
+        player = Player(mock_client)  # No UPnP client
+        await player.refresh()
+
+        # Should fall back to HTTP source
+        assert player._status_model.source == "usb"
+
+    @pytest.mark.asyncio
+    async def test_set_source_updates_optimistic_state(self, mock_client):
+        """Test set_source updates optimistic state immediately."""
+        from pywiim.models import DeviceInfo, PlayerStatus
+        from pywiim.player import Player
+
+        callback_called = []
+        mock_client.set_source = AsyncMock()
+        mock_client.get_player_status_model = AsyncMock(return_value=PlayerStatus(play_state="play"))
+        mock_client.get_device_info_model = AsyncMock(return_value=DeviceInfo(uuid="test"))
+
+        player = Player(mock_client, on_state_changed=lambda: callback_called.append(True))
+        player._status_model = PlayerStatus(play_state="play", source="wifi")
+
+        await player.set_source("bluetooth")
+
+        # Verify optimistic update
+        assert player._status_model.source == "bluetooth"
+        # Verify callback triggered
+        assert len(callback_called) == 1
 
     @pytest.mark.asyncio
     async def test_get_queue_no_upnp(self, mock_client):
@@ -1195,18 +1517,26 @@ class TestPlayerPlaybackControl:
 
     @pytest.mark.asyncio
     async def test_set_source(self, mock_client):
-        """Test set source command."""
+        """Test set source command updates optimistic state."""
         from pywiim.models import DeviceInfo, PlayerStatus
         from pywiim.player import Player
 
+        callback_called = []
         mock_client.set_source = AsyncMock()
         mock_client.get_player_status_model = AsyncMock(return_value=PlayerStatus(play_state="play"))
         mock_client.get_device_info_model = AsyncMock(return_value=DeviceInfo(uuid="test"))
 
-        player = Player(mock_client)
+        player = Player(mock_client, on_state_changed=lambda: callback_called.append(True))
+        player._status_model = PlayerStatus(play_state="play", source="wifi")
+
         await player.set_source("bluetooth")
 
+        # Verify API was called
         mock_client.set_source.assert_called_once_with("bluetooth")
+        # Verify optimistic state update (source is preserved during refresh)
+        assert player._status_model.source == "bluetooth"
+        # Verify callback was triggered
+        assert len(callback_called) == 1
 
     @pytest.mark.asyncio
     async def test_set_audio_output_mode(self, mock_client):

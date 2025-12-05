@@ -158,6 +158,91 @@ pytest tests/integration/ -v
 pytest tests/unit/ --cov=pywiim --cov-report=html
 ```
 
+## Test Quality Guidelines
+
+### Behavior Tests vs Mock Verification
+
+**Prefer behavior tests** that verify business logic over shallow mock verification tests.
+
+#### Shallow Test (Avoid)
+```python
+async def test_play(self, mock_client):
+    """Test play command."""
+    mock_client.play = AsyncMock()
+    player = Player(mock_client)
+    await player.play()
+    mock_client.play.assert_called_once()  # Just verifies mock was called
+```
+
+#### Behavior Test (Preferred)
+```python
+async def test_play(self, mock_client):
+    """Test play command updates state and triggers callback."""
+    callback_called = []
+    mock_client.play = AsyncMock()
+    player = Player(mock_client, on_state_changed=lambda: callback_called.append(True))
+    player._status_model = PlayerStatus(play_state="pause")
+    
+    await player.play()
+    
+    # Verify API was called
+    mock_client.play.assert_called_once()
+    # Verify optimistic state update (business logic)
+    assert player._status_model.play_state == "play"
+    # Verify state synchronizer updated (business logic)
+    merged = player._state_synchronizer.get_merged_state()
+    assert merged["play_state"] == "play"
+    # Verify callback was triggered (business logic)
+    assert len(callback_called) == 1
+```
+
+### What to Test
+
+**Focus on business logic:**
+- State synchronization and merging
+- Optimistic updates
+- Callback notifications
+- Error handling and recovery
+- Role transitions (solo → master → slave)
+- Source conflict resolution
+- State preservation (e.g., source during mode=0)
+
+**Good examples:**
+- `test_state.py` - Tests state merging, conflict resolution, timestamp freshness
+- `test_profiles.py` - Tests vendor detection logic, profile-specific behaviors
+- `test_role.py` - Tests role detection with edge cases
+
+**When mock verification is acceptable:**
+- Simple pass-through methods with no business logic
+- Parameter validation
+- Error propagation (but also test error handling behavior)
+
+### Test Naming
+
+Use descriptive names that explain what behavior is being tested:
+- ✅ `test_play_updates_state_and_triggers_callback`
+- ✅ `test_source_preserved_when_http_returns_none`
+- ✅ `test_role_transition_solo_to_master`
+- ❌ `test_play` (too vague)
+- ❌ `test_set_source` (doesn't explain what's being tested)
+
+### Coverage Priorities
+
+1. **State management** - Merging, synchronization, conflict resolution
+2. **Error handling** - Recovery paths, fallbacks, graceful degradation
+3. **Role transitions** - Group membership changes, role detection
+4. **Source conflicts** - HTTP vs UPnP disagreements, preservation logic
+5. **Edge cases** - Boundary conditions, unusual inputs, device quirks
+
+### Reference Examples
+
+- **State merging:** `tests/unit/test_state.py::TestStateSynchronizer`
+- **Profile logic:** `tests/unit/test_profiles.py::TestVendorDetection`
+- **Role detection:** `tests/unit/test_role.py::TestDetectRoleEnhanced`
+- **Error handling:** `tests/unit/test_player.py::TestPlayerErrorHandling`
+- **Role transitions:** `tests/unit/test_player.py::TestPlayerRoleTransitions`
+- **Source conflicts:** `tests/unit/test_player.py::TestPlayerSourceConflicts`
+
 ## Writing New Tests
 
 ### Unit Test Example
