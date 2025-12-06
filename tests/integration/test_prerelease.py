@@ -29,8 +29,18 @@ from pywiim.exceptions import WiiMError
 @pytest.mark.prerelease
 @pytest.mark.asyncio
 class TestPreReleaseComprehensive:
-    """Comprehensive pre-release integration tests with real devices."""
+    """Comprehensive pre-release integration tests with real devices.
 
+    This class includes tests for multiple tiers:
+    - playback: Play/pause/next/prev tests
+    - controls: Shuffle/repeat tests
+    - features: EQ, presets, audio output tests
+
+    Run all with: pytest -m prerelease
+    Run specific tier: pytest -m playback
+    """
+
+    @pytest.mark.playback
     async def test_playback_controls_full(self, real_device_player, integration_test_marker):
         """Test all playback controls with state restoration."""
         player = real_device_player
@@ -110,6 +120,7 @@ class TestPreReleaseComprehensive:
                 except Exception:
                     pass  # Best effort restoration
 
+    @pytest.mark.controls
     async def test_shuffle_controls_full(self, real_device_player, integration_test_marker):
         """Test shuffle controls with state preservation."""
         player = real_device_player
@@ -151,6 +162,7 @@ class TestPreReleaseComprehensive:
                 except Exception:
                     pass  # Best effort restoration
 
+    @pytest.mark.controls
     async def test_repeat_controls_full(self, real_device_player, integration_test_marker):
         """Test repeat controls with state preservation."""
         player = real_device_player
@@ -201,6 +213,7 @@ class TestPreReleaseComprehensive:
                 except Exception:
                     pass  # Best effort restoration
 
+    @pytest.mark.playback
     async def test_next_previous_track(self, real_device_player, integration_test_marker):
         """Test next/previous track controls."""
         player = real_device_player
@@ -285,6 +298,7 @@ class TestPreReleaseComprehensive:
             except Exception:
                 pass
 
+    @pytest.mark.smoke
     async def test_volume_controls_full(self, real_device_player, integration_test_marker):
         """Test volume controls with full range and restoration."""
         player = real_device_player
@@ -334,6 +348,7 @@ class TestPreReleaseComprehensive:
                 await player.set_mute(initial_mute)
             await asyncio.sleep(0.5)
 
+    @pytest.mark.smoke
     async def test_mute_controls_full(self, real_device_player, integration_test_marker):
         """Test mute controls with restoration."""
         player = real_device_player
@@ -372,6 +387,7 @@ class TestPreReleaseComprehensive:
                 await player.set_mute(initial_mute)
             await asyncio.sleep(0.5)
 
+    @pytest.mark.features
     async def test_audio_output_switching(self, real_device_player, integration_test_marker):
         """Test audio output mode switching (hardware modes and BT if paired)."""
         player = real_device_player
@@ -494,6 +510,7 @@ class TestPreReleaseComprehensive:
         except Exception as e:
             pytest.skip(f"Audio output switching not available: {e}")
 
+    @pytest.mark.smoke
     async def test_state_synchronization(self, real_device_player, integration_test_marker):
         """Test that state synchronization works correctly."""
         from pywiim.exceptions import WiiMConnectionError, WiiMRequestError
@@ -529,6 +546,7 @@ class TestPreReleaseComprehensive:
                     await player.set_volume(volume1)
                     await asyncio.sleep(0.5)
 
+    @pytest.mark.smoke
     async def test_cache_consistency(self, real_device_player, integration_test_marker):
         """Test that cached state is consistent with device state."""
         player = real_device_player
@@ -562,6 +580,7 @@ class TestPreReleaseComprehensive:
                 or str(device_source) in cached_source
             ), "Cached source should match device"
 
+    @pytest.mark.smoke
     async def test_error_handling(self, real_device_player, integration_test_marker):
         """Test error handling for invalid commands."""
         player = real_device_player
@@ -615,6 +634,7 @@ class TestPreReleaseComprehensive:
                 except Exception:
                     pass
 
+    @pytest.mark.features
     async def test_eq_preset_selection(self, real_device_player, integration_test_marker):
         """Test EQ preset selection when available."""
         player = real_device_player
@@ -669,6 +689,7 @@ class TestPreReleaseComprehensive:
         except Exception as e:
             pytest.skip(f"EQ preset selection not available: {e}")
 
+    @pytest.mark.features
     async def test_preset_playback(self, real_device_player, integration_test_marker):
         """Test preset playback when presets are available."""
         player = real_device_player
@@ -747,6 +768,7 @@ class TestPreReleaseComprehensive:
         except Exception as e:
             pytest.skip(f"Preset playback not available: {e}")
 
+    @pytest.mark.playback
     async def test_play_url(self, real_device_player, integration_test_marker):
         """Test playing a URL directly."""
         player = real_device_player
@@ -796,6 +818,7 @@ class TestPreReleaseComprehensive:
                 except Exception:
                     pass
 
+    @pytest.mark.playback
     async def test_play_notification(self, real_device_player, integration_test_marker):
         """Test playing a notification sound."""
         player = real_device_player
@@ -872,6 +895,7 @@ class TestPreReleaseComprehensive:
             except Exception:
                 pass
 
+    @pytest.mark.features
     async def test_source_switching(self, real_device_player, integration_test_marker):
         """Test source switching with selectable physical inputs.
 

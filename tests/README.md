@@ -2,198 +2,204 @@
 
 This directory contains both unit tests (with mocks) and integration tests (with real devices).
 
+## Quick Start
+
+```bash
+# Run unit tests (fast, no device needed)
+pytest tests/unit/ -v
+
+# Run integration tests (requires real device)
+pytest tests/integration/ -v
+```
+
+## Test Structure
+
+```
+tests/
+├── unit/                    # Mocked unit tests (run in CI)
+├── integration/             # Real device tests (require hardware)
+│   ├── test_real_device.py  # Smoke tests (Tier 1)
+│   ├── test_prerelease.py   # Playback/controls/features tests (Tiers 2-4)
+│   ├── test_multiroom_group.py  # Group tests (Tier 5)
+│   └── test_media_progress.py   # Media progress tests
+├── devices.yaml             # Device configuration
+├── test_reports.json        # Auto-generated test results (gitignored)
+└── conftest.py              # Fixtures and configuration
+```
+
+## Configuration
+
+Edit `tests/devices.yaml` to configure your test devices:
+
+```yaml
+default_device: 192.168.1.115
+
+group:
+  master: 192.168.1.115
+  slaves:
+    - 192.168.1.116
+
+settings:
+  max_test_volume: 0.15
+```
+
+Environment variables override the config file:
+- `WIIM_TEST_DEVICE` - Override default device
+- `WIIM_TEST_GROUP_MASTER` - Override group master
+- `WIIM_TEST_GROUP_SLAVES` - Override group slaves (comma-separated)
+
+## Test Tiers
+
+Integration tests are organized into tiers based on prerequisites:
+
+| Tier | Marker | Tests | Prerequisites |
+|------|--------|-------|---------------|
+| 1 | `smoke` | Connectivity, volume, mute | Any device state |
+| 2 | `playback` | Play/pause/next/prev | Media playing |
+| 3 | `controls` | Shuffle/repeat | Album/playlist (not radio) |
+| 4 | `features` | EQ, presets, outputs | Device-specific |
+| 5 | `groups` | Multi-room grouping | 2+ devices |
+
+### Running Specific Tiers
+
+```bash
+# Run only smoke tests (always safe)
+pytest tests/integration/ -m smoke -v
+
+# Run playback tests (start media first)
+pytest tests/integration/ -m playback -v
+
+# Run shuffle/repeat tests (play an album first)
+pytest tests/integration/ -m controls -v
+
+# Run feature tests (EQ, presets, outputs)
+pytest tests/integration/ -m features -v
+
+# Run group tests (requires multiple devices)
+pytest tests/integration/ -m groups -v
+
+# Run all comprehensive tests
+pytest tests/integration/ -m prerelease -v
+
+# Combine tiers
+pytest tests/integration/ -m "smoke or playback" -v
+```
+
+## Test Reports
+
+Integration tests automatically save results to `tests/test_reports.json` (gitignored).
+
+View the report:
+```bash
+cat tests/test_reports.json
+```
+
+Example output:
+```json
+{
+  "last_updated": "2025-12-06T14:30:00",
+  "device": "192.168.1.115",
+  "tiers": {
+    "smoke": {"last_run": "2025-12-06T14:30:00", "passed": 8, "failed": 0, "success": true},
+    "playback": {"last_run": "2025-12-05T10:15:00", "passed": 5, "failed": 0, "success": true}
+  }
+}
+```
+
+## Pre-Release Checklist
+
+Before releasing, run tests based on what code changed:
+
+| Changed Code | Run Tiers |
+|--------------|-----------|
+| `pywiim/client.py` | All (core dependency) |
+| `pywiim/player/media.py` | smoke, playback |
+| `pywiim/player/audio.py` | smoke, features |
+| `pywiim/player/group.py` | smoke, groups |
+| `pywiim/player/controls.py` | smoke, controls |
+| Docs only | None |
+
+Quick pre-release suite:
+```bash
+# Run smoke + playback + controls
+pytest tests/integration/ -m "smoke or playback or controls" -v
+```
+
 ## Unit Tests
 
-Unit tests use mocks to test functionality without requiring a real device. They are fast and can be run in CI/CD.
+Unit tests use mocks and run without hardware. They are fast and CI-safe.
 
-Run unit tests:
 ```bash
+# Run all unit tests
 pytest tests/unit/ -v
+
+# Run with coverage
+pytest tests/unit/ --cov=pywiim --cov-report=html
 ```
 
 ## Integration Tests
 
-Integration tests require a real WiiM device on your network. They test actual device communication.
+Integration tests require real WiiM devices on your network.
 
 ### Setup
 
-1. **Set environment variable** with your device IP:
-   ```bash
-   export WIIM_TEST_DEVICE=192.168.1.100
-   ```
+1. Configure devices in `tests/devices.yaml`, or
+2. Set environment variable: `export WIIM_TEST_DEVICE=192.168.1.100`
 
-2. **Optional: Set port** (default is 80):
-   ```bash
-   export WIIM_TEST_PORT=443
-   ```
-
-3. **Optional: Enable HTTPS** (for devices that require HTTPS):
-   ```bash
-   export WIIM_TEST_HTTPS=true
-   ```
-
-### Test Suites
-
-Integration tests are organized into two suites:
-
-#### Core Integration Tests (`test_real_device.py`)
-
-Fast, safe tests that validate basic Player functionality. These are read-only or use minimal state changes with automatic restoration.
-
-**Run core tests:**
-```bash
-pytest tests/integration/test_real_device.py -v
-# Or with marker:
-pytest tests/integration/ -v -m "core"
-```
-
-**What they test:**
-- Device connection and capability detection
-- Player initialization and refresh
-- Property access and state caching
-- Volume/mute reading (safe operations)
-- Source and audio output mode reading
-
-#### Pre-Release Integration Tests (`test_prerelease.py`)
-
-Comprehensive tests that validate all major Player functionality. These tests change device state and restore it afterward. Run these before important releases.
-
-**Run pre-release tests:**
-```bash
-pytest tests/integration/test_prerelease.py -v
-# Or with marker:
-pytest tests/integration/ -v -m "prerelease"
-```
-
-**What they test:**
-- Full playback controls (play/pause/resume/next/previous)
-- Shuffle and repeat controls with state preservation
-- Volume and mute controls with restoration
-- Source switching
-- Audio output mode switching
-- State synchronization and cache consistency
-- Error handling
-
-**Pre-release check script:**
-```bash
-# Run comprehensive pre-release validation
-bash scripts/prerelease-check.sh 192.168.1.100
-```
-
-### Running Integration Tests
-
-Run all integration tests:
-```bash
-pytest tests/integration/ -v
-```
-
-Run only core tests (fast, safe):
-```bash
-pytest tests/integration/ -v -m "core"
-```
-
-Run only pre-release tests (comprehensive):
-```bash
-pytest tests/integration/ -v -m "prerelease"
-```
-
-Run only fast integration tests (skip slow ones):
-```bash
-pytest tests/integration/ -v -m "not slow"
-```
-
-Skip destructive tests (ones that change device state):
-```bash
-pytest tests/integration/ -v -m "not destructive"
-```
-
-### Multi-Device Group Validation
-
-Use the dedicated multi-room test when you have at least two physical players:
-
-1. Provide the master and slave IPs:
-   ```bash
-   export WIIM_TEST_GROUP_MASTER=192.168.1.115
-   export WIIM_TEST_GROUP_SLAVES="192.168.1.116,192.168.1.117"
-   ```
-   (Set `WIIM_TEST_PORT` / `WIIM_TEST_HTTPS` if your devices require HTTPS.)
-
-2. Run the test suite:
-   ```bash
-   pytest tests/integration/test_multiroom_group.py -v
-   ```
-
-This suite:
-- Forces SOLO → MASTER transitions and validates `get_device_group_info()`
-- Verifies slaves inherit the virtual master metadata relationship
-- Exercises `Group.set_volume_all()` and `Group.mute_all()` propagation rules
-- Confirms `Group.next_track()/previous_track()` route to the physical master
-
-> Tip: start playback before running so next/previous commands succeed.
-
-### Test Markers
-
-- `@pytest.mark.integration` - Marks tests as integration tests (requires real device)
-- `@pytest.mark.core` - Marks tests as core integration tests (fast, safe)
-- `@pytest.mark.prerelease` - Marks tests as pre-release integration tests (comprehensive)
-- `@pytest.mark.slow` - Marks tests that take longer to run (may change device state)
-- `@pytest.mark.destructive` - Marks tests that change device state (require restoration)
-
-### Example Test Session
+### Running Tests
 
 ```bash
-# Set device IP
-export WIIM_TEST_DEVICE=192.168.1.100
-
-# Run all tests
-pytest tests/ -v
-
-# Run only unit tests
-pytest tests/unit/ -v
-
-# Run only integration tests
+# Run all integration tests
 pytest tests/integration/ -v
 
-# Run with coverage
-pytest tests/unit/ --cov=pywiim --cov-report=html
+# Run specific tier
+pytest tests/integration/ -m smoke -v
+
+# Skip integration tests (CI mode)
+pytest tests/unit/ -v  # Just run unit tests
+```
+
+### Multi-Device Group Tests
+
+For group tests, configure master and slaves:
+
+```yaml
+# In tests/devices.yaml
+group:
+  master: 192.168.1.115
+  slaves:
+    - 192.168.1.116
+    - 192.168.1.117
+```
+
+Or via environment:
+```bash
+export WIIM_TEST_GROUP_MASTER=192.168.1.115
+export WIIM_TEST_GROUP_SLAVES="192.168.1.116,192.168.1.117"
+pytest tests/integration/ -m groups -v
 ```
 
 ## Test Quality Guidelines
 
 ### Behavior Tests vs Mock Verification
 
-**Prefer behavior tests** that verify business logic over shallow mock verification tests.
+**Prefer behavior tests** that verify business logic over shallow mock verification.
 
-#### Shallow Test (Avoid)
 ```python
-async def test_play(self, mock_client):
-    """Test play command."""
-    mock_client.play = AsyncMock()
-    player = Player(mock_client)
-    await player.play()
-    mock_client.play.assert_called_once()  # Just verifies mock was called
-```
-
-#### Behavior Test (Preferred)
-```python
-async def test_play(self, mock_client):
-    """Test play command updates state and triggers callback."""
+# GOOD: Tests actual behavior
+async def test_play_updates_state_and_triggers_callback(self, mock_client):
     callback_called = []
-    mock_client.play = AsyncMock()
     player = Player(mock_client, on_state_changed=lambda: callback_called.append(True))
-    player._status_model = PlayerStatus(play_state="pause")
     
     await player.play()
     
-    # Verify API was called
-    mock_client.play.assert_called_once()
-    # Verify optimistic state update (business logic)
-    assert player._status_model.play_state == "play"
-    # Verify state synchronizer updated (business logic)
-    merged = player._state_synchronizer.get_merged_state()
-    assert merged["play_state"] == "play"
-    # Verify callback was triggered (business logic)
-    assert len(callback_called) == 1
+    assert player._status_model.play_state == "play"  # Business logic
+    assert len(callback_called) == 1  # Callback fired
+
+# AVOID: Just verifies mock was called
+async def test_play(self, mock_client):
+    await player.play()
+    mock_client.play.assert_called_once()  # Shallow
 ```
 
 ### What to Test
@@ -205,127 +211,26 @@ async def test_play(self, mock_client):
 - Error handling and recovery
 - Role transitions (solo → master → slave)
 - Source conflict resolution
-- State preservation (e.g., source during mode=0)
 
-**Good examples:**
-- `test_state.py` - Tests state merging, conflict resolution, timestamp freshness
-- `test_profiles.py` - Tests vendor detection logic, profile-specific behaviors
-- `test_role.py` - Tests role detection with edge cases
+## Interactive/Manual Tests
 
-**When mock verification is acceptable:**
-- Simple pass-through methods with no business logic
-- Parameter validation
-- Error propagation (but also test error handling behavior)
+Tests requiring human observation are in `scripts/manual/`:
+- `interactive-playback-test.py` - Menu-driven playback testing
+- `test-shuffle-repeat-by-source.py` - Source-specific shuffle/repeat testing
 
-### Test Naming
+These cannot be automated and are not part of the pytest suite.
 
-Use descriptive names that explain what behavior is being tested:
-- ✅ `test_play_updates_state_and_triggers_callback`
-- ✅ `test_source_preserved_when_http_returns_none`
-- ✅ `test_role_transition_solo_to_master`
-- ❌ `test_play` (too vague)
-- ❌ `test_set_source` (doesn't explain what's being tested)
-
-### Coverage Priorities
-
-1. **State management** - Merging, synchronization, conflict resolution
-2. **Error handling** - Recovery paths, fallbacks, graceful degradation
-3. **Role transitions** - Group membership changes, role detection
-4. **Source conflicts** - HTTP vs UPnP disagreements, preservation logic
-5. **Edge cases** - Boundary conditions, unusual inputs, device quirks
-
-### Reference Examples
-
-- **State merging:** `tests/unit/test_state.py::TestStateSynchronizer`
-- **Profile logic:** `tests/unit/test_profiles.py::TestVendorDetection`
-- **Role detection:** `tests/unit/test_role.py::TestDetectRoleEnhanced`
-- **Error handling:** `tests/unit/test_player.py::TestPlayerErrorHandling`
-- **Role transitions:** `tests/unit/test_player.py::TestPlayerRoleTransitions`
-- **Source conflicts:** `tests/unit/test_player.py::TestPlayerSourceConflicts`
-
-## Writing New Tests
-
-### Unit Test Example
-
-```python
-import pytest
-from unittest.mock import AsyncMock, MagicMock
-from pywiim.client import WiiMClient
-
-@pytest.mark.asyncio
-async def test_my_feature(mock_client):
-    """Test my feature with mocked client."""
-    mock_client._request = AsyncMock(return_value={"status": "ok"})
-    
-    result = await mock_client.some_method()
-    
-    assert result == {"status": "ok"}
-```
-
-### Integration Test Examples
-
-**Core test (read-only, safe):**
-```python
-import pytest
-from pywiim.player import Player
-
-@pytest.mark.integration
-@pytest.mark.core
-@pytest.mark.asyncio
-async def test_my_feature_core(real_device_player, integration_test_marker):
-    """Test my feature with real device (safe, read-only)."""
-    player = real_device_player
-    await player.refresh()
-    
-    result = await player.some_method()
-    assert result is not None
-```
-
-**Pre-release test (comprehensive, with state restoration):**
-```python
-import pytest
-from pywiim.player import Player
-
-@pytest.mark.integration
-@pytest.mark.prerelease
-@pytest.mark.asyncio
-async def test_my_feature_comprehensive(real_device_player, integration_test_marker):
-    """Test my feature comprehensively with state restoration."""
-    player = real_device_player
-    await player.refresh()
-    
-    # Save initial state
-    initial_value = await player.get_some_value()
-    
-    try:
-        # Test feature
-        await player.set_some_value(new_value)
-        result = await player.get_some_value()
-        assert result == new_value
-    finally:
-        # Restore initial state
-        if initial_value is not None:
-            await player.set_some_value(initial_value)
-```
-
-## Test Coverage
+## Coverage
 
 Target: 90%+ coverage for core functionality.
 
-Generate coverage report:
 ```bash
 pytest tests/unit/ --cov=pywiim --cov-report=html --cov-report=term
-```
-
-View HTML report:
-```bash
-open htmlcov/index.html  # macOS
-xdg-open htmlcov/index.html  # Linux
+open htmlcov/index.html  # View report
 ```
 
 ## Continuous Integration
 
-Integration tests are automatically skipped in CI unless `WIIM_TEST_DEVICE` is set. This allows:
-- Unit tests to run in all CI environments
-- Integration tests to run only when explicitly enabled (e.g., in nightly builds)
-
+Integration tests are automatically skipped in CI unless device is configured:
+- Unit tests run on every push
+- Integration tests only run when `WIIM_TEST_DEVICE` is set

@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.46] - 2025-12-06
+
+### Changed
+- **Consolidated test infrastructure** - Simplified and unified real-device testing:
+  - All tests now use pytest with tier markers (`smoke`, `playback`, `controls`, `features`, `groups`)
+  - Single configuration file: `tests/devices.yaml` (replaces multiple configs)
+  - Automatic test report tracking: `tests/test_reports.json` shows last run status per tier
+  - Removed deprecated `scripts/run_tests.py` (1,547 lines) and `scripts/groups/` directory
+  - Environment variables can still override config for CI flexibility
+
+### Added
+- **Test tier markers for selective testing**:
+  - `pytest -m smoke` - Basic connectivity (any device state)
+  - `pytest -m playback` - Play/pause/next/prev (requires media)
+  - `pytest -m controls` - Shuffle/repeat (requires album/playlist)
+  - `pytest -m features` - EQ, presets, outputs
+  - `pytest -m groups` - Multi-room tests (requires 2+ devices)
+- **Test result tracking** - Integration tests auto-save results to JSON for pre-release checks
+
+### Documentation
+- Updated `tests/README.md` with new testing workflow and tier system
+- Updated `scripts/README.md` to point to pytest-based testing
+
 ## [2.1.45] - 2025-12-06
 
 ### Added
@@ -17,13 +40,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `group.media_position` - Master's media position (seconds)
   - `group.media_duration` - Master's media duration (seconds)
   - These delegate to master's cached state, consistent with existing `group.play_state`
-
-- **Comprehensive multi-room group test suite** - New `scripts/groups/` directory with real-device tests:
-  - `test_group_operations.py` - Join/leave permutations (solo→master, master→master auto-disband, slave→different master, cross-subnet failures)
-  - `test_group_controls.py` - Player control routing (slave.play()→master), individual/group volume, mute propagation
-  - `test_group_metadata.py` - Metadata synchronization (slave gets master metadata on join, group.media_* delegation)
-  - Supports multi-subnet device configuration via `devices.json`
-  - Command-line options: `--subnet`, `--verbose` for targeted testing
 
 ### Fixed
 - **Immediate role detection on group changes** - `player._detected_role` now updates immediately when:

@@ -118,7 +118,7 @@ class ShuffleRepeatTester:
         self.client = WiiMClient(ip, timeout=5.0)
         self.player = Player(self.client)
         self.session: TestSession | None = None
-        self.output_dir = Path("tests/shuffle-repeat-results")
+        self.output_dir = Path(__file__).parent / "results"
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     async def initialize(self) -> bool:

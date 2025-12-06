@@ -21,7 +21,8 @@ import pytest
 
 
 @pytest.mark.integration
-@pytest.mark.core
+@pytest.mark.smoke
+@pytest.mark.core  # Alias for backwards compatibility
 @pytest.mark.asyncio
 class TestRealDeviceCore:
     """Core integration tests with real WiiM devices - fast and safe."""

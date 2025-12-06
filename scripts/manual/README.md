@@ -38,7 +38,7 @@ Workflow:
 6. Repeat for different sources and content types
 7. Press `[q]` to save results and see summary
 
-Results saved to `tests/shuffle-repeat-results/`.
+Results saved to `scripts/manual/results/` (gitignored).
 
 ## When to Use
 

@@ -1,86 +1,30 @@
 # Utility Scripts
 
-This directory contains utility scripts for development, testing, and release management.
+This directory contains utility scripts for development, release management, and debugging.
 
-## Test Runner (Primary Testing Tool)
+## Testing
 
-### `run_tests.py`
+**All tests (unit and integration) are now managed via pytest.** See `tests/README.md` for the testing guide.
 
-**The unified test runner for pywiim.** Supports tiered testing with colorful output.
-
+Quick reference:
 ```bash
-# List configured devices
-python scripts/run_tests.py --list-devices
+# Run unit tests
+pytest tests/unit/ -v
 
-# Run smoke tests (Tier 1) - always works, no setup needed
-python scripts/run_tests.py --tier smoke --device 192.168.1.115
+# Run integration tests by tier
+pytest tests/integration/ -m smoke -v      # Basic connectivity
+pytest tests/integration/ -m playback -v   # Play/pause/next/prev
+pytest tests/integration/ -m controls -v   # Shuffle/repeat
+pytest tests/integration/ -m features -v   # EQ, presets, outputs
+pytest tests/integration/ -m groups -v     # Multi-room
 
-# Run playback tests (Tier 2) - needs media playing
-python scripts/run_tests.py --tier playback --device 192.168.1.115 --yes
-
-# Run controls tests (Tier 3) - needs album/playlist (NOT radio)
-python scripts/run_tests.py --tier controls --device 192.168.1.115 --yes
-
-# Run features tests (Tier 4) - EQ, outputs, presets
-python scripts/run_tests.py --tier features --device 192.168.1.115 --yes
-
-# Run pre-release suite (Tiers 1-4)
-python scripts/run_tests.py --prerelease --device 192.168.1.115 --yes
-
-# Run all tiers
-python scripts/run_tests.py --all --device 192.168.1.115 --yes
+# Run all pre-release tests
+pytest tests/integration/ -m prerelease -v
 ```
 
-**Test Tiers:**
-| Tier | Name | Tests | Prerequisites |
-|------|------|-------|---------------|
-| 1 | Smoke | 8 | None - always works |
-| 2 | Playback | 5 | Media playing on device |
-| 3 | Controls | 5 | Album/playlist (NOT radio/station) |
-| 4 | Features | 5 | Device-specific (EQ, outputs) |
-| 5 | Groups | 8 | Multiple devices (--master, --slave) |
-| 6 | Advanced | TBD | Manual setup (BT, etc.) |
+Configure test devices in `tests/devices.yaml`.
 
-**Group Tests (Tier 5):**
-```bash
-# Run group tests with master and slave
-python scripts/run_tests.py --tier groups --master 192.168.1.115 --slave 192.168.1.116 --yes
-```
-
-Group tests verify:
-- Ensure devices start as solo
-- Create group on master
-- Slave joins group
-- Role detection (master/slave)
-- Volume propagation
-- Mute propagation (mute_all)
-- Command routing (slave commands → master)
-- Group disband (both return to solo)
-
-**Options:**
-- `--device IP` - Specify device IP (default from config)
-- `--yes` / `-y` - Skip confirmation prompts
-- `--list-devices` - Show configured test devices
-- `--config PATH` - Custom config file
-
-### `test_devices.yaml`
-
-Device configuration file for the test runner. Edit this to configure your test devices:
-
-```yaml
-devices:
-  - ip: 192.168.1.115
-    name: "Living Room Pro"
-    model: wiim_pro
-    capabilities:
-      - eq
-      - presets
-    notes: "Primary test device"
-
-default_device: 192.168.1.115
-```
-
-## Release & Publishing Scripts
+## Release Scripts
 
 ### `release.sh`
 
@@ -103,7 +47,7 @@ Automated release script that runs all checks, bumps version, and pushes to git.
 
 ### `prerelease-check.sh`
 
-Pre-release integration test runner. Runs pytest integration tests against a real device.
+Pre-release integration test runner.
 
 ```bash
 ./scripts/prerelease-check.sh 192.168.1.115
@@ -121,7 +65,7 @@ Creates GitHub releases for existing git tags.
 
 Generates changelog entries from git commits.
 
-## Authentication Setup Scripts
+## Authentication Setup
 
 ### `gh-auth-token.sh`
 
@@ -143,18 +87,13 @@ Git pre-push hook script. Runs automatically when pushing (if configured).
 
 Interactive test scripts that require human interaction:
 - `interactive-playback-test.py` - Menu-driven playback control testing
-- `test-shuffle-repeat-by-source.py` - Interactive source testing
+- `test-shuffle-repeat-by-source.py` - Source-specific shuffle/repeat testing
 
-### `groups/`
-
-Multi-device group testing scripts (for Tier 5 implementation):
-- `test_group_join_unjoin.py` - Group join/leave testing
-- `test-group-real-devices.py` - Comprehensive group testing
-- `test-master-slave-basic.py` - Basic master/slave testing
+These tests cannot be automated and require real-time observation.
 
 ### `debug/`
 
-Debugging utilities:
+Debugging utilities for troubleshooting:
 - `test_http_volume.py` - Debug HTTP volume responses
 - `test_upnp_volume.py` - Debug UPnP volume implementation
 - `test_queue.py` - Debug queue handling
@@ -162,21 +101,36 @@ Debugging utilities:
 ## Recommended Pre-Release Workflow
 
 ```bash
-# 1. Run smoke tests on primary device
-python scripts/run_tests.py --tier smoke --device 192.168.1.115
+# 1. Configure your test device in tests/devices.yaml
 
-# 2. Start media playing on device, then run playback tests
-python scripts/run_tests.py --tier playback --device 192.168.1.115 --yes
+# 2. Run smoke tests (always works)
+pytest tests/integration/ -m smoke -v
 
-# 3. Ensure album/playlist is playing (NOT radio), run controls tests
-python scripts/run_tests.py --tier controls --device 192.168.1.115 --yes
+# 3. Start media on device, then run playback tests
+pytest tests/integration/ -m playback -v
 
-# 4. Run feature tests
-python scripts/run_tests.py --tier features --device 192.168.1.115 --yes
+# 4. Play an album (not radio), run controls tests
+pytest tests/integration/ -m controls -v
 
-# 5. Or run all at once with --prerelease
-python scripts/run_tests.py --prerelease --device 192.168.1.115 --yes
+# 5. Run feature tests
+pytest tests/integration/ -m features -v
 
-# 6. Do the release
+# 6. Check test reports
+cat tests/test_reports.json
+
+# 7. Do the release
 ./scripts/release.sh patch
+```
+
+## Configuration
+
+Test device configuration is in `tests/devices.yaml`:
+```yaml
+default_device: 192.168.1.115
+group:
+  master: 192.168.1.115
+  slaves:
+    - 192.168.1.116
+settings:
+  max_test_volume: 0.15
 ```

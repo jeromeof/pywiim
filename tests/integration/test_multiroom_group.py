@@ -12,7 +12,7 @@ import pytest
 from pywiim.exceptions import WiiMError
 from pywiim.player import Player
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.groups]
 
 
 def _log(message: str) -> None:

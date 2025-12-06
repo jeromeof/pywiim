@@ -2,15 +2,22 @@
 
 This module provides fixtures for both unit tests (with mocks) and
 integration tests (with real devices).
+
+Configuration is loaded from tests/devices.yaml, with environment
+variable overrides supported for CI/CD flexibility.
 """
 
 from __future__ import annotations
 
+import json
 import os
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import yaml
 from aiohttp import ClientSession
 
 # Configure pytest-asyncio
@@ -18,8 +25,21 @@ pytest_plugins = ("pytest_asyncio",)
 
 
 # ============================================================================
-# Environment Variables for Integration Tests
+# Configuration Loading
 # ============================================================================
+
+# Path to configuration files
+TESTS_DIR = Path(__file__).parent
+CONFIG_FILE = TESTS_DIR / "devices.yaml"
+REPORTS_FILE = TESTS_DIR / "test_reports.json"
+
+
+def _load_config() -> dict[str, Any]:
+    """Load test configuration from devices.yaml."""
+    if CONFIG_FILE.exists():
+        with open(CONFIG_FILE) as f:
+            return yaml.safe_load(f) or {}
+    return {}
 
 
 def _parse_host_list(value: str | None) -> list[str]:
@@ -36,13 +56,64 @@ def _parse_host_list(value: str | None) -> list[str]:
     return hosts
 
 
-# Real device testing can be enabled via environment variables
+# Load configuration
+_CONFIG = _load_config()
+
+# Environment variables override config file
 # Example: WIIM_TEST_DEVICE=192.168.1.100 pytest tests/integration/
-WIIM_TEST_DEVICE = os.getenv("WIIM_TEST_DEVICE")
+WIIM_TEST_DEVICE = os.getenv("WIIM_TEST_DEVICE") or _CONFIG.get("default_device")
 WIIM_TEST_PORT = int(os.getenv("WIIM_TEST_PORT", "80"))
 WIIM_TEST_HTTPS = os.getenv("WIIM_TEST_HTTPS", "false").lower() == "true"
-WIIM_TEST_GROUP_MASTER = os.getenv("WIIM_TEST_GROUP_MASTER")
-WIIM_TEST_GROUP_SLAVES = _parse_host_list(os.getenv("WIIM_TEST_GROUP_SLAVES"))
+
+# Group testing configuration
+_group_config = _CONFIG.get("group", {})
+WIIM_TEST_GROUP_MASTER = os.getenv("WIIM_TEST_GROUP_MASTER") or _group_config.get("master")
+WIIM_TEST_GROUP_SLAVES = _parse_host_list(os.getenv("WIIM_TEST_GROUP_SLAVES")) or _group_config.get("slaves", [])
+
+# Test settings from config
+_settings = _CONFIG.get("settings", {})
+MAX_TEST_VOLUME = _settings.get("max_test_volume", 0.15)
+CONNECT_TIMEOUT = _settings.get("connect_timeout", 5.0)
+COMMAND_TIMEOUT = _settings.get("command_timeout", 10.0)
+
+
+# ============================================================================
+# Test Report Tracking
+# ============================================================================
+
+
+def _load_test_reports() -> dict[str, Any]:
+    """Load existing test reports."""
+    if REPORTS_FILE.exists():
+        try:
+            with open(REPORTS_FILE) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {"tiers": {}, "last_updated": None, "device": None}
+
+
+def _save_test_reports(reports: dict[str, Any]) -> None:
+    """Save test reports to JSON file."""
+    reports["last_updated"] = datetime.now().isoformat()
+    with open(REPORTS_FILE, "w") as f:
+        json.dump(reports, f, indent=2)
+
+
+def _update_tier_report(tier: str, passed: int, failed: int, skipped: int, duration: float) -> None:
+    """Update the report for a specific tier."""
+    reports = _load_test_reports()
+    reports["device"] = WIIM_TEST_DEVICE
+    reports["tiers"][tier] = {
+        "last_run": datetime.now().isoformat(),
+        "passed": passed,
+        "failed": failed,
+        "skipped": skipped,
+        "total": passed + failed + skipped,
+        "success": failed == 0,
+        "duration_seconds": round(duration, 2),
+    }
+    _save_test_reports(reports)
 
 
 # ============================================================================
@@ -223,14 +294,38 @@ def restore_player_properties_after_test():
 
 def pytest_configure(config):
     """Configure pytest for integration tests."""
-    # Mark integration tests
+    # Integration test marker
     config.addinivalue_line(
         "markers",
         "integration: marks tests as integration tests (requires real device)",
     )
+
+    # Tier markers for selective testing
     config.addinivalue_line(
         "markers",
-        "core: marks tests as core integration tests (fast, safe)",
+        "smoke: Tier 1 - Basic connectivity tests (any device state)",
+    )
+    config.addinivalue_line(
+        "markers",
+        "playback: Tier 2 - Playback control tests (requires media playing)",
+    )
+    config.addinivalue_line(
+        "markers",
+        "controls: Tier 3 - Shuffle/repeat tests (requires album/playlist)",
+    )
+    config.addinivalue_line(
+        "markers",
+        "features: Tier 4 - EQ, outputs, presets (device-specific)",
+    )
+    config.addinivalue_line(
+        "markers",
+        "groups: Tier 5 - Multi-room group tests (requires 2+ devices)",
+    )
+
+    # Legacy markers (for compatibility)
+    config.addinivalue_line(
+        "markers",
+        "core: marks tests as core integration tests (fast, safe) - alias for smoke",
     )
     config.addinivalue_line(
         "markers",
@@ -255,6 +350,72 @@ def pytest_collection_modifyitems(config, items):
         # Mark tests with "integration" in name
         if "integration" in item.name.lower():
             item.add_marker(pytest.mark.integration)
+
+
+# Track test results by tier for reporting
+_tier_results: dict[str, dict[str, int]] = {}
+_tier_start_times: dict[str, float] = {}
+
+
+def pytest_runtest_setup(item):
+    """Track when each tier starts running."""
+    import time
+
+    # Get tier markers for this test
+    tier_markers = ["smoke", "playback", "controls", "features", "groups"]
+    for marker in tier_markers:
+        if item.get_closest_marker(marker):
+            if marker not in _tier_start_times:
+                _tier_start_times[marker] = time.time()
+            if marker not in _tier_results:
+                _tier_results[marker] = {"passed": 0, "failed": 0, "skipped": 0}
+
+
+def pytest_runtest_makereport(item, call):
+    """Track test results by tier."""
+    if call.when == "call":
+        tier_markers = ["smoke", "playback", "controls", "features", "groups"]
+        for marker in tier_markers:
+            if item.get_closest_marker(marker):
+                if marker not in _tier_results:
+                    _tier_results[marker] = {"passed": 0, "failed": 0, "skipped": 0}
+
+                if call.excinfo is None:
+                    _tier_results[marker]["passed"] += 1
+                else:
+                    _tier_results[marker]["failed"] += 1
+
+    elif call.when == "setup" and call.excinfo is not None:
+        # Handle skipped tests (skip happens during setup)
+        tier_markers = ["smoke", "playback", "controls", "features", "groups"]
+        for marker in tier_markers:
+            if item.get_closest_marker(marker):
+                if marker not in _tier_results:
+                    _tier_results[marker] = {"passed": 0, "failed": 0, "skipped": 0}
+
+                if hasattr(call.excinfo.value, "msg") or "skip" in str(type(call.excinfo.value)).lower():
+                    _tier_results[marker]["skipped"] += 1
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Save tier results to report file after test session."""
+    import time
+
+    # Only save if we ran integration tests with real devices
+    if not WIIM_TEST_DEVICE:
+        return
+
+    # Save results for each tier that was run
+    for tier, results in _tier_results.items():
+        start_time = _tier_start_times.get(tier, time.time())
+        duration = time.time() - start_time
+        _update_tier_report(
+            tier=tier,
+            passed=results["passed"],
+            failed=results["failed"],
+            skipped=results["skipped"],
+            duration=duration,
+        )
 
 
 @pytest.fixture(scope="session")
