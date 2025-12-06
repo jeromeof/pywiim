@@ -1,4 +1,15 @@
-"""Cover art fetching and caching."""
+"""Cover art fetching and caching.
+
+# pragma: allow-long-file coverart-cohesive
+# This file exceeds the 400 LOC soft limit (417 lines) but is kept as a single
+# cohesive unit because:
+# 1. Single responsibility: Cover art fetching, caching, and track change detection
+# 2. Well-organized: Clear sections for fetching, caching, and change detection
+# 3. Tight coupling: All methods work together for cover art management
+# 4. Maintainable: Clear structure, follows cover art design pattern
+# 5. Natural unit: Represents one concept (cover art management)
+# Splitting would add complexity without clear benefit.
+"""
 
 from __future__ import annotations
 

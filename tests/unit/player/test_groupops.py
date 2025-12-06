@@ -134,7 +134,19 @@ class TestGroupOperations:
         assert slave._status_model.title == "Master Track"
         assert slave._status_model.artist == "Master Artist"
         assert slave._status_model.album == "Master Album"
-        slave._state_synchronizer.update_from_http.assert_called()
+        # Verify update_from_http was called with source="propagated"
+        # Note: update_from_http may be called multiple times (e.g., for source field)
+        # Check that at least one call has source="propagated"
+        calls = slave._state_synchronizer.update_from_http.call_args_list
+        propagated_call = None
+        for call in calls:
+            if len(call[1]) > 0 and call[1].get("source") == "propagated":
+                propagated_call = call
+                break
+        assert propagated_call is not None, "update_from_http should have been called with source='propagated'"
+        # Verify the call contains metadata
+        assert "title" in propagated_call[0][0]
+        assert propagated_call[0][0]["title"] == "Master Track"
 
     def test_propagate_metadata_to_slaves_not_master(self, group_ops, mock_player):
         """Test propagating metadata when not master."""

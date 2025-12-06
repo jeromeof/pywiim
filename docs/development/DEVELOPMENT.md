@@ -656,49 +656,266 @@ except WiiMRequestError as e:
 
 ## Logging
 
+### Philosophy
+
+**Log when it matters, not on every poll.**
+
+The purpose of logging is to help developers and users understand what's happening in the system, especially when things go wrong or change. Logging the same unchanged information every few seconds creates noise that obscures real issues.
+
 ### Logger Setup
+
 ```python
 import logging
 
 _LOGGER = logging.getLogger(__name__)
 ```
 
-### Logging Standards
-- **Context First**: Always include device/host in logs
-- **Decision Logging**: Log why decisions were made
-- **Error Context**: Include full context in error logs
-- **Performance**: Log slow operations (>100ms)
+### Logging Levels
 
-### Log Message Format
+#### ERROR
+Use for unrecoverable errors that prevent functionality:
+- Failed connections after all retries
+- Invalid configuration
+- Critical parsing errors
+
 ```python
-# Good: Includes device context
-_LOGGER.debug(
-    "API call: endpoint=%s, device=%s, firmware=%s, attempt=%d/%d",
-    endpoint,
-    self.host,
-    self.device_info.firmware,
-    attempt,
-    max_retries,
-)
-
-# Good: Logs capability detection
-_LOGGER.info(
-    "Capability detected: device=%s, endpoint=%s, supported=%s, method=%s",
-    self.host,
-    "getMetaInfo",
-    capabilities.supports_metadata,
-    "firmware_check",
-)
-
-# Good: Logs state transitions
-_LOGGER.info(
-    "State transition: device=%s, old_state=%s, new_state=%s, trigger=%s",
-    self.host,
-    old_state,
-    new_state,
-    "upnp_event",
-)
+_LOGGER.error("Failed to connect to device at %s after %d retries: %s", host, retries, error)
 ```
+
+#### WARNING
+Use for recoverable errors or degraded functionality:
+- Transient connection issues
+- Unexpected but handled response formats  
+- Deprecated feature usage
+
+```python
+_LOGGER.warning("Device returned unexpected format, using fallback parser: %s", error)
+```
+
+#### INFO
+Use for significant events and state changes:
+- Track changes (music playing)
+- Device discovery results
+- Group formation/disbanding
+- Major state transitions
+
+```python
+_LOGGER.info("🎵 Track changed: %s", track_name)
+_LOGGER.info("Group disbanded (master: %s)", master_host)
+```
+
+#### DEBUG
+Use sparingly for diagnostic information **only when values change**:
+- State changes (not every poll result)
+- Protocol fallbacks
+- Capability detection
+- Group synchronization changes
+
+```python
+# ✅ GOOD: Log when value changes
+if new_source != old_source:
+    _LOGGER.debug("Source changed from %s to %s", old_source, new_source)
+
+# ❌ BAD: Log on every poll
+_LOGGER.debug("Current source: %s", current_source)
+```
+
+### Anti-Patterns to Avoid
+
+#### ❌ Logging on Every Poll
+
+**Don't do this:**
+```python
+async def get_status():
+    status = await device.get_status()
+    _LOGGER.debug("Status: %s", status)  # Spams logs every 5 seconds!
+    return status
+```
+
+**Do this instead:**
+```python
+async def get_status():
+    status = await device.get_status()
+    # Status available for debugging if needed, but not logged
+    # to avoid spam on every poll cycle
+    return status
+```
+
+#### ❌ Logging Unchanged Metadata
+
+**Don't do this:**
+```python
+_LOGGER.debug("Parsing: Title=%s, Artist=%s", title, artist)  # Every poll!
+```
+
+**Do this instead:**
+```python
+# Only log when track actually changes
+if current_track != last_track:
+    _LOGGER.info("🎵 Track changed: %s", current_track)
+```
+
+#### ❌ Logging Raw API Responses
+
+**Don't do this:**
+```python
+response = await api_call()
+_LOGGER.debug("API response: %s", response)  # Huge JSON blob every poll!
+```
+
+**Do this instead:**
+```python
+response = await api_call()
+# Response available for debugging if needed, but not logged
+# to avoid spam on every poll cycle
+```
+
+### Best Practices
+
+#### 1. Log State Changes, Not State
+
+```python
+# ✅ GOOD
+if play_state != previous_play_state:
+    _LOGGER.debug("Play state changed: %s -> %s", previous_play_state, play_state)
+
+# ❌ BAD  
+_LOGGER.debug("Play state: %s", play_state)
+```
+
+#### 2. Use Conditional Logging for Expensive Operations
+
+```python
+# ✅ GOOD: Check if DEBUG is enabled before expensive operations
+if _LOGGER.isEnabledFor(logging.DEBUG):
+    formatted_data = format_complex_data(large_object)
+    _LOGGER.debug("Complex data: %s", formatted_data)
+```
+
+#### 3. Provide Context in Error Messages
+
+```python
+# ✅ GOOD: Include relevant context
+_LOGGER.warning(
+    "Failed to refresh state for %s (model=%s, firmware=%s): %s",
+    host, model, firmware, error
+)
+
+# ❌ BAD: Minimal context
+_LOGGER.warning("Refresh failed: %s", error)
+```
+
+#### 4. Use Emojis Sparingly for Important Events
+
+```python
+# ✅ GOOD: Makes track changes easy to spot
+_LOGGER.info("🎵 Track changed: %s", track)
+
+# ✅ GOOD: Highlights AirPlay issues
+_LOGGER.debug("🔍 AirPlay position parsing issue: %s", details)
+
+# ❌ BAD: Overuse makes them meaningless
+_LOGGER.debug("🔧 Getting status...")  # Every poll!
+```
+
+#### 5. Track Changes with State Variables
+
+```python
+class Parser:
+    def __init__(self):
+        self._last_track = None
+    
+    def parse(self, data):
+        current_track = data.get('title')
+        
+        # Only log when track changes
+        if current_track != self._last_track:
+            _LOGGER.info("🎵 Track changed: %s", current_track)
+            self._last_track = current_track
+```
+
+#### 6. Log Startup/Initialization Events at INFO
+
+```python
+# ✅ GOOD: Startup events at INFO level
+_LOGGER.info("Discovering devices via SSDP...")
+_LOGGER.info("Discovery complete: found %d device(s)", count)
+
+# ✅ GOOD: Capability detection at DEBUG
+_LOGGER.debug("Device %s supports EQ (detected via %s)", host, endpoint)
+```
+
+#### 7. Aggregate Repeated Events
+
+```python
+# ✅ GOOD: Log summary instead of every item
+_LOGGER.info("Discovery found %d device(s)", len(devices))
+
+# ❌ BAD: Log each item
+for device in devices:
+    _LOGGER.info("Found device: %s", device)  # Spams logs
+```
+
+### Integration-Specific Guidelines
+
+For Home Assistant and other integrations that poll frequently:
+
+1. **First Load**: Log at DEBUG or INFO to capture initial state
+2. **Subsequent Polls with No Changes**: Don't log anything
+3. **When Values Change**: Log at DEBUG with the change
+4. **Errors**: Always log at WARNING/ERROR
+
+Example for HA coordinator:
+```python
+async def _async_update_data(self):
+    """Fetch data from device."""
+    new_data = await self.device.get_status()
+    
+    # Only log if something changed or it's first load
+    if self._first_load:
+        _LOGGER.debug("Initial data for %s: sources=%s", self.name, new_data.sources)
+        self._first_load = False
+    elif new_data != self._last_data:
+        _LOGGER.debug("Data changed for %s: %s", self.name, changes)
+    
+    self._last_data = new_data
+    return new_data
+```
+
+### When to Use Each Level - Quick Reference
+
+| Level | When to Use | Examples |
+|-------|-------------|----------|
+| **ERROR** | Unrecoverable failures | Connection failed after retries, critical parse error |
+| **WARNING** | Recoverable issues, degraded state | Unexpected response format, fallback used |
+| **INFO** | Significant events, user-visible changes | Track changed, device discovered, group formed |
+| **DEBUG** | Diagnostic details **only when changed** | Source changed, capability detected, state transition |
+
+### Testing Your Logging
+
+Before committing, check that your logging:
+
+1. ✅ Doesn't log on every poll when nothing changes
+2. ✅ Does log when meaningful state changes occur  
+3. ✅ Provides enough context to understand the issue
+4. ✅ Isn't using expensive string operations without checking log level
+5. ✅ Uses appropriate log levels for the severity
+
+### Summary
+
+**Good logging is:**
+- Event-driven (logs changes, not states)
+- Contextual (includes relevant information)
+- Appropriately leveled (ERROR for failures, DEBUG for diagnostics)
+- Efficient (checks log level before expensive operations)
+
+**Bad logging is:**
+- Polling-driven (logs every status check)
+- Noisy (logs unchanged values repeatedly)
+- Overly verbose (huge data dumps at DEBUG)
+- Missing context (just "Error: failed")
+
+Remember: **The best debug log is one that helps you find bugs without drowning in noise.**
 
 ## Testing
 
@@ -1427,186 +1644,29 @@ This section tracks architectural improvements and technical debt identified dur
 
 ### Priority 1: High Impact
 
-#### 1. Split StateManager (statemgr.py)
-
-**Status:** ✅ **Completed** (Jan 2025)  
-**File:** `pywiim/player/statemgr.py` (reduced from 1,076 to 614 lines)
-
-**Problem:** StateManager handled too many responsibilities:
-- UPnP client creation
-- State synchronization
-- Track change detection
-- Artwork fetching
-- Stream metadata enrichment
-- Pending state debouncing
-- Metadata propagation to slaves
-- Periodic polling decisions
-
-**Solution Implemented:** Extracted to focused modules:
-- **`PlayStateDebouncer`** (`pywiim/player/debounce.py`, 97 lines) - Play state debouncing logic with configurable delay
-- **`StreamEnricher`** (`pywiim/player/stream_enricher.py`, 147 lines) - URL → metadata parsing for raw stream URLs
-- **`CoverArtManager`** (extended `pywiim/player/coverart.py`, 417 lines) - Track change detection and metadata enrichment from `getMetaInfo`
-- **`GroupOperations`** (extended `pywiim/player/groupops.py`, 658 lines) - Master name lookup and metadata propagation to slaves
-- **`PlayerBase`** (extended `pywiim/player/base.py`, 352 lines) - UPnP client creation moved to player ownership
-- **`StateManager`** (`pywiim/player/statemgr.py`, 614 lines) - Core state sync and refresh orchestration
-
-**Benefits Achieved:**
-- ✅ Single responsibility per class
-- ✅ Easier testing (new test files: `test_debounce.py`, `test_stream_enricher.py`, `test_groupops.py`)
-- ✅ Reusable components
-- ✅ Reduced StateManager from 1,076 to 614 lines (43% reduction)
-- ✅ Improved maintainability and readability
-
----
-
-#### 2. Improve Test Quality (Depth vs Quantity)
-
-**Status:** 🟡 Partially Addressed  
-**Current:** 1,335+ tests, but many are shallow mock verification
-
-**Problem:** Many tests verify mock calls rather than business logic:
-```python
-# Shallow: Just verifies constructor worked
-assert client.host == "192.168.1.100"
-assert client.port == 80
-
-# Deep: Tests actual conflict resolution logic
-sync.update_from_http({"play_state": "pause"}, timestamp=now - 10.0)
-sync.update_from_upnp({"play_state": "play"}, timestamp=now)
-assert merged["play_state"] == "play"  # Tests freshness priority
-```
-
-**Focus Areas:**
-- State merging edge cases ✅ (test_state.py is good)
-- Profile selection logic ✅ (test_profiles.py is good)
-- Error handling paths
-- Group role transitions
-- Source conflict scenarios
-
-**Action Items:**
-- [ ] Audit test_player.py for shallow tests
-- [ ] Convert mock-verification tests to behavior tests
-- [ ] Add edge case tests for state transitions
-- [ ] Document test quality guidelines
+(No high-priority items currently pending)
 
 ---
 
 ### Priority 2: Medium Impact
 
-#### 3. Extract Play State Debouncer
-
-**Status:** ✅ **Completed** (Jan 2025, part of StateManager refactoring)  
-**Location:** `pywiim/player/debounce.py` (97 lines)
-
-**Problem:** Debouncing logic was embedded in StateManager with hardcoded 500ms delay.
-
-**Solution Implemented:**
-```python
-class PlayStateDebouncer:
-    def __init__(self, player: Player, delay: float = 0.5):
-        self.player = player
-        self.delay = delay
-        ...
-```
-
-**Benefits Achieved:**
-- ✅ Configurable debounce timing (default 0.5s, customizable)
-- ✅ Isolated, testable component
-- ✅ Clean separation of concerns
-- ✅ Comprehensive test coverage in `tests/unit/player/test_debounce.py`
-
----
-
-#### 4. Document Master→Slave State Propagation
-
-**Status:** 🟡 Partially Documented  
-**Location:** `pywiim/player/groupops.py` (moved from `statemgr.py`)
-
-**Problem:** When master pushes metadata to slaves, each slave's state synchronizer is updated. This could cause cascade effects with callbacks.
-
-**Progress:**
-- ✅ Method moved to `GroupOperations.propagate_metadata_to_slaves()` for better organization
-- ✅ Test coverage added in `tests/unit/player/test_groupops.py`
-
-**Action Items:**
-- [ ] Add `source="propagated"` flag to distinguish pushed state
-- [ ] Document this behavior in STATE_MANAGEMENT.md
-- [ ] Add tests for cascade prevention
 
 ---
 
 ### Priority 3: Future Improvements
 
-#### 5. Consider Event Emitter Pattern
-
-**Status:** 🔵 Future Consideration (Low Priority for HA)
-
-**Current:** Single `on_state_changed` callback
-
-**Proposed:**
-```python
-player.on('volume_changed', handler)
-player.on('play_state_changed', handler)
-player.on('track_changed', handler)
-```
-
-**Benefits:**
-- Granular subscriptions
-- Reduced callback noise
-- Better integration with reactive frameworks
-
-**Assessment for HA Integration:**
-- **Current approach works well**: HA's `DataUpdateCoordinator.async_update_listeners()` efficiently handles frequent callbacks and only updates changed attributes
-- **No performance issues observed**: The single callback pattern provides immediate updates (<1ms) and works seamlessly with HA's coordinator pattern
-- **Potential benefits**: Could reduce unnecessary entity updates if only specific attributes change, but HA already optimizes this internally
-- **Complexity trade-off**: Event emitter adds complexity (event registration, unsubscription, lifecycle management) for marginal benefit in HA use case
-- **Recommendation**: **Low priority** - Only consider if:
-  - Performance issues are observed with many devices
-  - Other integrations (non-HA) would benefit significantly
-  - Reactive framework integrations (e.g., React, Vue) become a priority
+(No future improvement items currently pending)
 
 ---
 
-#### 6. Command Pattern for Playback Operations
-
-**Status:** 🔵 Future Consideration
-
-**Problem:** Playback routing logic (slave→master) is repeated for every playback method.
-
-**Current Pattern:**
-```python
-async def next_track(self):
-    if self.is_slave and self.group and self.group.master:
-        await self.group.master.next_track()
-    else:
-        await self.client.next_track()
-```
-
-**Solution:** Command pattern to centralize routing logic.
-
----
-
-### File Size Compliance
-
-| File | Lines | Limit | Status | Notes |
-|------|-------|-------|--------|-------|
-| `player/statemgr.py` | 614 | 600 | ⚠️ **Close to limit** | Reduced from 1,076 (43% reduction) ✅ |
-| `player/groupops.py` | 658 | 600 | ❌ **Exceeds** | Group operations + metadata propagation |
-| `player/coverart.py` | 417 | 400 | ⚠️ **Exceeds soft** | Cover art + track change detection |
-| `api/base.py` | 988 | 600 | ❌ **Exceeds** | Transport + client logic |
-| `upnp/eventer.py` | 618 | 600 | ❌ **Exceeds** | Event parsing could extract |
-| `state.py` | 725 | 600 | ⚠️ **Has pragma** | Cohesive, justified |
-
----
-
-### Code Review Summary (Dec 2024)
+### Code Review Summary (Dec 2025)
 
 | Aspect | Grade | Notes |
 |--------|-------|-------|
 | **Architecture** | A | Profile system, state sync, mixin pattern excellent |
 | **Documentation** | A | 15+ design docs is exceptional |
-| **Test Quantity** | A | 1,335 tests |
-| **Test Quality** | B- | Many shallow mock tests, but core logic well tested |
+| **Test Quantity** | A | 1,390 tests (comprehensive coverage) |
+| **Test Quality** | B+ | Focus on behavior tests over shallow mocks, Player class coverage 79% (up from 48%), core logic well tested |
 | **Code Organization** | A- | StateManager refactored (Jan 2025) ✅ |
 | **Error Handling** | A- | Good exception hierarchy, graceful degradation |
 | **Maintainability** | A- | Clear patterns, well documented |

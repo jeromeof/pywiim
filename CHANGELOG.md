@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.45] - 2025-12-06
+
+### Added
+- **Group media properties** - Added convenience properties to `Group` class for accessing master's media state:
+  - `group.media_title` - Master's media title
+  - `group.media_artist` - Master's media artist
+  - `group.media_album` - Master's media album
+  - `group.media_position` - Master's media position (seconds)
+  - `group.media_duration` - Master's media duration (seconds)
+  - These delegate to master's cached state, consistent with existing `group.play_state`
+
+- **Comprehensive multi-room group test suite** - New `scripts/groups/` directory with real-device tests:
+  - `test_group_operations.py` - Join/leave permutations (solo→master, master→master auto-disband, slave→different master, cross-subnet failures)
+  - `test_group_controls.py` - Player control routing (slave.play()→master), individual/group volume, mute propagation
+  - `test_group_metadata.py` - Metadata synchronization (slave gets master metadata on join, group.media_* delegation)
+  - Supports multi-subnet device configuration via `devices.json`
+  - Command-line options: `--subnet`, `--verbose` for targeted testing
+
+### Fixed
+- **Immediate role detection on group changes** - `player._detected_role` now updates immediately when:
+  - `add_slave()` is called (master becomes "master", slave becomes "slave")
+  - `remove_slave()` is called (slave becomes "solo", master becomes "solo" if no slaves remain)
+  - `disband()` is called (master becomes "solo")
+  - This ensures `is_solo`, `is_master`, `is_slave` properties work immediately after group operations
+
+### Documentation
+- Updated `API_REFERENCE.md` with new Group media properties
+- Updated `HA_INTEGRATION.md` virtual entity examples to use `group.media_*` properties
+
 ## [2.1.44] - 2025-12-04
 
 ### Fixed

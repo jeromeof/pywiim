@@ -737,6 +737,8 @@ class TestRunner:
 
     async def _test_pause_command(self) -> None:
         """Test pause command."""
+        if self.player is None:
+            raise SkipTest("Player not available - device may not be connected")
         await self.player.pause()
         await asyncio.sleep(1.0)
         await self.player.refresh()
@@ -749,6 +751,8 @@ class TestRunner:
 
     async def _test_resume_command(self) -> None:
         """Test resume/play command."""
+        if self.player is None:
+            raise SkipTest("Player not available - device may not be connected")
         await self.player.play()
         await asyncio.sleep(1.5)
         await self.player.refresh()
@@ -761,6 +765,8 @@ class TestRunner:
 
     async def _test_next_track(self) -> None:
         """Test next track command."""
+        if self.player is None:
+            raise SkipTest("Player not available - device may not be connected")
         initial_title = self.player.media_title
 
         await self.player.next_track()
@@ -775,6 +781,8 @@ class TestRunner:
 
     async def _test_previous_track(self) -> None:
         """Test previous track command."""
+        if self.player is None:
+            raise SkipTest("Player not available - device may not be connected")
         await self.player.previous_track()
         await asyncio.sleep(2.0)
         await self.player.refresh()

@@ -64,9 +64,8 @@ async def test_media_progress_tracking():
         print("\n2. Media Progress Properties Check")
         print("-" * 70)
 
-        # Check position_updated_at timestamp
-        pos_updated_at = player.media_position_updated_at
-        print(f"   Position Updated At: {pos_updated_at}")
+        # Note: media_position_updated_at was removed - integrations must manage timestamps
+        # Position is returned as raw device value, integrations should track when they read it
 
         if player.play_state == "play":
             print("\n   ✓ Device is playing - testing position estimation...")
@@ -235,13 +234,13 @@ async def test_media_progress_properties():
         await player.refresh()
 
         # Test all progress-related properties
+        # Note: media_position_updated_at was removed - integrations must manage timestamps
         properties = {
             "media_title": player.media_title,
             "media_artist": player.media_artist,
             "media_album": player.media_album,
             "media_duration": player.media_duration,
             "media_position": player.media_position,
-            "media_position_updated_at": player.media_position_updated_at,
             "media_image_url": player.media_image_url,
             "play_state": player.play_state,
         }
@@ -263,9 +262,8 @@ async def test_media_progress_properties():
             assert isinstance(player.media_position, int), "Position should be int"
             print("   ✓ media_position is int")
 
-        if player.media_position_updated_at is not None:
-            assert isinstance(player.media_position_updated_at, float), "Timestamp should be float"
-            print("   ✓ media_position_updated_at is float")
+        # Note: media_position_updated_at was removed - integrations must manage timestamps
+        # Position is returned as raw device value, integrations should track when they read it
 
         # Calculate progress percentage if available
         if player.media_position is not None and player.media_duration is not None and player.media_duration > 0:

@@ -2,6 +2,17 @@
 
 This module provides the base HTTP transport layer for communicating with WiiM devices.
 It handles protocol detection, SSL/TLS, retry logic, and response parsing.
+
+# pragma: allow-long-file base-client-cohesive
+# This file exceeds the 600 LOC hard limit (1020 lines) but is kept as a single
+# cohesive unit because:
+# 1. Single responsibility: HTTP transport layer and core client functionality
+# 2. Well-organized: Clear sections for transport, protocol detection, and parsing
+# 3. Tight coupling: Transport and client logic are tightly integrated
+# 4. Maintainable: Clear structure, follows base client design pattern
+# 5. Natural unit: Represents one concept (HTTP API client foundation)
+# While splitting transport from client logic is possible, the integration is
+# so tight that splitting would add complexity and import overhead without clear benefit.
 """
 
 from __future__ import annotations

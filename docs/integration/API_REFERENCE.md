@@ -893,8 +893,13 @@ All Group properties compute dynamically (no caching) by reading from linked Pla
 group.volume_level  # float | None - MAX of all devices
 group.is_muted      # bool | None - True only if ALL devices muted
 
-# Playback state (from master)
-group.play_state    # str | None - Master's play state
+# Playback state and media (from master's cached state)
+group.play_state      # str | None - Master's play state
+group.media_title     # str | None - Master's media title
+group.media_artist    # str | None - Master's media artist
+group.media_album     # str | None - Master's media album
+group.media_position  # float | None - Master's media position (seconds)
+group.media_duration  # float | None - Master's media duration (seconds)
 
 # Group members
 group.master        # Player - The master player

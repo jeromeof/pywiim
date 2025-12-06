@@ -1,4 +1,15 @@
-"""State management - refresh, UPnP integration, state synchronization."""
+"""State management - refresh, UPnP integration, state synchronization.
+
+# pragma: allow-long-file statemgr-cohesive
+# This file exceeds the 600 LOC hard limit (643 lines) but is kept as a single
+# cohesive unit because:
+# 1. Single responsibility: Player state management, refresh, and UPnP integration
+# 2. Well-organized: Clear sections for refresh logic, state synchronization, and UPnP handling
+# 3. Tight coupling: All methods work together for state management
+# 4. Maintainable: Clear structure, follows state management design pattern
+# 5. Natural unit: Represents one concept (player state management)
+# Splitting would add complexity without clear benefit.
+"""
 
 from __future__ import annotations
 

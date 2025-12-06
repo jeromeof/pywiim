@@ -625,3 +625,111 @@ class TestStateSynchronizerWithProfile:
         merged = sync.get_merged_state()
         # Title should still be there since we didn't provide a new one
         assert merged["title"] == "Good Song"
+
+    def test_propagated_source_preferred_for_metadata(self):
+        """Test that propagated source is preferred over UPnP for metadata fields."""
+        sync = StateSynchronizer()
+
+        now = time.time()
+        # Set play_state first so metadata is preserved
+        sync.update_from_http({"play_state": "play"}, timestamp=now)
+        # Master propagates metadata to slave
+        sync.update_from_http(
+            {"title": "Master Track", "artist": "Master Artist"},
+            timestamp=now,
+            source="propagated",
+        )
+        # Slave also receives its own UPnP event
+        sync.update_from_upnp(
+            {"title": "Slave Track", "artist": "Slave Artist"},
+            timestamp=now,
+        )
+
+        merged = sync.get_merged_state()
+
+        # Propagated state (from master) should win over slave's own UPnP event
+        assert merged["title"] == "Master Track"
+        assert merged["artist"] == "Master Artist"
+
+    def test_propagated_source_preferred_for_metadata_with_profile(self):
+        """Test that propagated source is preferred even with device profile."""
+        from pywiim.profiles import PROFILES
+
+        profile = PROFILES["wiim"]
+        sync = StateSynchronizer(profile=profile)
+
+        now = time.time()
+        # Set play_state first so metadata is preserved
+        sync.update_from_http({"play_state": "play"}, timestamp=now)
+        # Master propagates metadata to slave
+        sync.update_from_http(
+            {"title": "Master Track", "artist": "Master Artist"},
+            timestamp=now,
+            source="propagated",
+        )
+        # Slave also receives its own UPnP event
+        sync.update_from_upnp(
+            {"title": "Slave Track", "artist": "Slave Artist"},
+            timestamp=now,
+        )
+
+        merged = sync.get_merged_state()
+
+        # Propagated state (from master) should win over slave's own UPnP event
+        # even though profile might prefer HTTP for metadata
+        assert merged["title"] == "Master Track"
+        assert merged["artist"] == "Master Artist"
+
+    def test_propagated_source_race_condition(self):
+        """Test race condition: propagated state vs slave's own HTTP refresh."""
+        sync = StateSynchronizer()
+
+        now = time.time()
+        # Set play_state first so metadata is preserved
+        sync.update_from_http({"play_state": "play"}, timestamp=now - 5.0)
+        # Slave receives its own HTTP refresh (stale data)
+        sync.update_from_http(
+            {"title": "Old Track", "artist": "Old Artist"},
+            timestamp=now - 5.0,
+            source="http",
+        )
+        # Master propagates fresh metadata (simulating race condition)
+        sync.update_from_http(
+            {"title": "Master Track", "artist": "Master Artist"},
+            timestamp=now,
+            source="propagated",
+        )
+
+        merged = sync.get_merged_state()
+
+        # Propagated state should win (master is authoritative)
+        assert merged["title"] == "Master Track"
+        assert merged["artist"] == "Master Artist"
+
+    def test_propagated_source_metadata_empty_values(self):
+        """Test that propagated empty values are handled correctly."""
+        sync = StateSynchronizer()
+
+        now = time.time()
+        # Set play_state first so metadata is preserved
+        sync.update_from_http({"play_state": "play"}, timestamp=now - 1.0)
+        # Set initial metadata from UPnP (slave's own event)
+        sync.update_from_upnp(
+            {"title": "Existing Track", "artist": "Existing Artist"},
+            timestamp=now - 1.0,
+        )
+        # Master propagates empty metadata
+        # Note: When propagated is None, it overwrites http_state, but UPnP still has the value
+        # Conflict resolution should prefer non-empty UPnP value over empty propagated
+        sync.update_from_http(
+            {"title": None, "artist": None},
+            timestamp=now,
+            source="propagated",
+        )
+
+        merged = sync.get_merged_state()
+
+        # When propagated is None but UPnP has a value, prefer UPnP (non-empty)
+        # This tests that conflict resolution handles empty propagated values correctly
+        assert merged["title"] == "Existing Track"
+        assert merged["artist"] == "Existing Artist"

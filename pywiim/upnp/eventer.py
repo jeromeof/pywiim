@@ -6,14 +6,14 @@ Framework-agnostic implementation for use in any Python application.
 Reference implementation: dlna_dmr/media_player.py:388-391
 
 # pragma: allow-long-file upnp-eventer-cohesive
-# This file exceeds the 600 LOC hard limit by 18 lines (618 total) but is kept as a single
+# This file exceeds the 600 LOC hard limit (727 lines) but is kept as a single
 # cohesive unit because:
 # 1. Single responsibility: UPnP event subscription and parsing
 # 2. Well-organized: Clear sections for subscription, parsing, and metadata extraction
 # 3. Tight coupling: All methods are UPnP event handling specific
 # 4. Maintainable: Clear structure, follows DLNA DMR pattern
 # 5. Natural unit: Represents one concept (UPnP event management)
-# Splitting would add complexity without clear benefit for only 18 lines over limit.
+# Splitting would add complexity without clear benefit.
 """
 
 from __future__ import annotations

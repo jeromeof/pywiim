@@ -109,6 +109,11 @@ class Group:
 
         self.slaves.append(slave)
         slave._group = self
+        # Update detected role to slave so is_solo/is_slave properties work immediately
+        slave._detected_role = "slave"
+        # Update master's role to "master" now that it has a slave
+        # (a master with 0 slaves is still "solo" per the device API logic)
+        self.master._detected_role = "master"
 
         # Set source to master's name when slave joins group
         # Set in both status model and state synchronizer
@@ -133,6 +138,13 @@ class Group:
         if slave in self.slaves:
             self.slaves.remove(slave)
             slave._group = None
+            # Update detected role to solo so is_solo/is_slave properties work immediately
+            slave._detected_role = "solo"
+
+            # If this was the last slave, master becomes solo too
+            # (a master with 0 slaves is "solo" per the device API logic)
+            if len(self.slaves) == 0 and self.master:
+                self.master._detected_role = "solo"
 
             # Clear source when slave leaves group (could be "multiroom" or master name)
             # Clear from both status model and state synchronizer
@@ -209,6 +221,8 @@ class Group:
             self.remove_slave(slave)
 
         self.master._group = None
+        # Update master's detected role to solo so is_solo/is_master properties work immediately
+        self.master._detected_role = "solo"
 
         # Step 3: Call callbacks if provided
         if master._on_state_changed:
@@ -474,6 +488,51 @@ class Group:
             Play state string (e.g., 'play', 'pause', 'stop', 'idle') or None.
         """
         return self.master.play_state
+
+    @property
+    def media_title(self) -> str | None:
+        """Group media title = master's media title (from cached state).
+
+        Returns:
+            Media title string or None.
+        """
+        return self.master.media_title
+
+    @property
+    def media_artist(self) -> str | None:
+        """Group media artist = master's media artist (from cached state).
+
+        Returns:
+            Media artist string or None.
+        """
+        return self.master.media_artist
+
+    @property
+    def media_album(self) -> str | None:
+        """Group media album = master's media album (from cached state).
+
+        Returns:
+            Media album string or None.
+        """
+        return self.master.media_album
+
+    @property
+    def media_position(self) -> float | None:
+        """Group media position = master's media position (from cached state).
+
+        Returns:
+            Media position in seconds or None.
+        """
+        return self.master.media_position
+
+    @property
+    def media_duration(self) -> float | None:
+        """Group media duration = master's media duration (from cached state).
+
+        Returns:
+            Media duration in seconds or None.
+        """
+        return self.master.media_duration
 
     async def get_play_state(self) -> str:
         """Get group play state = master's play state (queries device).

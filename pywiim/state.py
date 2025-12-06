@@ -4,7 +4,7 @@ This module provides state synchronization that intelligently merges data from
 HTTP polling and UPnP events, handling conflicts, stale data, and missing sources.
 
 # pragma: allow-long-file state-synchronization-cohesive
-# This file exceeds the 400 LOC soft limit (725 lines) but is kept as a single
+# This file exceeds the 600 LOC hard limit (1097 lines) but is kept as a single
 # cohesive unit because:
 # 1. Single responsibility: State synchronization logic (HTTP + UPnP merging)
 # 2. Well-organized: Clear sections for StateSynchronizer and GroupStateSynchronizer
@@ -306,12 +306,16 @@ class StateSynchronizer:
         self,
         data: dict[str, Any],
         timestamp: float | None = None,
+        source: str = "http",
     ) -> None:
         """Update state from HTTP polling data.
 
         Args:
             data: Dictionary with state fields from HTTP API
             timestamp: Timestamp of the update (defaults to now)
+            source: Source identifier for the update. Defaults to "http" for normal
+                HTTP polling. Use "propagated" when state is propagated from master
+                to slave in a group.
         """
         ts = timestamp or time.time()
 
@@ -321,7 +325,7 @@ class StateSynchronizer:
             normalized_state = normalize_play_state(data["play_state"])
             self._http_state["play_state"] = TimestampedField(
                 value=normalized_state,
-                source="http",
+                source=source,
                 timestamp=ts,
             )
 
@@ -329,14 +333,14 @@ class StateSynchronizer:
             position_value = data.get("position")
             self._http_state["position"] = TimestampedField(
                 value=position_value,
-                source="http",
+                source=source,
                 timestamp=ts,
             )
 
         if "duration" in data:
             self._http_state["duration"] = TimestampedField(
                 value=data.get("duration"),
-                source="http",
+                source=source,
                 timestamp=ts,
             )
 
@@ -347,14 +351,14 @@ class StateSynchronizer:
         if "volume" in data and data.get("volume") is not None:
             self._http_state["volume"] = TimestampedField(
                 value=data.get("volume"),
-                source="http",
+                source=source,
                 timestamp=ts,
             )
 
         if "muted" in data and data.get("muted") is not None:
             self._http_state["muted"] = TimestampedField(
                 value=data.get("muted"),
-                source="http",
+                source=source,
                 timestamp=ts,
             )
 
@@ -362,7 +366,7 @@ class StateSynchronizer:
         if "source" in data:
             self._http_state["source"] = TimestampedField(
                 value=data.get("source"),
-                source="http",
+                source=source,
                 timestamp=ts,
             )
 
@@ -377,7 +381,7 @@ class StateSynchronizer:
                     # (but existing metadata from other sources will be preserved via merge)
                     self._http_state[field_name] = TimestampedField(
                         value=value,
-                        source="http",
+                        source=source,
                         timestamp=ts,
                     )
 
@@ -612,7 +616,15 @@ class StateSynchronizer:
             primary_available = True  # HTTP is always "available" if we got data
 
         # For metadata fields, apply special handling
+        # Prefer "propagated" source over others for metadata (master is authoritative)
         if field_name in ["title", "artist", "album", "image_url"]:
+            # If http_field is propagated and has a value, prefer it over upnp for metadata
+            if http_field.source == "propagated" and http_field.value and upnp_field:
+                _LOGGER.debug(
+                    "State merge [profile]: field=%s, chose=propagated (master metadata authoritative)",
+                    field_name,
+                )
+                return http_field
             return self._resolve_metadata_with_profile(
                 primary,
                 fallback,
@@ -760,8 +772,16 @@ class StateSynchronizer:
             )
             return upnp_field
 
-        # Both fresh - for metadata, prefer UPnP (fires immediately on track changes)
+        # Both fresh - for metadata, prefer propagated over UPnP (master is authoritative)
         if field_name in ["title", "artist", "album", "image_url"]:
+            # Prefer propagated source for metadata (master is authoritative for slaves)
+            # But only if propagated has a value (don't prefer None over existing values)
+            if http_field.source == "propagated" and http_field.value:
+                _LOGGER.debug(
+                    "State merge [legacy]: field=%s, chose=propagated (master metadata authoritative)",
+                    field_name,
+                )
+                return http_field
             if upnp_field.value:
                 _LOGGER.debug(
                     "State merge [legacy]: field=%s, chose=upnp (metadata, has value, both fresh)",

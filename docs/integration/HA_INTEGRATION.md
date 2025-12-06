@@ -2155,13 +2155,28 @@ def state(self) -> str | None:
 
 @property
 def media_title(self) -> str | None:
-    """Media metadata from master."""
-    return self.master_player.media_title if self.master_player else None
+    """Media title from master."""
+    return self.group.media_title if self.group else None
+
+@property
+def media_artist(self) -> str | None:
+    """Media artist from master."""
+    return self.group.media_artist if self.group else None
+
+@property
+def media_position(self) -> float | None:
+    """Media position from master."""
+    return self.group.media_position if self.group else None
+
+@property
+def media_duration(self) -> float | None:
+    """Media duration from master."""
+    return self.group.media_duration if self.group else None
 ```
 
 **Key Points:**
 - Volume/mute are unique group properties (MAX volume, ALL muted)
-- Playback state and metadata come from the master player
+- Playback state and media metadata come from the master (via Group properties)
 - Properties are computed on access (no caching)
 
 ## Event Propagation Model

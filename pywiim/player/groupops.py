@@ -1,7 +1,19 @@
-"""Group operations."""
+"""Group operations.
+
+# pragma: allow-long-file groupops-cohesive
+# This file exceeds the 600 LOC hard limit (680 lines) but is kept as a single
+# cohesive unit because:
+# 1. Single responsibility: Group operations (create, join, leave, synchronize)
+# 2. Well-organized: Clear sections for group management and metadata propagation
+# 3. Tight coupling: All methods work together for group operations
+# 4. Maintainable: Clear structure, follows group operations design pattern
+# 5. Natural unit: Represents one concept (group operations)
+# Splitting would add complexity without clear benefit.
+"""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -330,6 +342,11 @@ class GroupOperations:
         if master.is_slave:
             _LOGGER.debug("Target %s is slave, having it leave group first", master.host)
             await master.leave_group()
+            # Device needs time to settle after leaving a group before it can accept new connections
+            # Without this wait, the subsequent join may fail silently (API returns OK but device doesn't change state)
+            await asyncio.sleep(2.0)
+            await master.refresh(full=True)
+            _LOGGER.debug("After leave_group + wait: %s role is now %s", master.host, master.role)
 
         if master.is_solo:
             _LOGGER.debug("Target %s is solo, creating group", master.host)
@@ -384,14 +401,33 @@ class GroupOperations:
         master_major = get_major_version(master_wmrm)
 
         # Both versions must be present and have matching major version
+        # Only block if major versions differ (e.g., 2.x vs 4.x)
+        # All 4.x versions (4.2, 4.3, etc.) are compatible with each other
         if slave_major is not None and master_major is not None and slave_major != master_major:
             slave_model = self.player._device_info.model if self.player._device_info else None
             master_model = master._device_info.model if master._device_info else None
+            _LOGGER.debug(
+                "wmrm_version compatibility check: slave_major=%s (from %s), master_major=%s (from %s)",
+                slave_major,
+                slave_wmrm,
+                master_major,
+                master_wmrm,
+            )
             raise WiiMGroupCompatibilityError(
                 slave_version=slave_wmrm,
                 master_version=master_wmrm,
                 slave_model=slave_model,
                 master_model=master_model,
+            )
+
+        # Log compatibility check result for debugging
+        if slave_major is not None and master_major is not None:
+            _LOGGER.debug(
+                "wmrm_version compatibility check passed: slave=%s (major=%s), master=%s (major=%s)",
+                slave_wmrm,
+                slave_major,
+                master_wmrm,
+                master_major,
             )
 
         # If one or both versions are missing, log a warning but proceed
@@ -481,8 +517,26 @@ class GroupOperations:
             slave_wmrm_after = self.player._device_info.wmrm_version if self.player._device_info else None
             master_wmrm_after = master._device_info.wmrm_version if master._device_info else None
 
-            if slave_wmrm_after and master_wmrm_after and slave_wmrm_after != master_wmrm_after:
-                # Now we know the versions - raise proper error
+            # Compare major versions, not full version strings (4.2 and 4.3 are compatible)
+            def get_major_version(version_str: str | None) -> int | None:
+                """Extract major version number from wmrm_version string."""
+                if not version_str:
+                    return None
+                try:
+                    major_str = version_str.split(".")[0]
+                    return int(major_str)
+                except (ValueError, AttributeError):
+                    return None
+
+            slave_major_after = get_major_version(slave_wmrm_after)
+            master_major_after = get_major_version(master_wmrm_after)
+
+            if (
+                slave_major_after is not None
+                and master_major_after is not None
+                and slave_major_after != master_major_after
+            ):
+                # Now we know the versions are incompatible (different major versions)
                 slave_model = self.player._device_info.model if self.player._device_info else None
                 master_model = master._device_info.model if master._device_info else None
                 raise WiiMGroupCompatibilityError(
@@ -649,6 +703,8 @@ class GroupOperations:
             slave._status_model.duration = master_status.duration
 
             # Update state synchronizer with master's metadata
+            # Use source="propagated" to distinguish from slave's own device state
+            # This helps conflict resolution prefer master's authoritative metadata
             slave._state_synchronizer.update_from_http(
                 {
                     "title": master_status.title,
@@ -658,7 +714,8 @@ class GroupOperations:
                     "play_state": master_status.play_state,
                     "position": master_status.position,
                     "duration": master_status.duration,
-                }
+                },
+                source="propagated",
             )
 
             # Trigger callback on slave so HA integration updates
