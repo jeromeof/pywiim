@@ -229,9 +229,9 @@ class TestValidateDevice:
             assert validated.validated is False
 
     @pytest.mark.asyncio
-    async def test_validate_device_fast_path_known_linkplay(self):
-        """Test validation uses fast path for known LinkPlay devices (skips API probe)."""
-        # Device with WiiM in SSDP SERVER header
+    async def test_validate_device_http_probe_always_called(self):
+        """Test validation always uses HTTP probe (no fast path, probe every device)."""
+        # Device with WiiM in SSDP SERVER header - still gets probed
         device = DiscoveredDevice(
             ip="192.168.1.100",
             port=80,
@@ -255,15 +255,15 @@ class TestValidateDevice:
         mock_client.get_player_status = AsyncMock()
         mock_client.close = AsyncMock()
 
-        # is_linkplay_device should NOT be called because we use the fast path
-        with patch("pywiim.discovery.is_linkplay_device") as mock_probe:
+        # HTTP probe is always called (definitive check)
+        with patch("pywiim.discovery.is_linkplay_device", return_value=True) as mock_probe:
             with patch("pywiim.discovery.WiiMClient", return_value=mock_client):
                 validated = await validate_device(device)
 
                 assert validated.validated is True
                 assert validated.name == "WiiM Device"
-                # Fast path should skip the API probe
-                mock_probe.assert_not_called()
+                # HTTP probe should always be called (no fast path)
+                mock_probe.assert_called_once_with("192.168.1.100", 80, timeout=3.0)
 
     @pytest.mark.asyncio
     async def test_validate_device_client_creation_failure(self):
@@ -354,7 +354,7 @@ class TestDiscoverDevices:
 
     @pytest.mark.asyncio
     async def test_discover_devices_filter_sonos(self):
-        """Test filtering out Sonos devices before validation."""
+        """Test filtering out Sonos devices via HTTP probe."""
         sonos_device = DiscoveredDevice(
             ip="192.168.1.100",
             name="Sonos Device",
@@ -369,20 +369,36 @@ class TestDiscoverDevices:
             name="WiiM Device",
             discovery_method="ssdp",
             ssdp_response={"SERVER": "Linux/5.15.0", "st": "upnp:rootdevice"},
-            validated=True,
         )
 
-        async def mock_validate(device):
-            device.validated = True
-            return device
+        # Mock HTTP probe: Sonos returns False, WiiM returns True
+        async def mock_is_linkplay(host, port, timeout):
+            return host == "192.168.1.101"
+
+        mock_device_info = DeviceInfo(
+            name="WiiM Device",
+            model="WiiM Mini",
+            firmware="4.8.123456",
+            mac="AA:BB:CC:DD:EE:FF",
+            uuid="12345678-1234-1234-1234-123456789abc",
+        )
+        mock_client = MagicMock()
+        mock_client.host = "192.168.1.101"
+        mock_client.port = 80
+        mock_client.capabilities = {"vendor": "wiim"}
+        mock_client._detect_capabilities = AsyncMock()
+        mock_client.get_device_info_model = AsyncMock(return_value=mock_device_info)
+        mock_client.get_player_status = AsyncMock()
+        mock_client.close = AsyncMock()
 
         with patch("pywiim.discovery.discover_via_ssdp", return_value=[sonos_device, wiim_device]):
-            with patch("pywiim.discovery.validate_device", side_effect=mock_validate):
-                devices = await discover_devices(methods=["ssdp"], validate=True)
+            with patch("pywiim.discovery.is_linkplay_device", side_effect=mock_is_linkplay):
+                with patch("pywiim.discovery.WiiMClient", return_value=mock_client):
+                    devices = await discover_devices(methods=["ssdp"], validate=True)
 
-                # Should only include WiiM device, Sonos should be filtered
-                assert len(devices) == 1
-                assert devices[0].ip == "192.168.1.101"
+                    # Should only include WiiM device, Sonos should be filtered by HTTP probe
+                    assert len(devices) == 1
+                    assert devices[0].ip == "192.168.1.101"
 
 
 class TestIsLikelyNonLinkplay:

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.49] - 2025-12-07
+
+### Fixed
+- **Device discovery now uses HTTP probe as definitive filter** (Issue [mjcumming/wiim#141](https://github.com/mjcumming/wiim/issues/141))
+  - Removed unreliable SSDP header filtering that was missing Samsung TVs and Sonos devices
+  - All discovered devices are now probed via HTTP to check LinkPlay API compatibility
+  - Non-LinkPlay devices (Samsung TV, Sonos, etc.) are filtered out during validation
+  - Matches velleman linkplay library approach: probe every device, don't rely on SSDP headers
+  - This prevents non-WIIM devices from being discovered and causing integration errors
+
 ## [2.1.48] - 2025-12-07
 
 ### Fixed

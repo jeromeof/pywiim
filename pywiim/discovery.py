@@ -367,13 +367,9 @@ async def is_linkplay_device(
 async def validate_device(device: DiscoveredDevice) -> DiscoveredDevice:
     """Validate a discovered device by querying its API.
 
-    Uses a three-phase approach:
-    1. Fast path: Check if device identified itself as LinkPlay in SSDP (skip probe)
-    2. Quick probe: Check if device responds to LinkPlay endpoints at all
-    3. Full validation: Get device info and capabilities
-
-    This prevents non-LinkPlay devices (Samsung TV, Sonos, etc.) from
-    being incorrectly validated or causing repeated connection attempts.
+    Uses HTTP probe as the definitive check (like velleman linkplay library).
+    This ensures non-LinkPlay devices (Samsung TV, Sonos, etc.) are filtered out
+    regardless of their SSDP headers.
 
     Args:
         device: Device to validate
@@ -384,28 +380,16 @@ async def validate_device(device: DiscoveredDevice) -> DiscoveredDevice:
     if device.validated:
         return device
 
-    # Phase 1: Fast path - did device identify itself as LinkPlay in SSDP?
-    # If so, skip the API probe entirely - we know it's LinkPlay
-    skip_probe = False
-    if device.ssdp_response and is_known_linkplay(device.ssdp_response):
+    # HTTP probe is the definitive check - probe every device
+    # This is fast and reliable - non-LinkPlay devices fail here immediately
+    if not await is_linkplay_device(device.ip, device.port, timeout=3.0):
         _LOGGER.debug(
-            "Device %s identified as LinkPlay via SSDP - skipping API probe",
+            "Skipping %s - does not respond to LinkPlay API (not a WiiM/LinkPlay device)",
             device.ip,
         )
-        skip_probe = True
+        return device  # validated stays False
 
-    # Phase 2: Quick probe - does device respond to LinkPlay API at all?
-    # This is fast and definitive - non-LinkPlay devices fail here immediately
-    # Skip this if we already know it's LinkPlay from SSDP
-    if not skip_probe:
-        if not await is_linkplay_device(device.ip, device.port, timeout=3.0):
-            _LOGGER.debug(
-                "Skipping %s - does not respond to LinkPlay API (not a WiiM/LinkPlay device)",
-                device.ip,
-            )
-            return device  # validated stays False
-
-    _LOGGER.debug("Device %s confirmed as LinkPlay, proceeding with full validation", device.ip)
+    _LOGGER.debug("Device %s confirmed as LinkPlay via HTTP probe, proceeding with full validation", device.ip)
 
     # Phase 2: Full validation - get device info and capabilities
     try:
@@ -502,42 +486,28 @@ async def discover_devices(
         _LOGGER.info("Discovering devices via SSDP...")
         ssdp_devices = await discover_via_ssdp(timeout=ssdp_timeout)
 
-        # Quick filter: Skip known non-LinkPlay devices before validation
-        # ⚠️ CONSERVATIVE: Only filters devices we're 100% certain are not LinkPlay
-        devices_to_validate = []
+        # Collect all discovered devices - HTTP probe will be the definitive filter
+        # (like velleman linkplay library - probe every device, don't rely on SSDP headers)
         for device in ssdp_devices:
             if device.ip in seen_ips:
                 continue
-
-            # Apply quick filter if SSDP response is available
-            if device.ssdp_response and is_likely_non_linkplay(device.ssdp_response):
-                # Log which pattern matched for debugging
-                st = device.ssdp_response.get("st", "") or device.ssdp_response.get("ST", "")
-                server = device.ssdp_response.get("SERVER", "") or device.ssdp_response.get("server", "")
-                _LOGGER.debug(
-                    "Skipping known non-LinkPlay device: %s (ST: %s, SERVER: %s)",
-                    device.ip,
-                    st or "none",
-                    server or "none",
-                )
-                continue
-
-            # Device passes filter - will be validated (Audio Pro, Arylic, WiiM, etc.)
-            devices_to_validate.append(device)
+            all_devices.append(device)
             seen_ips.add(device.ip)
 
-        all_devices = devices_to_validate
-
     # Validate devices if requested
-    # This is critical: validation determines if devices are actually LinkPlay/WiiM
-    # by checking if they respond to the LinkPlay API
+    # HTTP probe is the definitive filter - every device is probed to check if it
+    # responds to LinkPlay API endpoints. This ensures non-LinkPlay devices
+    # (Samsung TV, Sonos, etc.) are filtered out regardless of SSDP headers.
     if validate:
-        _LOGGER.info("Validating %d discovered device(s) to confirm LinkPlay/WiiM compatibility...", len(all_devices))
+        _LOGGER.info(
+            "Validating %d discovered device(s) via HTTP probe to confirm LinkPlay/WiiM compatibility...",
+            len(all_devices),
+        )
         validation_tasks = [validate_device(device) for device in all_devices]
         validated_devices = await asyncio.gather(*validation_tasks)
 
         # Filter to only include devices that successfully validated
-        # (devices that respond to LinkPlay API)
+        # (devices that respond to LinkPlay API - definitive check)
         all_devices = [device for device in validated_devices if device.validated]
 
         if len(validated_devices) != len(all_devices):
