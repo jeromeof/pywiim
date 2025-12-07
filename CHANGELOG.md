@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.48] - 2025-12-07
+
+### Fixed
+- **Remove unused import** - Fixed ruff lint error (unused `WiiMResponseError` import in capabilities.py)
+
+### Changed
+- **Added `make release` workflow** - New Makefile target that runs all CI checks before pushing to prevent lint failures
+
 ## [2.1.47] - 2025-12-07
 
 ### Fixed

@@ -1,4 +1,4 @@
-.PHONY: help format lint typecheck test clean install dev-install check
+.PHONY: help format lint typecheck test clean install dev-install check release
 
 help:
 	@echo "Available targets:"
@@ -7,6 +7,7 @@ help:
 	@echo "  make typecheck   - Type check with mypy"
 	@echo "  make test        - Run tests with pytest"
 	@echo "  make check       - Run all CI checks (format check + lint + test)"
+	@echo "  make release     - Run checks, bump version, commit, tag, and push"
 	@echo "  make clean       - Clean build artifacts"
 	@echo "  make install     - Install package"
 	@echo "  make dev-install - Install package with dev dependencies"
@@ -66,4 +67,30 @@ install:
 dev-install:
 	pip install -e ".[dev]"
 	pre-commit install
+
+# Release workflow - ensures all checks pass before pushing
+# Usage: make release VERSION=2.1.48
+release:
+ifndef VERSION
+	$(error VERSION is required. Usage: make release VERSION=2.1.48)
+endif
+	@echo "🚀 Starting release v$(VERSION)..."
+	@echo ""
+	@echo "📋 Step 1: Running all CI checks..."
+	@$(MAKE) check
+	@echo ""
+	@echo "📋 Step 2: Checking for uncommitted changes..."
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		echo "⚠️  You have uncommitted changes. Please commit or stash them first."; \
+		git status --short; \
+		exit 1; \
+	fi
+	@echo "✅ Working directory clean"
+	@echo ""
+	@echo "📋 Step 3: Creating and pushing tag v$(VERSION)..."
+	git tag -a v$(VERSION) -m "Release v$(VERSION)"
+	git push origin main --tags
+	@echo ""
+	@echo "✅ Release v$(VERSION) complete!"
+	@echo "   GitHub Actions will now build and publish to PyPI."
 

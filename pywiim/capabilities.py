@@ -33,7 +33,7 @@ from .api.constants import (
     API_ENDPOINT_EQ_LIST,
     API_ENDPOINT_EQ_STATUS,
 )
-from .exceptions import WiiMError, WiiMResponseError
+from .exceptions import WiiMError
 from .models import DeviceInfo
 from .normalize import normalize_vendor
 
