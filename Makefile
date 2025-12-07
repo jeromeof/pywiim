@@ -37,7 +37,7 @@ check:
 	mypy pywiim || (echo "❌ Type check failed!" && exit 1)
 	@echo "✅ Type check OK"
 	@echo "4. Running unit tests..."
-	pytest tests/unit/ -x --tb=short -q
+	@python -c "import xdist" 2>/dev/null && pytest tests/unit/ -x --tb=short -q -n auto || pytest tests/unit/ -x --tb=short -q
 	@echo "✅ All checks passed!"
 
 test:
@@ -79,15 +79,21 @@ endif
 	@echo "📋 Step 1: Running all CI checks..."
 	@$(MAKE) check
 	@echo ""
-	@echo "📋 Step 2: Checking for uncommitted changes..."
+	@echo "📋 Step 2: Committing any uncommitted changes..."
 	@if [ -n "$$(git status --porcelain)" ]; then \
-		echo "⚠️  You have uncommitted changes. Please commit or stash them first."; \
-		git status --short; \
-		exit 1; \
+		echo "📝 Staging all changes..."; \
+		git add -A; \
+		echo "💾 Committing changes for release v$(VERSION)..."; \
+		git commit -m "chore: prepare release v$(VERSION)" || true; \
+		echo "✅ Changes committed"; \
+	else \
+		echo "✅ Working directory clean (no changes to commit)"; \
 	fi
-	@echo "✅ Working directory clean"
 	@echo ""
-	@echo "📋 Step 3: Creating and pushing tag v$(VERSION)..."
+	@echo "📋 Step 3: Pushing commits..."
+	@git push origin main
+	@echo ""
+	@echo "📋 Step 4: Creating and pushing tag v$(VERSION)..."
 	git tag -a v$(VERSION) -m "Release v$(VERSION)"
 	git push origin main --tags
 	@echo ""

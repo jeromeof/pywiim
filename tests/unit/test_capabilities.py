@@ -303,21 +303,16 @@ class TestWiiMCapabilitiesClass:
 
     @pytest.mark.asyncio
     async def test_detect_capabilities_eq_read_only(self, mock_client):
-        """Test EQ capability detection when device can read but not set EQ."""
+        """Test EQ capability detection uses read-only probing - if we can read EQ, we assume we can set it."""
         device_info = DeviceInfo(uuid="test-uuid", model="ARYLIC_H50", firmware="4.6.529755")
         # mock_client already has host set from fixture
         mock_client.get_status = AsyncMock(return_value={"status": "ok"})
 
-        # Mock EQ read works, but set returns "unknown command"
+        # Mock EQ read works (we no longer test setting to avoid changing device state)
         def request_side_effect(endpoint, **kwargs):
             if "EQGetBand" in endpoint or "EQGetList" in endpoint or "EQGetStat" in endpoint:
-                # Can read EQ
+                # Can read EQ - with read-only probing, this means we support EQ
                 return {"EQBand": [{"value": 50} for _ in range(10)], "Name": "Flat"}
-            elif "EQLoad:Flat" in endpoint:
-                # Base client returns {"raw": "OK"} for non-JSON, but we check for EQ fields
-                # This simulates a device that returns "unknown command" as plain text
-                # which gets converted to {"raw": "OK"} by base client, but has no EQ fields
-                return {"raw": "OK"}  # No EQBand, Name, or EQStat fields
             return {"status": "ok"}
 
         mock_client._request = AsyncMock(side_effect=request_side_effect)
@@ -325,30 +320,22 @@ class TestWiiMCapabilitiesClass:
         detector = WiiMCapabilities()
         capabilities = await detector.detect_capabilities(mock_client, device_info)
 
-        # Should detect that EQ read works but set doesn't
-        assert capabilities["supports_eq"] is False
+        # With read-only probing: if we can read EQ, we assume we can set it
+        # This prevents changing device settings during initialization
+        assert capabilities["supports_eq"] is True
 
     @pytest.mark.asyncio
-    async def test_detect_capabilities_eq_set_unknown_command_exception(self, mock_client):
-        """Test EQ capability detection when EQLoad returns unknown command exception."""
+    async def test_detect_capabilities_eq_read_only_probing(self, mock_client):
+        """Test EQ capability detection uses read-only probing - we don't test setting to avoid changing state."""
         device_info = DeviceInfo(uuid="test-uuid", model="UP2STREAM_AMP_V4", firmware="4.6.415145")
         # mock_client already has host set from fixture
         mock_client.get_status = AsyncMock(return_value={"status": "ok"})
 
-        # Mock EQ read works, but set raises exception with "unknown command"
+        # Mock EQ read works (we no longer test EQLoad to avoid changing device settings)
         def request_side_effect(endpoint, **kwargs):
             if "EQGetBand" in endpoint or "EQGetList" in endpoint or "EQGetStat" in endpoint:
-                # Can read EQ
+                # Can read EQ - with read-only probing, this means we support EQ
                 return {"EQEnable": 0, "Treble": 0, "Bass": 0}
-            elif "EQLoad:Flat" in endpoint:
-                # Raises exception with "unknown command" in message
-                from pywiim.exceptions import WiiMResponseError
-
-                raise WiiMResponseError(
-                    "Invalid JSON response from http://192.168.6.95:80/httpapi.asp?"
-                    "command=EQLoad:Flat: unknown command",
-                    endpoint="/httpapi.asp?command=EQLoad:Flat",
-                )
             return {"status": "ok"}
 
         mock_client._request = AsyncMock(side_effect=request_side_effect)
@@ -356,8 +343,9 @@ class TestWiiMCapabilitiesClass:
         detector = WiiMCapabilities()
         capabilities = await detector.detect_capabilities(mock_client, device_info)
 
-        # Should detect that EQ read works but set doesn't
-        assert capabilities["supports_eq"] is False
+        # With read-only probing: if we can read EQ, we assume we can set it
+        # This prevents changing device settings during initialization
+        assert capabilities["supports_eq"] is True
 
     @pytest.mark.asyncio
     async def test_get_cached_capabilities(self, mock_client):

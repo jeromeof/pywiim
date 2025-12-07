@@ -11,9 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Remove unused import** - Fixed ruff lint error (unused `WiiMResponseError` import in capabilities.py)
+- **Updated test expectations for read-only probing** - Tests now correctly expect `supports_eq = True` when EQ can be read (matches new capability detection behavior)
+- **Suppressed unclosed session warnings** - Added pytest filterwarnings to suppress harmless ResourceWarnings from mock aiohttp sessions
 
 ### Changed
-- **Added `make release` workflow** - New Makefile target that runs all CI checks before pushing to prevent lint failures
+- **Added `make release` workflow** - New Makefile target that:
+  - Runs all CI checks (isort, ruff, mypy, pytest) before pushing
+  - Automatically commits uncommitted changes
+  - Creates and pushes release tag
+  - Prevents lint/test failures from reaching CI
+- **Added pytest-xdist for parallel test execution** - Tests now run in parallel locally (2+ min → ~30 seconds)
+- **Improved mock session fixture** - Better cleanup to prevent resource warnings
 
 ## [2.1.47] - 2025-12-07
 

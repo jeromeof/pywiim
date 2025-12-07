@@ -175,11 +175,24 @@ def mock_capabilities():
 
 
 @pytest.fixture
-def mock_aiohttp_session():
-    """Mock aiohttp ClientSession for testing."""
+def mock_aiohttp_session(request):
+    """Mock aiohttp ClientSession for testing.
+
+    This fixture creates a mock session that properly simulates aiohttp's
+    ClientSession behavior, including proper cleanup to avoid resource warnings.
+    """
     session = MagicMock(spec=ClientSession)
     session._closed = False
+    session.closed = False
     session.close = AsyncMock()
+
+    # Mark session as closed after test to prevent warnings
+    def cleanup():
+        session._closed = True
+        session.closed = True
+
+    request.addfinalizer(cleanup)
+
     return session
 
 
