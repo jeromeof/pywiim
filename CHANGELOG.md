@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.47] - 2025-12-07
+
+### Fixed
+- **Capability detection no longer changes device settings** (Issue [mjcumming/wiim#144](https://github.com/mjcumming/wiim/issues/144))
+  - Audio output mode was being changed to Line Out during initialization
+  - EQ preset was being changed to Flat during initialization
+  - Now uses read-only probing: if we can read a setting, we assume we can set it
+  - This prevents unintended changes to user's audio output and EQ settings on HA restart or integration reload
+
 ## [2.1.46] - 2025-12-06
 
 ### Changed

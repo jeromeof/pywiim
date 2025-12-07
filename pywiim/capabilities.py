@@ -159,108 +159,25 @@ class WiiMCapabilities:
             capabilities["supports_metadata"] = False
             _LOGGER.debug("Device %s does not support getMetaInfo", client.host)
 
-        # Probe for audio output support (both get and set)
-        # Some devices support reading status but not setting mode
-        supports_read = False
-        supports_set = False
-
-        # First, check if we can read audio output status
+        # Probe for audio output support (read-only probe)
+        # If we can read audio output status, assume we can set it too
+        # We don't probe setting to avoid changing device state during initialization
+        # See: https://github.com/mjcumming/wiim/issues/144
         try:
             result = await client._request("/httpapi.asp?command=getNewAudioOutputHardwareMode")
-            supports_read = True
+            capabilities["supports_audio_output"] = True
             _LOGGER.debug(
-                "Device %s supports getNewAudioOutputHardwareMode, result: %s",
+                "Device %s supports audio output control (getNewAudioOutputHardwareMode), result: %s",
                 client.host,
                 result,
             )
         except (WiiMError, Exception) as e:
+            capabilities["supports_audio_output"] = False
             _LOGGER.debug(
-                "Device %s does not support getNewAudioOutputHardwareMode (%s)",
+                "Device %s does not support audio output control (%s)",
                 client.host,
                 type(e).__name__,
             )
-
-        # Then, check if we can set audio output mode (required for full support)
-        if supports_read:
-            try:
-                # Try to set mode 2 (Line Out) - this is a common mode that should work if setting is supported
-                # We don't care about the actual result, just that the command is recognized
-                result = await client._request("/httpapi.asp?command=setAudioOutputHardwareMode:2")
-                # Check if response indicates "unknown command" (some devices return this as a dict)
-                if isinstance(result, dict):
-                    raw = result.get("raw", "")
-                    error = result.get("error", "")
-                    if (
-                        "unknown command" in str(raw).lower()
-                        or "unknown command" in str(error).lower()
-                        or error == "unsupported_command"
-                    ):
-                        supports_set = False
-                        _LOGGER.debug(
-                            "Device %s supports reading audio output but not setting (unknown command in response)",
-                            client.host,
-                        )
-                    else:
-                        # Got a valid response (not "unknown command")
-                        supports_set = True
-                        _LOGGER.debug("Device %s supports setAudioOutputHardwareMode", client.host)
-                else:
-                    # Non-dict response - assume it worked
-                    supports_set = True
-                    _LOGGER.debug("Device %s supports setAudioOutputHardwareMode", client.host)
-            except WiiMResponseError as e:
-                # Check if it's "unknown command" or invalid JSON (device doesn't support setting)
-                error_str = str(e).lower()
-                if (
-                    "unknown command" in error_str
-                    or "invalid json" in error_str
-                    or "404" in error_str
-                    or "not found" in error_str
-                ):
-                    supports_set = False
-                    _LOGGER.debug(
-                        "Device %s supports reading audio output but not setting (%s)",
-                        client.host,
-                        type(e).__name__,
-                    )
-                else:
-                    # Other response error - assume setting might work, but we can't verify
-                    supports_set = True
-                    _LOGGER.debug(
-                        "Device %s supports reading audio output, setting status unknown (%s)",
-                        client.host,
-                        type(e).__name__,
-                    )
-            except WiiMError as e:
-                # Other WiiM error (network, etc.) - assume setting might work, but we can't verify
-                supports_set = True
-                _LOGGER.debug(
-                    "Device %s supports reading audio output, setting status unknown (%s)",
-                    client.host,
-                    type(e).__name__,
-                )
-            except Exception as e:
-                # Non-WiiMError exception - assume setting might work
-                supports_set = True
-                _LOGGER.debug(
-                    "Device %s supports reading audio output, setting status unknown (%s)",
-                    client.host,
-                    type(e).__name__,
-                )
-
-        # Only mark as fully supported if both read and set work
-        # Some devices (e.g., Arylic) support reading but not setting
-        if supports_read and supports_set:
-            capabilities["supports_audio_output"] = True
-        else:
-            # Only disable if not already determined to be supported (e.g., WiiM devices)
-            if not capabilities.get("supports_audio_output", False):
-                capabilities["supports_audio_output"] = False
-                if supports_read and not supports_set:
-                    _LOGGER.debug(
-                        "Device %s supports reading audio output but not setting - marking as unsupported",
-                        client.host,
-                    )
 
         # Probe for preset support (getPresetInfo)
         # If getPresetInfo fails, fall back to checking preset_key from device info
@@ -292,12 +209,11 @@ class WiiMCapabilities:
                 capabilities["supports_presets"] = False
                 _LOGGER.debug("Device %s does not support getPresetInfo (no preset_key)", client.host)
 
-        # Probe for EQ support (both read and set)
-        # Some devices (e.g., Arylic) can read EQ but not set it
-        supports_read = False
-        supports_set = False
-
-        # First, check if we can read EQ status
+        # Probe for EQ support (read-only probe)
+        # If we can read any EQ endpoint, assume we support EQ
+        # We don't probe setting to avoid changing device state during initialization
+        # See: https://github.com/mjcumming/wiim/issues/144
+        eq_supported = False
         for endpoint in [
             API_ENDPOINT_EQ_GET,  # EQGetBand
             API_ENDPOINT_EQ_LIST,  # EQGetList
@@ -305,106 +221,18 @@ class WiiMCapabilities:
         ]:
             try:
                 await client._request(endpoint)
-                supports_read = True
-                _LOGGER.debug("Device %s supports reading EQ (detected via %s)", client.host, endpoint)
+                eq_supported = True
+                _LOGGER.debug("Device %s supports EQ (detected via %s)", client.host, endpoint)
                 break
             except WiiMError:
                 continue  # Try next endpoint
 
-        # Then, check if we can set EQ (required for full support)
-        # Try EQLoad:Flat first (most common preset command)
-        # Note: base client may return {"raw": "OK"} for non-JSON responses to eqload commands,
-        # so we need to check the actual response content more carefully
-        if supports_read:
-            try:
-                result = await client._request("/httpapi.asp?command=EQLoad:Flat")
-                # Check if response indicates "unknown command" (some devices return this as a dict)
-                if isinstance(result, dict):
-                    raw = result.get("raw", "")
-                    error = result.get("error", "")
-                    status = result.get("status", "")
-                    # Check for "unknown command" in various fields
-                    # Also check if we got a valid EQ response (should have EQBand or Name field for success)
-                    has_valid_eq_response = "EQBand" in result or "Name" in result or "EQStat" in result
-                    if (
-                        "unknown command" in str(raw).lower()
-                        or "unknown command" in str(error).lower()
-                        or error == "unsupported_command"
-                        or status == "Failed"
-                        or (
-                            raw == "OK" and not has_valid_eq_response
-                        )  # Base client may return {"raw": "OK"} for non-JSON, but that's not a valid EQ response
-                    ):
-                        supports_set = False
-                        _LOGGER.debug(
-                            "Device %s supports reading EQ but not setting (unknown command or failed in response)",
-                            client.host,
-                        )
-                    else:
-                        # Got a valid response (not "unknown command" or "Failed", and has EQ data)
-                        supports_set = True
-                        _LOGGER.debug("Device %s supports setting EQ (EQLoad:Flat)", client.host)
-                else:
-                    # Non-dict response - assume it worked (unlikely for EQ commands)
-                    supports_set = True
-                    _LOGGER.debug("Device %s supports setting EQ (EQLoad:Flat)", client.host)
-            except WiiMResponseError as e:
-                # Check if it's "unknown command" or invalid JSON (device doesn't support setting)
-                error_str = str(e).lower()
-                if (
-                    "unknown command" in error_str
-                    or "invalid json" in error_str
-                    or "404" in error_str
-                    or "not found" in error_str
-                ):
-                    supports_set = False
-                    _LOGGER.debug(
-                        "Device %s supports reading EQ but not setting (%s)",
-                        client.host,
-                        type(e).__name__,
-                    )
-                else:
-                    # Other response error - assume setting might work, but we can't verify
-                    supports_set = True
-                    _LOGGER.debug(
-                        "Device %s supports reading EQ, setting status unknown (%s)",
-                        client.host,
-                        type(e).__name__,
-                    )
-            except WiiMError as e:
-                # Other WiiM error (network, etc.) - assume setting might work, but we can't verify
-                supports_set = True
-                _LOGGER.debug(
-                    "Device %s supports reading EQ, setting status unknown (%s)",
-                    client.host,
-                    type(e).__name__,
-                )
-            except Exception as e:
-                # Non-WiiMError exception - assume setting might work
-                supports_set = True
-                _LOGGER.debug(
-                    "Device %s supports reading EQ, setting status unknown (%s)",
-                    client.host,
-                    type(e).__name__,
-                )
-
-        # Only mark as fully supported if both read and set work
-        # Some devices (e.g., Arylic) support reading but not setting
-        if supports_read and supports_set:
-            capabilities["supports_eq"] = True
-        else:
-            # Always set based on probe result (override default)
-            capabilities["supports_eq"] = False
-            if supports_read and not supports_set:
-                _LOGGER.debug(
-                    "Device %s supports reading EQ but not setting - marking as unsupported",
-                    client.host,
-                )
-            else:
-                _LOGGER.debug(
-                    "Device %s does not support EQ (tried EQGetBand, EQGetList, EQGetStat, EQLoad:Flat)",
-                    client.host,
-                )
+        capabilities["supports_eq"] = eq_supported
+        if not eq_supported:
+            _LOGGER.debug(
+                "Device %s does not support EQ (tried EQGetBand, EQGetList, EQGetStat)",
+                client.host,
+            )
 
         self._capabilities[device_id] = capabilities
         # Log capabilities at DEBUG level to reduce verbosity
