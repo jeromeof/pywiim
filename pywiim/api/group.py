@@ -20,75 +20,26 @@ from .constants import (
     API_ENDPOINT_GROUP_SLAVE_MUTE,
     API_ENDPOINT_GROUP_SLAVES,
 )
-from .firmware import compare_firmware_versions
 
 _LOGGER = logging.getLogger(__name__)
-
-# Minimum firmware version for router-based multiroom (firmware >= 4.2.8020)
-FW_MROOM_RTR_MIN = "4.2.8020"
 
 
 def _needs_wifi_direct_mode(device_info: DeviceInfo | None) -> bool:
     """Determine if device needs WiFi Direct mode for multiroom grouping.
 
-    WiFi Direct mode is required for:
-    - Devices with wmrm_version 2.0 (Audio Pro Gen1, legacy LinkPlay)
-    - Devices with firmware < 4.2.8020 (older firmware versions)
-
-    Router-based mode is used for:
-    - Devices with wmrm_version 4.2 (WiiM, Audio Pro Gen2+)
-    - Devices with firmware >= 4.2.8020
+    Devices with firmware < 4.2.8020 use WiFi Direct mode (older LinkPlay protocol).
+    Modern devices (firmware >= 4.2.8020) use router-based mode.
 
     Args:
         device_info: Device information to check, or None.
 
     Returns:
-        True if WiFi Direct mode is needed, False for router-based mode.
+        True if WiFi Direct mode is needed, False for router-based (default).
     """
     if device_info is None:
-        _LOGGER.debug("_needs_wifi_direct_mode: device_info is None, defaulting to router-based mode")
         return False
 
-    # Check wmrm_version first (most reliable indicator)
-    if device_info.wmrm_version == "2.0":
-        _LOGGER.debug(
-            "_needs_wifi_direct_mode: wmrm_version=2.0 detected for %s (%s) - WiFi Direct mode required",
-            device_info.name or "unknown",
-            device_info.model or "unknown",
-        )
-        return True
-
-    if device_info.wmrm_version == "4.2":
-        _LOGGER.debug(
-            "_needs_wifi_direct_mode: wmrm_version=4.2 detected for %s (%s) - router-based mode",
-            device_info.name or "unknown",
-            device_info.model or "unknown",
-        )
-        return False
-
-    # Fallback to firmware version check if wmrm_version not available
-    if device_info.firmware:
-        comparison = compare_firmware_versions(device_info.firmware, FW_MROOM_RTR_MIN)
-        needs_wifi_direct = comparison < 0
-        _LOGGER.debug(
-            "_needs_wifi_direct_mode: firmware=%s, comparison with %s=%d, WiFi Direct=%s for %s (%s)",
-            device_info.firmware,
-            FW_MROOM_RTR_MIN,
-            comparison,
-            needs_wifi_direct,
-            device_info.name or "unknown",
-            device_info.model or "unknown",
-        )
-        return needs_wifi_direct
-
-    # Default to router-based mode if we can't determine
-    _LOGGER.debug(
-        "_needs_wifi_direct_mode: cannot determine mode (no wmrm_version or firmware), "
-        "defaulting to router-based for %s (%s)",
-        device_info.name or "unknown",
-        device_info.model or "unknown",
-    )
-    return False
+    return device_info.needs_wifi_direct_multiroom
 
 
 class GroupAPI:
@@ -466,6 +417,12 @@ class GroupAPI:
         Returns:
             DeviceGroupInfo with role, master info, and slave list (if master).
 
+        Note:
+            For slave devices, `master_host` will typically be None due to a
+            WiiM API limitation - slaves only receive the master's UUID, not
+            its IP address. Use the Player.group object to access the master
+            when you need the full Player reference.
+
         Raises:
             WiiMError: If the request fails.
         """
@@ -476,6 +433,8 @@ class GroupAPI:
         # Get device info to check if we're a slave
         device_host = self.host  # type: ignore[attr-defined]
         device_uuid: str | None = None
+        status: dict | None = None
+        multiroom: dict = {}
         try:
             device_info = await self.get_device_info_model()  # type: ignore[attr-defined]
             group_field = device_info.group or "0"
@@ -483,12 +442,29 @@ class GroupAPI:
             master_ip = device_info.master_ip
             device_uuid = device_info.uuid
         except Exception:
+            device_info = None
             # Fallback to status if device_info fails
             status = await self.get_status()  # type: ignore[attr-defined]
             group_field = status.get("group", "0") or "0"
             master_uuid = status.get("master_uuid")
             master_ip = status.get("master_ip")
             device_uuid = status.get("uuid")
+
+        # Also check multiroom section for master IP (some devices only report it there)
+        # This is important for slave devices that may not have master_ip in device info
+        if status is None:
+            try:
+                status = await self.get_status()  # type: ignore[attr-defined]
+            except Exception:
+                status = {}
+        multiroom = status.get("multiroom", {}) if status else {}
+
+        # Use multiroom.master as fallback for master_ip
+        if not master_ip and multiroom:
+            multiroom_master = multiroom.get("master")
+            if multiroom_master:
+                master_ip = multiroom_master
+                _logger.debug("get_device_group_info: Got master_ip from multiroom section: %s", master_ip)
 
         # Step 1: Check if we're a slave (group != "0" and has master info pointing to another device)
         # Check if master info points to this device (then it's the master, not a slave)
@@ -516,22 +492,17 @@ class GroupAPI:
         # Step 2: Not a slave - check getSlaveList to determine master vs solo
         # First try to get slaves from multiroom status (if available) as optimization
         slaves_from_api: list[str] = []
-        try:
-            status = await self.get_status()  # type: ignore[attr-defined]
-            multiroom = status.get("multiroom", {})
-            if multiroom:
-                # Extract slaves from multiroom status - try slave_list first, then slaves
-                slaves_list = multiroom.get("slave_list", multiroom.get("slaves", []))
-                if isinstance(slaves_list, list):
-                    for item in slaves_list:
-                        if isinstance(item, dict):
-                            ip = item.get("ip", "")
-                            if ip:
-                                slaves_from_api.append(ip)
-                        elif item:
-                            slaves_from_api.append(str(item))
-        except Exception:
-            pass  # Fall back to get_slaves() API call
+        if multiroom:
+            # Extract slaves from multiroom status - try slave_list first, then slaves
+            slaves_list = multiroom.get("slave_list", multiroom.get("slaves", []))
+            if isinstance(slaves_list, list):
+                for item in slaves_list:
+                    if isinstance(item, dict):
+                        ip = item.get("ip", "")
+                        if ip:
+                            slaves_from_api.append(ip)
+                    elif item:
+                        slaves_from_api.append(str(item))
 
         # If no slaves from status, try get_slaves() API call
         if not slaves_from_api:

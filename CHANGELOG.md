@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.50] - 2025-12-07
+
+### Fixed
+- **Gen 1 device multiroom grouping attempt** - Simplified WiFi Direct mode detection to use firmware version (< 4.2.8020) instead of unreliable wmrm_version field. Removed broken compatibility checks that were preventing Gen 1 devices from joining groups.
+- **Improved slave device role detection** - Fixed master IP detection by also checking the `multiroom` section of status response, which some devices use exclusively
+- **Better status endpoint selection for legacy devices** - Added `getPlayerStatus` as fallback for devices (e.g., HCN_BWD03) where `getPlayerStatusEx` isn't supported and `getStatusEx` returns system info instead of player status
+
+### Changed
+- **Faster integration tests** - Removed unnecessary 5-second observation waits from multiroom group tests (saves ~60 seconds per test run)
+- **Cleaner multiroom mode detection** - Moved `needs_wifi_direct_multiroom` property to `DeviceInfo` model for better encapsulation
+
 ## [2.1.49] - 2025-12-07
 
 ### Fixed

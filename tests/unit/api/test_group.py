@@ -416,6 +416,36 @@ class TestGroupAPIDeviceGroupInfo:
         assert len(result.slave_hosts) == 0
 
     @pytest.mark.asyncio
+    async def test_get_device_group_info_slave_fallback_multiroom(self, mock_client):
+        """Test getting device group info as slave with master_ip from multiroom section.
+
+        Some devices only report master IP in the multiroom section, not in device info.
+        This tests the fallback behavior.
+        """
+        mock_status = {
+            "multiroom": {
+                "master": "192.168.1.101",  # Master IP only in multiroom section
+            }
+        }
+        mock_device_info = DeviceInfo(
+            model="WiiM Pro",
+            group="1",
+            master_uuid="master-uuid",
+            master_ip=None,  # master_ip not in device info
+        )
+        mock_client.get_status = AsyncMock(return_value=mock_status)
+        mock_client.get_device_info_model = AsyncMock(return_value=mock_device_info)
+        type(mock_client).host = "192.168.1.100"
+
+        result = await mock_client.get_device_group_info()
+
+        assert isinstance(result, DeviceGroupInfo)
+        assert result.role == "slave"
+        assert result.master_host == "192.168.1.101"  # Should get from multiroom.master
+        assert result.master_uuid == "master-uuid"
+        assert len(result.slave_hosts) == 0
+
+    @pytest.mark.asyncio
     async def test_get_device_group_info_solo(self, mock_client):
         """Test getting device group info when solo."""
         mock_status = {"multiroom": {}}

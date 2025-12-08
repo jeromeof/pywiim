@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, call, patch
 
 import pytest
 
-from pywiim.exceptions import WiiMError, WiiMGroupCompatibilityError
+from pywiim.exceptions import WiiMError
 from pywiim.models import DeviceInfo, PlayerStatus
 
 
@@ -4207,130 +4207,6 @@ class TestPlayerGroupOperations:
             master_wifi_channel=None,
         )
 
-    async def test_join_group_wmrm_version_incompatible_pre_check(
-        self, mock_client, mock_aiohttp_session, mock_capabilities
-    ):
-        """Test joining group when wmrm_version is incompatible (pre-check raises error)."""
-        from pywiim.client import WiiMClient
-        from pywiim.group import Group
-        from pywiim.models import DeviceInfo
-        from pywiim.player import Player
-
-        # Create separate clients for master and slave
-        master_client = WiiMClient(
-            host="192.168.1.100",
-            port=80,
-            session=mock_aiohttp_session,
-            capabilities=mock_capabilities,
-        )
-        master_client._request = AsyncMock(return_value={"status": "ok"})
-
-        slave_client = WiiMClient(
-            host="192.168.1.101",
-            port=80,
-            session=mock_aiohttp_session,
-            capabilities=mock_capabilities,
-        )
-        slave_client._request = AsyncMock(return_value={"status": "ok"})
-
-        master = Player(master_client)
-        slave = Player(slave_client)
-        Group(master)
-
-        # Set device_info with incompatible wmrm_version (2.0 vs 4.2)
-        master._device_info = DeviceInfo(uuid="master-uuid", model="WiiM Pro", wmrm_version="4.2")
-        slave._device_info = DeviceInfo(uuid="slave-uuid", model="Audio Pro A26", wmrm_version="2.0")
-
-        # Mock join_slave to track if it's called
-        slave_client.join_slave = AsyncMock()
-
-        # Should raise WiiMGroupCompatibilityError before attempting to join
-        with pytest.raises(WiiMGroupCompatibilityError) as exc_info:
-            await slave.join_group(master)
-
-        assert "wmrm_version" in str(exc_info.value)
-        assert "2.0" in str(exc_info.value)
-        assert "4.2" in str(exc_info.value)
-        assert exc_info.value.slave_version == "2.0"
-        assert exc_info.value.master_version == "4.2"
-        assert exc_info.value.slave_model == "Audio Pro A26"
-        assert exc_info.value.master_model == "WiiM Pro"
-
-        # Should not have attempted to join
-        slave_client.join_slave.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_join_group_wmrm_version_incompatible_post_check(
-        self, mock_client, mock_player_status, mock_aiohttp_session, mock_capabilities
-    ):
-        """Test joining group when wmrm_version is incompatible (post-check after join fails)."""
-        from pywiim.client import WiiMClient
-        from pywiim.group import Group
-        from pywiim.models import DeviceInfo
-        from pywiim.player import Player
-
-        # Create separate clients for master and slave
-        master_client = WiiMClient(
-            host="192.168.1.100",
-            port=80,
-            session=mock_aiohttp_session,
-            capabilities=mock_capabilities,
-        )
-        master_client._request = AsyncMock(return_value={"status": "ok"})
-
-        slave_client = WiiMClient(
-            host="192.168.1.101",
-            port=80,
-            session=mock_aiohttp_session,
-            capabilities=mock_capabilities,
-        )
-        slave_client._request = AsyncMock(return_value={"status": "ok"})
-
-        master = Player(master_client)
-        slave = Player(slave_client)
-        Group(master)
-
-        # Set device_info with missing wmrm_version initially (will be populated after refresh)
-        master._device_info = DeviceInfo(uuid="master-uuid", model="WiiM Pro", wmrm_version=None)
-        slave._device_info = DeviceInfo(uuid="slave-uuid", model="Audio Pro A26", wmrm_version=None)
-
-        # Mock join_slave
-        slave_client.join_slave = AsyncMock()
-
-        # Store original master device info for assertion
-        original_master_device_info = master._device_info
-
-        # Mock refresh to populate wmrm_version after join attempt
-        async def mock_slave_refresh(full=False):
-            # After refresh, populate wmrm_version (incompatible)
-            slave._device_info = DeviceInfo(uuid="slave-uuid", model="Audio Pro A26", wmrm_version="2.0")
-            master._device_info = DeviceInfo(uuid="master-uuid", model="WiiM Pro", wmrm_version="4.2")
-            slave._detected_role = "solo"  # Join failed, still solo
-            slave._status_model = mock_player_status.model_copy()
-            slave._status_model.group = "0"  # Still solo
-
-        slave.refresh = AsyncMock(side_effect=mock_slave_refresh)
-        master.refresh = AsyncMock()
-
-        # Should raise WiiMGroupCompatibilityError after detecting incompatible versions
-        with pytest.raises(WiiMGroupCompatibilityError) as exc_info:
-            await slave.join_group(master)
-
-        assert "wmrm_version" in str(exc_info.value)
-        assert "2.0" in str(exc_info.value)
-        assert "4.2" in str(exc_info.value)
-        assert exc_info.value.slave_version == "2.0"
-        assert exc_info.value.master_version == "4.2"
-
-        # Should have attempted to join (but it failed)
-        # Note: join_slave was called with the original master device info (before refresh updated it)
-        slave_client.join_slave.assert_called_once_with(
-            master.host,
-            master_device_info=original_master_device_info,
-            master_ssid=None,
-            master_wifi_channel=None,
-        )
-
     @pytest.mark.asyncio
     async def test_join_group_wmrm_version_missing_warning(
         self, mock_client, mock_player_status, mock_aiohttp_session, mock_capabilities
@@ -4400,7 +4276,7 @@ class TestPlayerGroupOperations:
     async def test_join_group_wifi_direct_mode_gen1(
         self, mock_client, mock_player_status, mock_aiohttp_session, mock_capabilities
     ):
-        """Test joining group with WiFi Direct mode for Gen1 devices (wmrm_version 2.0)."""
+        """Test joining group with WiFi Direct mode for legacy firmware devices (< 4.2.8020)."""
         from pywiim.client import WiiMClient
         from pywiim.group import Group
         from pywiim.models import DeviceInfo
@@ -4427,19 +4303,17 @@ class TestPlayerGroupOperations:
         slave = Player(slave_client)
         group = Group(master)
 
-        # Set device_info for Gen1 devices (wmrm_version 2.0) with SSID and channel
+        # Set device_info for legacy firmware devices (< 4.2.8020) with SSID and channel
         master._device_info = DeviceInfo(
             uuid="master-uuid",
             model="Audio Pro A26",
-            wmrm_version="2.0",
-            firmware="4.2.5000",  # Old firmware < 4.2.8020
+            firmware="4.2.5000",  # Old firmware < 4.2.8020 triggers WiFi Direct mode
             ssid="MyWiFiNetwork",
             wifi_channel=6,
         )
         slave._device_info = DeviceInfo(
             uuid="slave-uuid",
             model="Audio Pro A26",
-            wmrm_version="2.0",
             firmware="4.2.5000",
         )
 
@@ -4469,12 +4343,13 @@ class TestPlayerGroupOperations:
         assert slave.group == group
         assert slave in group.slaves
 
-        # Verify join_slave was called with master host and device info
+        # Verify join_slave was called with WiFi Direct info (SSID + channel)
+        # because firmware < 4.2.8020 triggers WiFi Direct mode
         slave_client.join_slave.assert_called_once_with(
             master.host,
             master_device_info=master._device_info,
-            master_ssid=None,
-            master_wifi_channel=None,
+            master_ssid="MyWiFiNetwork",
+            master_wifi_channel=6,
         )
 
         # Note: The actual WiFi Direct mode command format is tested in test_group.py::test_join_slave_wifi_direct_mode

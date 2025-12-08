@@ -11,7 +11,7 @@ from typing import Any
 
 from .. import __version__
 from ..client import WiiMClient
-from ..exceptions import WiiMError
+from ..exceptions import WiiMConnectionError, WiiMError, WiiMRequestError
 from ..models import DeviceInfo
 from ..player import Player
 from ..polling import PollingStrategy
@@ -265,7 +265,18 @@ class PlayerMonitor:
             self.upnp_enabled = False
 
         # Initial refresh (this automatically updates group state via _synchronize_group_state())
-        await self.player.refresh()
+        try:
+            await self.player.refresh()
+        except (WiiMConnectionError, WiiMRequestError) as e:
+            # Device is unreachable or connection failed - provide user-friendly error
+            print(f"\n❌ Cannot connect to device at {self.player.host}")
+            print(f"   Error: {e}")
+            print("\n   Possible causes:")
+            print("   • Device is powered off or unreachable on the network")
+            print("   • Incorrect IP address or hostname")
+            print("   • Network connectivity issues")
+            print("   • Firewall blocking connections")
+            raise  # Re-raise to exit with error code
 
         # Get initial preset count (if supported)
         if self.player.client.capabilities.get("supports_presets", False):
@@ -1447,6 +1458,10 @@ Examples:
         # Print statistics on Ctrl-C
         monitor.print_statistics()
         return 0
+    except (WiiMConnectionError, WiiMRequestError):
+        # Connection errors are already handled in setup() with user-friendly messages
+        # Just exit cleanly without showing traceback
+        return 1
     except Exception as e:
         print(f"\n❌ Fatal error: {e}")
         import traceback

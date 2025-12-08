@@ -247,6 +247,12 @@ class StateManager:
         Note:
             On first refresh (when _last_refresh is None), automatically performs a full refresh
             to ensure all state is populated (device info, EQ presets, audio output, etc.).
+
+        Slave Optimization:
+            For slave devices in multi-room groups, we only fetch device status (getStatusEx),
+            not player status. Playback state (track, position, etc.) comes from the master
+            via propagation. This reduces API calls and avoids issues with devices that don't
+            respond to player status requests when in slave mode.
         """
         # CRITICAL: On startup (first refresh), always do a full refresh
         # This ensures the player is "ready for use" with all properties populated
@@ -256,18 +262,23 @@ class StateManager:
         try:
             await self.player._ensure_upnp_client()
 
-            # Core refresh
+            # Core refresh - behavior depends on role (from previous cycle)
+            # Slaves: getStatusEx (volume, mute, group) - playback comes from master
+            # Masters/Solo: getPlayerStatusEx (full playback state)
             status = await self._refresh_core_status()
+
+            # Device info - only on full refresh or first time (not needed every poll)
             if full or self.player._device_info is None:
                 await self._refresh_device_info()
 
-            # Trigger-based fetching
-            await self._handle_triggers(status)
+            # Trigger-based fetching (skip for slaves - they get data from master)
+            if not self.player.is_slave:
+                await self._handle_triggers(status)
 
-            # Periodic data refresh
+            # Periodic data refresh (skip expensive endpoints for slaves)
             await self._refresh_periodic_data(full, status)
 
-            # Finalize
+            # Finalize (includes role detection for NEXT cycle)
             await self._finalize_refresh()
 
         except Exception as err:
@@ -276,25 +287,77 @@ class StateManager:
     async def _refresh_core_status(self) -> PlayerStatus:
         """Fetch core player status and update state synchronizer.
 
+        For slaves in multi-room groups, we use getStatusEx (device status) instead of
+        getPlayerStatusEx. Playback state (track, position, etc.) comes from the master
+        via propagation. We only need volume/mute/group from slaves.
+
         Returns:
             PlayerStatus model from device.
         """
-        # Tier 1: Always fetch fast status
+        # SLAVE OPTIMIZATION: Use getStatusEx instead of getPlayerStatusEx for slaves
+        # Slaves get playback state from master via propagation. We only need:
+        # - Volume/mute (can be independent per-slave)
+        # - Group membership (to detect if we leave the group)
+        # getStatusEx provides all of this and works on all devices (including HCN_BWD03 slaves)
+        # See: https://github.com/mjcumming/wiim/issues/145
+        if self.player.is_slave:
+            _LOGGER.debug(
+                "Slave device %s - using getStatusEx (playback from master)",
+                self.player.host,
+            )
+            # Use get_status() which calls getStatusEx - works on all devices including slaves
+            status_dict = await self.player.client.get_status()
+
+            # Get existing status model to preserve playback fields from master propagation
+            status = self.player._status_model
+            if status is None:
+                from ..models import PlayerStatus
+
+                status = PlayerStatus.model_construct()  # Empty status, fields populated below
+
+            # Update volume/mute/group from device status (these are slave-specific)
+            if "volume" in status_dict:
+                vol = status_dict.get("volume")
+                if vol is not None:
+                    status.volume = int(vol) if not isinstance(vol, int) else vol
+            if "mute" in status_dict:
+                status.mute = status_dict.get("mute")
+            if "group" in status_dict:
+                status.group = status_dict.get("group")
+
+            # Try UPnP for more accurate volume (slaves can have independent volume)
+            if self.player._upnp_client and self.player._upnp_client.rendering_control:
+                try:
+                    volume_from_upnp = await self.player._upnp_client.get_volume()
+                    mute_from_upnp = await self.player._upnp_client.get_mute()
+                    if volume_from_upnp is not None:
+                        status.volume = volume_from_upnp
+                    if mute_from_upnp is not None:
+                        status.mute = mute_from_upnp
+                except Exception as err:
+                    _LOGGER.debug("UPnP GetVolume failed for slave %s: %s", self.player.host, err)
+
+            self.player._status_model = status
+            self.player._last_refresh = time.time()
+            self.player._available = True
+            return status
+
+        # MASTERS/SOLO: Full player status polling (getPlayerStatusEx)
         status = await self.player.client.get_player_status_model()
 
         # Try UPnP GetVolume first if available, fallback to HTTP
-        volume_from_upnp: int | None = None
-        mute_from_upnp: bool | None = None
+        upnp_volume: int | None = None
+        upnp_mute: bool | None = None
 
         if self.player._upnp_client and self.player._upnp_client.rendering_control:
             try:
-                volume_from_upnp = await self.player._upnp_client.get_volume()
-                mute_from_upnp = await self.player._upnp_client.get_mute()
+                upnp_volume = await self.player._upnp_client.get_volume()
+                upnp_mute = await self.player._upnp_client.get_mute()
                 _LOGGER.debug(
                     "Got volume from UPnP for %s: volume=%s, mute=%s",
                     self.player.client.host,
-                    volume_from_upnp,
-                    mute_from_upnp,
+                    upnp_volume,
+                    upnp_mute,
                 )
             except Exception as err:
                 _LOGGER.debug(
@@ -312,10 +375,10 @@ class StateManager:
                 status_dict[field_name] = None
 
         # Override volume/mute with UPnP values if available (UPnP preferred)
-        if volume_from_upnp is not None:
-            status_dict["volume"] = volume_from_upnp
-        if mute_from_upnp is not None:
-            status_dict["muted"] = mute_from_upnp
+        if upnp_volume is not None:
+            status_dict["volume"] = upnp_volume
+        if upnp_mute is not None:
+            status_dict["muted"] = upnp_mute
 
         self.player._state_synchronizer.update_from_http(status_dict)
 

@@ -68,9 +68,10 @@ default_device: 192.168.1.115
 
 # Default group configuration for multi-device tests
 group:
-  master: 192.168.1.115
+  master: 192.168.6.50
   slaves:
-    - 192.168.1.116
+    - 192.168.6.95
+    - 192.168.6.221
 
 # =============================================================================
 # Test Settings

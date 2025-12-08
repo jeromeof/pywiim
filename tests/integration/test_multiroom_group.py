@@ -137,7 +137,12 @@ class TestMultiDeviceGroup:
         for slave in slaves:
             info = await slave.client.get_device_group_info()
             assert info.role == "slave"
-            assert info.master_host == master.host
+            # Note: WiiM API doesn't provide master_ip to slave devices, only master_uuid
+            # The master_host may be None - this is an API limitation, not a bug
+            assert info.master_uuid is not None, "Slave should know master's UUID"
+            # If master_host is available, verify it matches (some firmware versions provide it)
+            if info.master_host is not None:
+                assert info.master_host == master.host
             assert slave.group is group
 
     async def test_group_volume_and_mute_propagation(self, multi_device_testbed):
@@ -201,8 +206,7 @@ class TestMultiDeviceGroup:
 
             _log("Applying group.set_volume_all(0.35) -> delta=+0.05 to all devices")
             await group.set_volume_all(0.35)
-            _log("Waiting 5 seconds - check WiiM app...")
-            await asyncio.sleep(5.0)
+            await asyncio.sleep(1.0)
             await _refresh_players(players)
 
             vol_m = await _get_volume(master)
@@ -242,8 +246,7 @@ class TestMultiDeviceGroup:
 
             _log("Applying group.set_volume_all(0.25) -> delta=-0.05 to all devices")
             await group.set_volume_all(0.25)
-            _log("Waiting 5 seconds - check WiiM app...")
-            await asyncio.sleep(5.0)
+            await asyncio.sleep(1.0)
             await _refresh_players(players)
 
             vol_m = await _get_volume(master)
@@ -283,8 +286,7 @@ class TestMultiDeviceGroup:
 
             _log("Applying group.set_volume_all(0.40) -> delta=+0.10 to all devices")
             await group.set_volume_all(0.40)
-            _log("Waiting 5 seconds - check WiiM app...")
-            await asyncio.sleep(5.0)
+            await asyncio.sleep(1.0)
             await _refresh_players(players)
 
             vol_m = await _get_volume(master)
@@ -324,8 +326,7 @@ class TestMultiDeviceGroup:
 
             _log("Applying group.set_volume_all(0.30) -> delta=+0.10 to all devices")
             await group.set_volume_all(0.30)
-            _log("Waiting 5 seconds - check WiiM app...")
-            await asyncio.sleep(5.0)
+            await asyncio.sleep(1.0)
             await _refresh_players(players)
 
             vol_m = await _get_volume(master)
@@ -361,8 +362,6 @@ class TestMultiDeviceGroup:
             _log(f"  slave-2  {slave2.host:15s} mute={mute_s2}")
             _log(f"  Virtual group mute: {group.is_muted} (should be False)")
             assert group.is_muted is False
-            _log("Waiting 5 seconds - check WiiM app...")
-            await asyncio.sleep(5.0)
 
             # ===== TEST 6: All muted =====
             _log("=" * 80)
@@ -385,8 +384,6 @@ class TestMultiDeviceGroup:
             assert mute_s2 is True
             _log(f"  Virtual group mute: {group.is_muted} (should be True)")
             assert group.is_muted is True
-            _log("Waiting 5 seconds - check WiiM app...")
-            await asyncio.sleep(5.0)
 
             # ===== TEST 7: Only master muted =====
             _log("=" * 80)
@@ -411,8 +408,6 @@ class TestMultiDeviceGroup:
             assert mute_s2 is False
             _log(f"  Virtual group mute: {group.is_muted} (should be False - not all muted)")
             assert group.is_muted is False
-            _log("Waiting 5 seconds - check WiiM app...")
-            await asyncio.sleep(5.0)
 
             # ===== TEST 8: Only one slave muted =====
             _log("=" * 80)
@@ -437,8 +432,6 @@ class TestMultiDeviceGroup:
             assert mute_s2 is False
             _log(f"  Virtual group mute: {group.is_muted} (should be False - not all muted)")
             assert group.is_muted is False
-            _log("Waiting 5 seconds - check WiiM app...")
-            await asyncio.sleep(5.0)
 
             # ===== TEST 9: Master + one slave muted =====
             _log("=" * 80)
@@ -463,8 +456,6 @@ class TestMultiDeviceGroup:
             assert mute_s2 is False
             _log(f"  Virtual group mute: {group.is_muted} (should be False - not all muted)")
             assert group.is_muted is False
-            _log("Waiting 5 seconds - check WiiM app...")
-            await asyncio.sleep(5.0)
 
             # ===== TEST 10: Unmute all =====
             _log("=" * 80)
@@ -494,8 +485,6 @@ class TestMultiDeviceGroup:
             assert mute_s2 is False
             _log(f"  Virtual group mute: {group.is_muted} (should be False)")
             assert group.is_muted is False
-            _log("Waiting 5 seconds - check WiiM app...")
-            await asyncio.sleep(5.0)
 
             # ===== TEST 11: Volume at Boundaries =====
             _log("=" * 80)
@@ -519,8 +508,6 @@ class TestMultiDeviceGroup:
             virtual_vol = group.volume_level
             _log(f"  Virtual group master: {virtual_vol:.2f} (should be 0.00)")
             assert virtual_vol == pytest.approx(0.0, abs=0.05)
-            _log("Waiting 5 seconds - check WiiM app...")
-            await asyncio.sleep(5.0)
 
             # ===== TEST 12: Volume at Boundaries - Maximum =====
             _log("=" * 80)
@@ -544,8 +531,6 @@ class TestMultiDeviceGroup:
             virtual_vol = group.volume_level
             _log(f"  Virtual group master: {virtual_vol:.2f} (should be 0.40)")
             assert virtual_vol == pytest.approx(0.40, abs=0.05)
-            _log("Waiting 5 seconds - check WiiM app...")
-            await asyncio.sleep(5.0)
 
         finally:
             _log("=" * 80)

@@ -124,26 +124,37 @@ class WiiMCapabilities:
             capabilities["supports_getstatuse"] = False
             _LOGGER.debug("Device %s does not support getStatusEx", client.host)
 
-        # Probe for getPlayerStatusEx support (override static detection)
-        # Some "original" generation devices actually support getPlayerStatusEx
-        # Always probe to verify - if probe succeeds, use getPlayerStatusEx; if it fails, keep static value
+        # Probe for best status endpoint - try in order of preference:
+        # 1. getPlayerStatusEx (enhanced player status - most WiiM devices)
+        # 2. getPlayerStatus (basic player status - some LinkPlay devices like HCN_BWD03)
+        # 3. getStatusEx (device info + player status - fallback)
+        # See: https://github.com/mjcumming/wiim/issues/145
+        status_endpoint = None
+
+        # Try getPlayerStatusEx first
         try:
             raw = await client._request("/httpapi.asp?command=getPlayerStatusEx")
-            # If we get a response, it's supported (even if it's an error dict, the endpoint exists)
-            if isinstance(raw, dict):
+            if isinstance(raw, dict) and _is_valid_player_status(raw):
                 capabilities["supports_player_status_ex"] = True
-                _LOGGER.debug("Device %s supports getPlayerStatusEx (probed, overriding static detection)", client.host)
+                status_endpoint = "/httpapi.asp?command=getPlayerStatusEx"
+                _LOGGER.debug("Device %s supports getPlayerStatusEx", client.host)
         except WiiMError:
-            # Probe failed - if static detection said False, keep it; if it said True, override to False
-            if capabilities.get("supports_player_status_ex", True):
-                capabilities["supports_player_status_ex"] = False
-                _LOGGER.debug(
-                    "Device %s does not support getPlayerStatusEx (probed, overriding static detection)", client.host
-                )
-            else:
-                _LOGGER.debug(
-                    "Device %s does not support getPlayerStatusEx (probe confirmed static detection)", client.host
-                )
+            capabilities["supports_player_status_ex"] = False
+            _LOGGER.debug("Device %s does not support getPlayerStatusEx", client.host)
+
+        # If getPlayerStatusEx failed, try getPlayerStatus
+        if not status_endpoint:
+            try:
+                raw = await client._request("/httpapi.asp?command=getPlayerStatus")
+                if isinstance(raw, dict) and _is_valid_player_status(raw):
+                    status_endpoint = "/httpapi.asp?command=getPlayerStatus"
+                    _LOGGER.debug("Device %s supports getPlayerStatus (using as fallback)", client.host)
+            except WiiMError:
+                _LOGGER.debug("Device %s does not support getPlayerStatus", client.host)
+
+        # Store the best status endpoint (if found, otherwise base.py will use getStatusEx)
+        if status_endpoint:
+            capabilities["status_endpoint"] = status_endpoint
 
         # Probe for getSlaveList support
         try:
@@ -553,6 +564,47 @@ def get_led_command_format(device_info: DeviceInfo) -> str:
         return "arylic"
 
     return "standard"
+
+
+def _is_valid_player_status(response: dict[str, Any]) -> bool:
+    """Check if API response contains valid player status data.
+
+    Some devices (e.g., HCN_BWD03) return system info from getStatusEx instead of
+    player status. This function validates that a response contains actual player
+    status fields.
+
+    Args:
+        response: API response dictionary
+
+    Returns:
+        True if response contains player status fields, False if it's just system info
+    """
+    # Player status should contain at least some of these playback-related fields
+    player_status_fields = {
+        "status",  # Play state (play/pause/stop)
+        "curpos",  # Current position
+        "totlen",  # Total length/duration
+        "Title",  # Track title
+        "Artist",  # Track artist
+        "vol",  # Volume
+        "mute",  # Mute state
+        "mode",  # Playback mode
+        "loop",  # Loop mode
+    }
+
+    # System-only responses typically have these without player fields
+    system_only_fields = {"ssid", "firmware", "build", "project", "language"}
+
+    response_keys = set(response.keys())
+
+    # Check if we have player status fields
+    has_player_fields = bool(response_keys & player_status_fields)
+
+    # If we only have system fields and no player fields, it's not valid player status
+    if not has_player_fields and (response_keys & system_only_fields):
+        return False
+
+    return has_player_fields
 
 
 def get_optimal_polling_interval(

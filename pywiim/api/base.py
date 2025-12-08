@@ -913,28 +913,39 @@ class BaseWiiMClient:
             return {}
 
     async def get_player_status(self) -> dict[str, Any]:
-        """Return parsed output of getPlayerStatusEx with Audio Pro MkII fallback.
+        """Return parsed output of getPlayerStatusEx with device-specific fallbacks.
 
-        Audio Pro MkII devices don't support getPlayerStatusEx, so we use getStatusEx instead.
-        The capability system automatically selects the right endpoint.
+        Endpoint selection is capability-driven:
+        - Standard devices: getPlayerStatusEx
+        - Audio Pro MkII: getStatusEx (doesn't support getPlayerStatusEx)
+        - HCN_BWD03: getPlayerStatus (getStatusEx returns system info, not player status)
+
+        Note: For HCN_BWD03 devices in multi-room mode, Slave devices may not respond to
+        direct status requests. The integration's polling coordinator should handle this
+        by deriving slave status from the Master's group state.
         """
         try:
-            # Check if device supports getPlayerStatusEx (most devices do)
-            if self._capabilities.get("supports_player_status_ex", True):
+            # Select endpoint based on capabilities (no device-specific checks here)
+            endpoint = self._capabilities.get("status_endpoint")
+            if endpoint:
+                # Device has a specific status endpoint configured
+                _LOGGER.debug("Using capability-configured status endpoint: %s", endpoint)
+            elif self._capabilities.get("supports_player_status_ex", True):
                 # Standard devices use getPlayerStatusEx
                 endpoint = "/httpapi.asp?command=getPlayerStatusEx"
             else:
-                # Audio Pro MkII uses getStatusEx instead (from capabilities)
-                endpoint = self._capabilities.get("status_endpoint", "/httpapi.asp?command=getStatusEx")
-                _LOGGER.debug("Using Audio Pro MkII fallback endpoint: %s", endpoint)
+                # Fallback to getStatusEx
+                endpoint = "/httpapi.asp?command=getStatusEx"
+                _LOGGER.debug("Using getStatusEx fallback endpoint")
 
             try:
                 raw = await self._request(endpoint)
                 # Raw HTTP response available for debugging if needed, but not logged
                 # to avoid spam on every poll cycle
             except WiiMRequestError as primary_err:
-                # If getPlayerStatusEx fails (unsupported on some Audio Pro devices), try getStatusEx
-                if endpoint.endswith("getPlayerStatusEx"):
+                # If getPlayerStatusEx fails, try getStatusEx as fallback
+                # Skip fallback if we're already using a specific configured endpoint
+                if not self._capabilities.get("status_endpoint") and endpoint.endswith("getPlayerStatusEx"):
                     fallback_endpoint = "/httpapi.asp?command=getStatusEx"
                     _LOGGER.debug(
                         "Primary status endpoint failed (%s); retrying with fallback %s",

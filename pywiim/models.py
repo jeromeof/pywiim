@@ -72,6 +72,24 @@ class DeviceInfo(_WiimBase):
     ssid: str | None = Field(None, alias="ssid")  # WiFi SSID (needed for WiFi Direct multiroom mode)
     wifi_channel: int | None = Field(None, alias="WifiChannel")  # WiFi channel (needed for WiFi Direct multiroom mode)
 
+    # ---------------- Computed Properties (Multiroom) ----------------
+
+    @property
+    def needs_wifi_direct_multiroom(self) -> bool:
+        """True if this device requires WiFi Direct mode for multiroom grouping.
+
+        Devices with firmware < 4.2.8020 use WiFi Direct mode (older LinkPlay protocol).
+        Modern devices (firmware >= 4.2.8020) use router-based mode.
+
+        This matches the detection logic from the original LinkPlay integration.
+        """
+        if not self.firmware:
+            return False  # Unknown firmware, assume modern
+
+        from .api.firmware import compare_firmware_versions
+
+        return compare_firmware_versions(self.firmware, "4.2.8020") < 0
+
     # ---------------- Validators ----------------
 
     @field_validator("input_list", mode="before")
@@ -313,14 +331,22 @@ class GroupState(BaseModel):
 
 
 class DeviceGroupInfo(BaseModel):
-    """Device's view of its group.
+    """Device's view of its group membership.
 
     Represents what a device knows about its group membership, including
     role, master info, and slave list (if master).
+
+    Note on API limitations:
+        - For **master** devices: All fields are populated.
+        - For **slave** devices: The WiiM API only provides `master_uuid`,
+          NOT `master_ip`. Therefore `master_host` will typically be None
+          for slaves. Use the Player.group object to access the master's
+          IP when working with grouped players.
+        - For **solo** devices: master_* fields are None, slave_* are empty.
     """
 
     role: Literal["solo", "master", "slave"]
-    master_host: str | None = None  # Master IP (if slave or master)
+    master_host: str | None = None  # Master IP (always set for master, often None for slave - API limitation)
     master_uuid: str | None = None  # Master UUID (if slave or master)
     slave_hosts: list[str] = []  # Slave IPs (if master)
     slave_count: int = 0  # Number of slaves (if master)

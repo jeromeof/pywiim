@@ -21,8 +21,6 @@ if TYPE_CHECKING:
     from ..group import Group
     from . import Player
 
-from ..exceptions import WiiMGroupCompatibilityError
-
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -303,7 +301,7 @@ class GroupOperations:
         - If this player is slave: leaves current group first
         - If target is slave: has target leave its group first
         - If target is solo: creates a group on target first
-        - Validates wmrm_version compatibility before attempting to join
+        - Uses WiFi Direct mode for legacy firmware (< 4.2.8020)
 
         This method is idempotent: calling it multiple times with the same target
         is safe and will return success if already in the target group.
@@ -313,9 +311,6 @@ class GroupOperations:
 
         Args:
             master: The player to join (will become or is already the master).
-
-        Raises:
-            WiiMGroupCompatibilityError: If devices have incompatible wmrm_version.
         """
         # Idempotent check: if already in the target master's group, return success (no-op)
         if self.player._group is not None and self.player._group.master is not None:
@@ -352,155 +347,64 @@ class GroupOperations:
             _LOGGER.debug("Target %s is solo, creating group", master.host)
             await GroupOperations(master).create_group()
 
-        # Validate wmrm_version compatibility before attempting to join
         # Ensure device_info is available (refresh if needed)
         if self.player._device_info is None:
-            _LOGGER.debug("Device info not cached for %s, refreshing to check wmrm_version", self.player.host)
+            _LOGGER.debug("Device info not cached for %s, refreshing", self.player.host)
             await self.player.refresh(full=True)
         if master._device_info is None:
-            _LOGGER.debug("Device info not cached for master %s, refreshing to check wmrm_version", master.host)
+            _LOGGER.debug("Device info not cached for master %s, refreshing", master.host)
             await master.refresh(full=True)
 
-        slave_wmrm = self.player._device_info.wmrm_version if self.player._device_info else None
-        master_wmrm = master._device_info.wmrm_version if master._device_info else None
+        slave_info = self.player._device_info
+        master_info = master._device_info
 
-        # Extensive debug logging for Gen1 devices (wmrm_version 2.0)
-        if slave_wmrm == "2.0" or master_wmrm == "2.0":
+        # Check if WiFi Direct mode is needed (firmware < 4.2.8020)
+        use_wifi_direct = (master_info and master_info.needs_wifi_direct_multiroom) or (
+            slave_info and slave_info.needs_wifi_direct_multiroom
+        )
+
+        if use_wifi_direct:
             _LOGGER.info(
-                "Gen1 device detected in join operation: "
-                "slave=%s (wmrm=%s, model=%s, firmware=%s, ssid=%s, channel=%s), "
-                "master=%s (wmrm=%s, model=%s, firmware=%s, ssid=%s, channel=%s)",
+                "WiFi Direct mode required (legacy firmware). " "Slave: %s (firmware=%s), Master: %s (firmware=%s)",
                 self.player.host,
-                slave_wmrm or "unknown",
-                self.player._device_info.model if self.player._device_info else "unknown",
-                self.player._device_info.firmware if self.player._device_info else "unknown",
-                self.player._device_info.ssid if self.player._device_info else "unknown",
-                self.player._device_info.wifi_channel if self.player._device_info else "unknown",
+                slave_info.firmware if slave_info else "unknown",
                 master.host,
-                master_wmrm or "unknown",
-                master._device_info.model if master._device_info else "unknown",
-                master._device_info.firmware if master._device_info else "unknown",
-                master._device_info.ssid if master._device_info else "unknown",
-                getattr(master._device_info, "wifi_channel", None) if master._device_info else "unknown",
+                master_info.firmware if master_info else "unknown",
             )
 
-        # Check compatibility: compare major version numbers only
-        # Extract major version (e.g., "4.2" -> 4, "2.0" -> 2)
-        def get_major_version(version_str: str | None) -> int | None:
-            """Extract major version number from wmrm_version string."""
-            if not version_str:
-                return None
-            try:
-                # Split on '.' and take first part
-                major_str = version_str.split(".")[0]
-                return int(major_str)
-            except (ValueError, AttributeError):
-                return None
-
-        slave_major = get_major_version(slave_wmrm)
-        master_major = get_major_version(master_wmrm)
-
-        # Both versions must be present and have matching major version
-        # Only block if major versions differ (e.g., 2.x vs 4.x)
-        # All 4.x versions (4.2, 4.3, etc.) are compatible with each other
-        if slave_major is not None and master_major is not None and slave_major != master_major:
-            slave_model = self.player._device_info.model if self.player._device_info else None
-            master_model = master._device_info.model if master._device_info else None
-            _LOGGER.debug(
-                "wmrm_version compatibility check: slave_major=%s (from %s), master_major=%s (from %s)",
-                slave_major,
-                slave_wmrm,
-                master_major,
-                master_wmrm,
-            )
-            raise WiiMGroupCompatibilityError(
-                slave_version=slave_wmrm,
-                master_version=master_wmrm,
-                slave_model=slave_model,
-                master_model=master_model,
-            )
-
-        # Log compatibility check result for debugging
-        if slave_major is not None and master_major is not None:
-            _LOGGER.debug(
-                "wmrm_version compatibility check passed: slave=%s (major=%s), master=%s (major=%s)",
-                slave_wmrm,
-                slave_major,
-                master_wmrm,
-                master_major,
-            )
-
-        # If one or both versions are missing, log a warning but proceed
-        # (some devices may not report wmrm_version, but we can't block grouping)
-        if slave_wmrm is None or master_wmrm is None:
-            _LOGGER.warning(
-                "wmrm_version not available for compatibility check: slave=%s, master=%s. "
-                "Proceeding with join attempt, but grouping may fail if versions are incompatible.",
-                slave_wmrm,
-                master_wmrm,
-            )
-
-        # Pass master device info to join_slave() for WiFi Direct mode detection
-        master_device_info = master._device_info
+        # Get WiFi Direct info if needed
         master_ssid: str | None = None
         master_wifi_channel: int | None = None
 
-        if master_device_info is None:
-            _LOGGER.warning(
-                "Master device info not available for %s - join_slave() will use default router-based mode. "
-                "This may fail for Gen1 devices that require WiFi Direct mode.",
-                master.host,
-            )
-        else:
-            # For Gen1 devices (wmrm_version 2.0), we need SSID and WiFi channel for WiFi Direct mode
-            # If not already available in device_info, fetch them from the master device
-            # This follows the pattern from the old Linkplay integration
-            needs_wifi_direct = master_wmrm == "2.0" or (
-                master_wmrm is None and master_device_info.firmware and master_device_info.firmware < "4.2.8020"
-            )
+        if use_wifi_direct and master_info:
+            # Try DeviceInfo first, then fetch from API
+            if master_info.ssid and master_info.wifi_channel:
+                master_ssid = master_info.ssid
+                master_wifi_channel = master_info.wifi_channel
+                _LOGGER.debug(
+                    "Using WiFi Direct info from DeviceInfo: ssid=%s, channel=%s", master_ssid, master_wifi_channel
+                )
+            else:
+                _LOGGER.debug("Fetching WiFi Direct info from master %s", master.host)
+                try:
+                    master_ssid, master_wifi_channel = await master.client.get_wifi_direct_info()
+                    if master_ssid and master_wifi_channel:
+                        _LOGGER.debug("Fetched WiFi Direct info: ssid=%s, channel=%s", master_ssid, master_wifi_channel)
+                    else:
+                        _LOGGER.warning("Failed to get WiFi Direct info from master %s - join may fail", master.host)
+                except Exception as e:
+                    _LOGGER.warning("Failed to fetch WiFi Direct info from master %s: %s", master.host, e)
 
-            if needs_wifi_direct:
-                ssid_from_info = master_device_info.ssid
-                channel_from_info = master_device_info.wifi_channel
-
-                if not ssid_from_info:
-                    # SSID not in DeviceInfo - fetch it from the master device's API
-                    # This is critical for Gen1 devices where DeviceInfo might not have ssid
-                    _LOGGER.debug(
-                        "Gen1 device detected but SSID not in DeviceInfo - fetching from master device %s",
-                        master.host,
-                    )
-                    try:
-                        master_ssid, master_wifi_channel = await master.client.get_wifi_direct_info()
-                        _LOGGER.debug(
-                            "Fetched WiFi Direct info from master: ssid=%s, channel=%s",
-                            master_ssid,
-                            master_wifi_channel,
-                        )
-                    except Exception as e:
-                        _LOGGER.warning(
-                            "Failed to fetch WiFi Direct info from master %s: %s",
-                            master.host,
-                            e,
-                        )
-                else:
-                    _LOGGER.debug(
-                        "Using SSID from DeviceInfo: ssid=%s, channel=%s",
-                        ssid_from_info,
-                        channel_from_info,
-                    )
-
-            _LOGGER.debug(
-                "Passing master device info to join_slave(): wmrm_version=%s, firmware=%s, ssid=%s, channel=%s",
-                master_device_info.wmrm_version or "unknown",
-                master_device_info.firmware or "unknown",
-                master_ssid or master_device_info.ssid or "unknown",
-                master_wifi_channel or master_device_info.wifi_channel or "unknown",
-            )
+        _LOGGER.debug(
+            "Joining: slave=%s -> master=%s (wifi_direct=%s)",
+            self.player.host,
+            master.host,
+            use_wifi_direct,
+        )
 
         await self.player.client.join_slave(
             master.host,
-            master_device_info=master_device_info,
+            master_device_info=master_info,
             master_ssid=master_ssid,
             master_wifi_channel=master_wifi_channel,
         )
@@ -512,67 +416,32 @@ class GroupOperations:
         # Verify the join actually worked by checking device state
         # If still solo, the join failed (but API returned success)
         if self.player.is_solo:
-            # Check if failure might be due to wmrm_version incompatibility
-            # (in case versions weren't available during pre-check)
-            slave_wmrm_after = self.player._device_info.wmrm_version if self.player._device_info else None
-            master_wmrm_after = master._device_info.wmrm_version if master._device_info else None
+            # Re-fetch device info after refresh
+            slave_info_after = self.player._device_info
+            master_info_after = master._device_info
 
-            # Compare major versions, not full version strings (4.2 and 4.3 are compatible)
-            def get_major_version(version_str: str | None) -> int | None:
-                """Extract major version number from wmrm_version string."""
-                if not version_str:
-                    return None
-                try:
-                    major_str = version_str.split(".")[0]
-                    return int(major_str)
-                except (ValueError, AttributeError):
-                    return None
-
-            slave_major_after = get_major_version(slave_wmrm_after)
-            master_major_after = get_major_version(master_wmrm_after)
-
-            if (
-                slave_major_after is not None
-                and master_major_after is not None
-                and slave_major_after != master_major_after
-            ):
-                # Now we know the versions are incompatible (different major versions)
-                slave_model = self.player._device_info.model if self.player._device_info else None
-                master_model = master._device_info.model if master._device_info else None
-                raise WiiMGroupCompatibilityError(
-                    slave_version=slave_wmrm_after,
-                    master_version=master_wmrm_after,
-                    slave_model=slave_model,
-                    master_model=master_model,
-                )
-
-            # Extensive debug logging for Gen1 devices when join fails
-            if slave_wmrm_after == "2.0" or master_wmrm_after == "2.0":
+            # Log detailed error - include WiFi Direct info if that mode was used
+            used_wifi_direct = (slave_info_after and slave_info_after.needs_wifi_direct_multiroom) or (
+                master_info_after and master_info_after.needs_wifi_direct_multiroom
+            )
+            if used_wifi_direct:
                 _LOGGER.error(
-                    "Gen1 device join failed - device %s is still solo after join_slave() returned success. "
-                    "Slave info: wmrm=%s, model=%s, firmware=%s, ssid=%s, channel=%s. "
-                    "Master info: wmrm=%s, model=%s, firmware=%s, ssid=%s, channel=%s. "
-                    "Possible causes: WiFi Direct mode configuration issue, SSID/channel mismatch, "
-                    "network connectivity, or device firmware limitations.",
+                    "WiFi Direct join failed - %s is still solo. "
+                    "Slave: model=%s, firmware=%s. Master: model=%s, firmware=%s, ssid=%s, channel=%s. "
+                    "Possible causes: SSID/channel mismatch, network issue, or incompatible devices.",
                     self.player.host,
-                    slave_wmrm_after or "unknown",
-                    self.player._device_info.model if self.player._device_info else "unknown",
-                    self.player._device_info.firmware if self.player._device_info else "unknown",
-                    self.player._device_info.ssid if self.player._device_info else "unknown",
-                    self.player._device_info.wifi_channel if self.player._device_info else "unknown",
-                    master_wmrm_after or "unknown",
-                    master._device_info.model if master._device_info else "unknown",
-                    master._device_info.firmware if master._device_info else "unknown",
-                    master._device_info.ssid if master._device_info else "unknown",
-                    getattr(master._device_info, "wifi_channel", None) if master._device_info else "unknown",
+                    slave_info_after.model if slave_info_after else "unknown",
+                    slave_info_after.firmware if slave_info_after else "unknown",
+                    master_info_after.model if master_info_after else "unknown",
+                    master_info_after.firmware if master_info_after else "unknown",
+                    master_info_after.ssid if master_info_after else "unknown",
+                    master_info_after.wifi_channel if master_info_after else "unknown",
                 )
             else:
                 _LOGGER.warning(
-                    "join_slave() returned success but device %s is still solo - join may have failed. "
-                    "Possible causes: wmrm_version incompatibility, network issues, or device limitations.",
+                    "join_slave() returned success but %s is still solo - join may have failed.",
                     self.player.host,
                 )
-            # Don't update group state if join failed
             return
 
         if old_group is not None:
