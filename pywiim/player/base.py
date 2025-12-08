@@ -95,8 +95,9 @@ class PlayerBase:
 
             self._upnp_health_tracker = UpnpHealthTracker()
 
-        # Track if we've tried to create UPnP client (to avoid repeated attempts)
-        self._upnp_client_creation_attempted: bool = False
+        # Track last UPnP creation attempt (for retry with cooldown)
+        # 0 = never attempted, >0 = timestamp of last attempt
+        self._last_upnp_attempt: float = 0
 
         # Availability tracking
         self._available: bool = True  # Assume available until proven otherwise
@@ -300,20 +301,21 @@ class PlayerBase:
     async def _ensure_upnp_client(self) -> bool:
         """Lazily create UPnP client if not already present.
 
+        Uses timestamp-based retry with cooldown. If creation fails, will retry
+        after UPNP_RETRY_COOLDOWN seconds (checked by caller in refresh()).
+
         Returns:
             True if UPnP client is available (either existed or was created),
-            False if creation failed or device doesn't support UPnP.
+            False if creation failed (will retry later).
         """
+        import time
+
         # If already exists, return True
         if self._upnp_client is not None:
             return True
 
-        # If we've already tried and failed, don't retry
-        if self._upnp_client_creation_attempted:
-            return False
-
-        # Mark that we're attempting creation
-        self._upnp_client_creation_attempted = True
+        # Update attempt timestamp (caller checks cooldown before calling)
+        self._last_upnp_attempt = time.time()
 
         try:
             from ..upnp.client import UpnpClient
@@ -321,7 +323,7 @@ class PlayerBase:
             # UPnP description URL is typically on port 49152
             description_url = f"http://{self.client.host}:49152/description.xml"
 
-            _LOGGER.debug("Lazily creating UPnP client for %s", self.client.host)
+            _LOGGER.debug("Creating UPnP client for %s", self.client.host)
             # Pass client's session to UPnP client for connection pooling
             # Ensure session exists (client may create it lazily)
             await self.client._ensure_session()
@@ -339,7 +341,7 @@ class PlayerBase:
                 self._upnp_health_tracker = UpnpHealthTracker()
 
             _LOGGER.info(
-                "✅ Auto-created UPnP client for %s: AVTransport=%s, RenderingControl=%s",
+                "✅ UPnP client created for %s: AVTransport=%s, RenderingControl=%s",
                 self.client.host,
                 self._upnp_client.av_transport is not None,
                 self._upnp_client.rendering_control is not None,
@@ -347,11 +349,10 @@ class PlayerBase:
             return True
         except Exception as err:
             _LOGGER.debug(
-                "Failed to auto-create UPnP client for %s: %s (will use HTTP only)",
+                "UPnP client creation failed for %s: %s (will retry in 60s)",
                 self.client.host,
                 err,
             )
-            # Don't set _upnp_client to None - leave it as None so we don't retry
             return False
 
     def __repr__(self) -> str:

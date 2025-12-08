@@ -22,6 +22,14 @@
 
 6. **No made-up solutions** - Do not invent complex logic or "solutions" that aren't explicitly requested. Stick to the design guide and API standards.
 
+7. **Stop and ask when things get complicated** - If something isn't working, doesn't make sense, or seems to require increasingly complex workarounds:
+   - **STOP** - Do not continue hacking together fixes
+   - **Do NOT create new files** as workarounds or "extra documentation"
+   - **Do NOT pile on hack after hack** to make broken code work
+   - **Instead**: Step back, review the design patterns, identify what's actually wrong, and ASK THE USER how to proceed
+   - If you find yourself writing convoluted logic or creating workaround files, that's a signal to stop and ask
+   - A simple question is always better than a complex hack
+
 ## When Implementing
 
 - Check the design guide first (`docs/design/API_DESIGN_PATTERNS.md` and related files)

@@ -322,6 +322,7 @@ class TestPlayerRefresh:
     @pytest.mark.asyncio
     async def test_refresh_lazy_upnp_client_creation(self, mock_client):
         """Test refresh creates UPnP client lazily if not provided."""
+        import asyncio
         from unittest.mock import MagicMock, patch
 
         from pywiim.models import DeviceInfo, PlayerStatus
@@ -347,9 +348,13 @@ class TestPlayerRefresh:
 
             await player.refresh()
 
-            # Should attempt to create UPnP client
+            # UPnP creation is now non-blocking (runs via asyncio.create_task)
+            # Give the background task a chance to complete
+            await asyncio.sleep(0.1)
+
+            # Should attempt to create UPnP client in background
             mock_create.assert_called_once()
-            # UPnP client should be set
+            # UPnP client should be set after background task completes
             assert player._upnp_client is not None
 
     @pytest.mark.asyncio
@@ -4880,7 +4885,8 @@ class TestPlayerCapabilities:
 
             assert result is False
             assert player._upnp_client is None
-            assert player._upnp_client_creation_attempted is True
+            # Last attempt timestamp should be updated (for retry cooldown logic)
+            assert player._last_upnp_attempt > 0
 
 
 class TestPlayerNetworkErrors:

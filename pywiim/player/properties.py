@@ -677,6 +677,8 @@ class PlayerProperties:
             return "AirPlay"
         elif source_lower == "wifi":
             return "WiFi"  # WiFi is the correct capitalization (not WIFI)
+        elif source_lower == "custompushurl":
+            return "URL Stream"  # Device reports this when playing via play_url() API
 
         # Known acronyms that should be all uppercase
         acronyms = {"dlna", "usb", "hdmi", "rssi"}

@@ -98,6 +98,28 @@ def _track_player_method(player: Player, method_name: str) -> tuple[dict[str, in
     return calls, restore
 
 
+def _log_device_states(players: list[Player], label: str = "Current state") -> None:
+    """Log detailed state of all devices."""
+    _log(f"{label}:")
+    for player in players:
+        role = player.role or "unknown"
+        role_flags = []
+        if player.is_master:
+            role_flags.append("is_master")
+        if player.is_slave:
+            role_flags.append("is_slave")
+        if player.is_solo:
+            role_flags.append("is_solo")
+        flags_str = ", ".join(role_flags) if role_flags else "no flags"
+
+        # Get group info if available
+        group_info = ""
+        if player.group:
+            group_info = f", group.size={player.group.size}"
+
+        _log(f"  {player.host:15s} role={role:8s} ({flags_str}){group_info}")
+
+
 @pytest.fixture
 async def multi_device_testbed(multi_device_players):
     """Provide prepared master/slave Player objects for each test."""
@@ -631,3 +653,278 @@ class TestMultiDeviceGroup:
             restore_next()
             restore_prev()
             restore_pause()
+
+
+class TestGroupEdgeCases:
+    """Test edge cases for group formation, dissolution, and migration.
+
+    These tests validate unusual but valid group operations with ALL device
+    permutations to ensure behavior is consistent regardless of which device
+    plays each role.
+
+    With 3 devices (A, B, C), we test:
+    - Each device as master
+    - Each device as slave
+    - Each device as solo that others join
+    """
+
+    async def test_all_devices_can_be_master(self, multi_device_testbed):
+        """Each device can successfully become a master with slaves."""
+        players: list[Player] = multi_device_testbed["all"]
+
+        if len(players) < 2:
+            pytest.skip("Need at least 2 devices")
+
+        _log("=" * 80)
+        _log("TEST: ALL DEVICES CAN BE MASTER")
+        _log(f"Testing {len(players)} devices: {[p.host for p in players]}")
+        _log("=" * 80)
+
+        # Test each device as master
+        for i, potential_master in enumerate(players):
+            # Get other devices as potential slaves
+            other_devices = [p for p in players if p != potential_master]
+            slave = other_devices[0]  # Use first other device as slave
+
+            _log(f"\n--- Round {i + 1}/{len(players)}: {potential_master.host} as MASTER ---")
+
+            # Reset to solo
+            await _force_solo(players)
+            _log_device_states(players, "After reset to solo")
+
+            # Form group with this device as master
+            _log(f"Action: {slave.host}.join_group({potential_master.host})")
+            await slave.join_group(potential_master)
+            _log("Waiting 2s for group to stabilize...")
+            await asyncio.sleep(2.0)
+            await _refresh_players([potential_master, slave])
+
+            _log_device_states([potential_master, slave], "After group formation")
+            assert potential_master.is_master, f"{potential_master.host} should be master, got {potential_master.role}"
+            assert slave.is_slave, f"{slave.host} should be slave, got {slave.role}"
+            _log(f"✓ Round {i + 1} PASSED: {potential_master.host} is master, {slave.host} is slave")
+
+        # Cleanup
+        await _force_solo(players)
+        _log("\n✅ All devices can be master test PASSED")
+
+    async def test_all_devices_can_be_slave(self, multi_device_testbed):
+        """Each device can successfully become a slave."""
+        players: list[Player] = multi_device_testbed["all"]
+
+        if len(players) < 2:
+            pytest.skip("Need at least 2 devices")
+
+        _log("=" * 80)
+        _log("TEST: ALL DEVICES CAN BE SLAVE")
+        _log("=" * 80)
+
+        # Test each device as slave
+        for i, potential_slave in enumerate(players):
+            # Get another device to be master
+            other_devices = [p for p in players if p != potential_slave]
+            master = other_devices[0]
+
+            _log(f"\n--- Round {i + 1}: {potential_slave.host} as SLAVE ---")
+
+            # Reset to solo
+            await _force_solo(players)
+
+            # Form group with this device as slave
+            _log(f"Creating group: {master.host} (master) + {potential_slave.host} (slave)")
+            await potential_slave.join_group(master)
+            await asyncio.sleep(2.0)
+            await _refresh_players([master, potential_slave])
+
+            assert master.is_master, f"{master.host} should be master, got {master.role}"
+            assert potential_slave.is_slave, f"{potential_slave.host} should be slave, got {potential_slave.role}"
+            _log(f"✓ {potential_slave.host} successfully became slave")
+
+        # Cleanup
+        await _force_solo(players)
+        _log("\n✅ All devices can be slave test PASSED")
+
+    async def test_slave_leave_rejoin_all_permutations(self, multi_device_testbed):
+        """Each device can leave as slave and rejoin."""
+        players: list[Player] = multi_device_testbed["all"]
+
+        if len(players) < 2:
+            pytest.skip("Need at least 2 devices")
+
+        _log("=" * 80)
+        _log("TEST: SLAVE LEAVE/REJOIN ALL PERMUTATIONS")
+        _log("=" * 80)
+
+        # Test each device leaving and rejoining
+        for i, slave_device in enumerate(players):
+            other_devices = [p for p in players if p != slave_device]
+            master = other_devices[0]
+
+            _log(f"\n--- Round {i + 1}: {slave_device.host} leaves and rejoins ---")
+
+            # Reset and form group
+            await _force_solo(players)
+            await slave_device.join_group(master)
+            await asyncio.sleep(2.0)
+            await _refresh_players([master, slave_device])
+
+            assert slave_device.is_slave, f"{slave_device.host} should be slave"
+
+            # Leave
+            _log(f"{slave_device.host} leaving group...")
+            await slave_device.leave_group()
+            await asyncio.sleep(2.0)
+            await _refresh_players([master, slave_device])
+
+            assert slave_device.is_solo, f"{slave_device.host} should be solo after leaving, got {slave_device.role}"
+            _log(f"✓ {slave_device.host} is now solo")
+
+            # Rejoin
+            _log(f"{slave_device.host} rejoining {master.host}...")
+            await slave_device.join_group(master)
+            await asyncio.sleep(2.0)
+            await _refresh_players([master, slave_device])
+
+            assert slave_device.is_slave, f"{slave_device.host} should be slave after rejoin, got {slave_device.role}"
+            _log(f"✓ {slave_device.host} successfully rejoined as slave")
+
+        # Cleanup
+        await _force_solo(players)
+        _log("\n✅ Slave leave/rejoin all permutations test PASSED")
+
+    async def test_group_dissolution_all_masters(self, multi_device_testbed):
+        """Each device can disband a group as master."""
+        players: list[Player] = multi_device_testbed["all"]
+
+        if len(players) < 2:
+            pytest.skip("Need at least 2 devices")
+
+        _log("=" * 80)
+        _log("TEST: GROUP DISSOLUTION WITH EACH DEVICE AS MASTER")
+        _log("=" * 80)
+
+        for i, master_device in enumerate(players):
+            slaves = [p for p in players if p != master_device]
+
+            _log(f"\n--- Round {i + 1}: {master_device.host} disbands group ---")
+
+            # Reset and form group
+            await _force_solo(players)
+            await _create_group(master_device, slaves)
+            await _refresh_players(players)
+
+            assert master_device.is_master, f"{master_device.host} should be master"
+            for slave in slaves:
+                assert slave.is_slave, f"{slave.host} should be slave"
+            _log(f"✓ Group formed: {master_device.host} + {len(slaves)} slaves")
+
+            # Disband
+            _log(f"{master_device.host} disbanding group...")
+            await master_device.leave_group()
+            await asyncio.sleep(3.0)
+            await _refresh_players(players)
+
+            for player in players:
+                assert player.is_solo, f"{player.host} should be solo after disband, got {player.role}"
+            _log("✓ All devices are now solo")
+
+        _log("\n✅ Group dissolution all masters test PASSED")
+
+    async def test_solo_joins_solo_all_permutations(self, multi_device_testbed):
+        """Test all pairwise solo+solo->group combinations."""
+        players: list[Player] = multi_device_testbed["all"]
+
+        if len(players) < 2:
+            pytest.skip("Need at least 2 devices")
+
+        _log("=" * 80)
+        _log("TEST: SOLO + SOLO -> GROUP (ALL PAIRS)")
+        _log("=" * 80)
+
+        # Test all pairs (A joins B, B joins A, A joins C, etc.)
+        round_num = 0
+        for joiner in players:
+            for target in players:
+                if joiner == target:
+                    continue
+
+                round_num += 1
+                _log(f"\n--- Round {round_num}: {joiner.host} joins {target.host} ---")
+
+                # Reset to solo
+                await _force_solo(players)
+                await _refresh_players([joiner, target])
+
+                assert joiner.is_solo, f"{joiner.host} should be solo"
+                assert target.is_solo, f"{target.host} should be solo"
+
+                # Join
+                _log(f"{joiner.host} joining {target.host}...")
+                await joiner.join_group(target)
+                await asyncio.sleep(2.0)
+                await _refresh_players([joiner, target])
+
+                assert target.is_master, f"{target.host} should be master, got {target.role}"
+                assert joiner.is_slave, f"{joiner.host} should be slave, got {joiner.role}"
+                _log(f"✓ {target.host}=master, {joiner.host}=slave")
+
+        # Cleanup
+        await _force_solo(players)
+        _log(f"\n✅ Solo + Solo all permutations test PASSED ({round_num} combinations)")
+
+    async def test_slave_migration_all_permutations(self, multi_device_testbed):
+        """Test slave migrating from one master to another (all permutations).
+
+        With 3 devices, tests all 6 permutations of:
+        - Initial master, migrating slave, new master (solo)
+        """
+        players: list[Player] = multi_device_testbed["all"]
+
+        if len(players) < 3:
+            pytest.skip("Need at least 3 devices for slave migration test")
+
+        _log("=" * 80)
+        _log("TEST: SLAVE MIGRATION (ALL PERMUTATIONS)")
+        _log("=" * 80)
+
+        # Generate all permutations of (initial_master, slave, new_master)
+        from itertools import permutations
+
+        round_num = 0
+        for initial_master, migrating_slave, new_master in permutations(players):
+            round_num += 1
+            _log(f"\n--- Round {round_num}: {migrating_slave.host} migrates ---")
+            _log(f"    from {initial_master.host} to {new_master.host}")
+
+            # Reset to solo
+            await _force_solo(players)
+
+            # Create initial group
+            _log(f"Initial group: {initial_master.host} (master) + {migrating_slave.host} (slave)")
+            await _create_group(initial_master, [migrating_slave])
+            await _refresh_players(players)
+
+            assert initial_master.is_master, f"{initial_master.host} should be master"
+            assert migrating_slave.is_slave, f"{migrating_slave.host} should be slave"
+            assert new_master.is_solo, f"{new_master.host} should be solo"
+
+            # Migrate slave to new master
+            _log(f"{migrating_slave.host} joining {new_master.host}...")
+            await migrating_slave.join_group(new_master)
+            await asyncio.sleep(3.0)
+            await _refresh_players(players)
+
+            # Verify new state
+            assert (
+                initial_master.is_solo
+            ), f"{initial_master.host} should be solo after losing slave, got {initial_master.role}"
+            assert new_master.is_master, f"{new_master.host} should be master, got {new_master.role}"
+            assert (
+                migrating_slave.is_slave
+            ), f"{migrating_slave.host} should be slave of new master, got {migrating_slave.role}"
+            _log(f"✓ Migration complete: {initial_master.host}=solo, {new_master.host}=master")
+            _log(f"  {migrating_slave.host}=slave")
+
+        # Cleanup
+        await _force_solo(players)
+        _log(f"\n✅ Slave migration all permutations test PASSED ({round_num} combinations)")

@@ -161,7 +161,14 @@ pytest tests/unit/ -v  # Just run unit tests
 
 ### Multi-Device Group Tests
 
-For group tests, configure master and slaves:
+Group tests validate multiroom functionality with real devices. They test:
+- **Role detection** - master/slave/solo role transitions
+- **Volume/mute propagation** - group volume and mute sync
+- **All device permutations** - each device as master, slave, solo
+
+#### Configuration
+
+Configure master and 2 slaves for comprehensive permutation testing:
 
 ```yaml
 # In tests/devices.yaml
@@ -176,8 +183,77 @@ Or via environment:
 ```bash
 export WIIM_TEST_GROUP_MASTER=192.168.1.115
 export WIIM_TEST_GROUP_SLAVES="192.168.1.116,192.168.1.117"
-pytest tests/integration/ -m groups -v
 ```
+
+#### Running Group Tests
+
+```bash
+# Run all group tests (note: -m integration overrides default filter)
+pytest tests/integration/test_multiroom_group.py -v -m integration --tb=short
+
+# Run only edge case permutation tests
+pytest tests/integration/test_multiroom_group.py::TestGroupEdgeCases -v -m integration --tb=short
+
+# Run a specific test
+pytest tests/integration/test_multiroom_group.py::TestGroupEdgeCases::test_slave_migration_all_permutations -v -m integration --tb=short
+
+# Use -s to see real-time logging output
+pytest tests/integration/test_multiroom_group.py -v -m integration -s --tb=short
+```
+
+> **Note**: The default pytest configuration (`pyproject.toml`) excludes integration tests with `-m 'not integration'`. You must explicitly add `-m integration` to run them.
+
+#### Test Classes
+
+| Class | Description | Device Requirement |
+|-------|-------------|-------------------|
+| `TestMultiDeviceGroup` | Core grouping: role detection, volume/mute propagation | 3 devices (for volume tests) |
+| `TestGroupWithCachedVirtualMaster` | Virtual master behavior and caching | 2+ devices |
+| `TestGroupEdgeCases` | All device permutations for edge cases | 2-3 devices |
+
+#### Edge Case Permutation Tests
+
+With 3 devices, `TestGroupEdgeCases` validates every device in every role:
+
+| Test | What it validates | Permutations |
+|------|-------------------|--------------|
+| `test_all_devices_can_be_master` | Each device can successfully become a group master | 3 |
+| `test_all_devices_can_be_slave` | Each device can successfully become a slave | 3 |
+| `test_slave_leave_rejoin_all_permutations` | Each device can leave as slave and rejoin | 3 |
+| `test_group_dissolution_all_masters` | Each device can disband a group as master | 3 |
+| `test_solo_joins_solo_all_permutations` | All A→B pairwise group formations | 6 (3×2) |
+| `test_slave_migration_all_permutations` | All (M1→S→M2) migration combinations | 6 (3!) |
+
+**Total: ~24 device role combinations tested**
+
+This ensures the grouping code works correctly regardless of which specific device plays each role.
+
+#### Understanding Test Output
+
+Tests emit detailed logs prefixed with `[multiroom-test]`. Example:
+
+```
+[multiroom-test] ================================================================================
+[multiroom-test] TEST: SLAVE MIGRATION (ALL PERMUTATIONS)
+[multiroom-test] ================================================================================
+[multiroom-test] 
+[multiroom-test] --- Round 1: 192.168.1.116 migrates from 192.168.1.115 to 192.168.1.117 ---
+[multiroom-test] Bringing all devices to SOLO state
+[multiroom-test] Refreshing 3 player(s)
+[multiroom-test]   ✓ 192.168.1.115: solo (role verified)
+[multiroom-test]   ✓ 192.168.1.116: solo (role verified)
+[multiroom-test]   ✓ 192.168.1.117: solo (role verified)
+[multiroom-test] Creating group with master 192.168.1.115 and 1 slave(s)
+[multiroom-test] Initial group: 192.168.1.115 (master) + 192.168.1.116 (slave)
+[multiroom-test] ✓ Migration complete: 192.168.1.115=solo, 192.168.1.117=master, 192.168.1.116=slave
+```
+
+#### Troubleshooting
+
+- **Tests deselected**: Add `-m integration` to override the default filter
+- **Timeout errors**: Increase `settings.command_timeout` in `devices.yaml`
+- **Flaky role detection**: Devices need 2-3 seconds to stabilize after group changes
+- **Assertion failures**: Check if device firmware supports the feature being tested
 
 ## Test Quality Guidelines
 

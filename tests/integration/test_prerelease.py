@@ -573,12 +573,12 @@ class TestPreReleaseComprehensive:
             assert cached_mute == device_mute, "Cached mute should match device"
 
         if cached_source is not None and device_source is not None:
-            # Source might be normalized, so check if they match or one contains the other
+            # Source might be normalized/title-cased, so use case-insensitive comparison
+            cached_lower = str(cached_source).lower().replace(" ", "_")
+            device_lower = str(device_source).lower().replace(" ", "_")
             assert (
-                cached_source == device_source
-                or cached_source in str(device_source)
-                or str(device_source) in cached_source
-            ), "Cached source should match device"
+                cached_lower == device_lower or cached_lower in device_lower or device_lower in cached_lower
+            ), f"Cached source '{cached_source}' should match device '{device_source}'"
 
     @pytest.mark.smoke
     async def test_error_handling(self, real_device_player, integration_test_marker):
@@ -1021,9 +1021,11 @@ class TestPreReleaseComprehensive:
                         f"is not available/active (e.g., USB not connected, Bluetooth not paired)."
                     )
                 else:
-                    # Verify new source is valid
-                    assert new_source in sources or any(
-                        alt in str(new_source) or str(new_source) in alt for alt in sources
+                    # Verify new source is valid (case-insensitive comparison)
+                    new_source_lower = str(new_source).lower()
+                    sources_lower = [s.lower() for s in sources]
+                    assert new_source_lower in sources_lower or any(
+                        alt in new_source_lower or new_source_lower in alt for alt in sources_lower
                     ), f"New source '{new_source}' is not in available sources list"
                     print(f"  ✓ Source switched successfully: {new_source}")
 

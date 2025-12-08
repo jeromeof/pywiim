@@ -29,6 +29,9 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# UPnP retry cooldown - wait this many seconds between failed creation attempts
+UPNP_RETRY_COOLDOWN = 60.0
+
 # Standard sources that shouldn't be cleared when checking for multiroom/master names
 STANDARD_SOURCES = {
     "spotify",
@@ -260,7 +263,15 @@ class StateManager:
             full = True
 
         try:
-            await self.player._ensure_upnp_client()
+            # Start UPnP client creation in background (non-blocking)
+            # This avoids blocking refresh() for 5+ seconds during UPnP init.
+            # UPnP will be available for metadata/events once creation completes.
+            # If it fails, we retry after UPNP_RETRY_COOLDOWN seconds.
+            now = time.time()
+            if not self.player._upnp_client:
+                time_since_last_attempt = now - self.player._last_upnp_attempt
+                if time_since_last_attempt >= UPNP_RETRY_COOLDOWN:
+                    asyncio.create_task(self.player._ensure_upnp_client())
 
             # Core refresh - behavior depends on role (from previous cycle)
             # Slaves: getStatusEx (volume, mute, group) - playback comes from master

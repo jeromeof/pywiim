@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.51] - 2025-12-08
+
+### Fixed
+- **Non-blocking UPnP initialization** - UPnP client creation no longer blocks initial player refresh for 5+ seconds on slow-responding devices. Creation now happens in background with automatic retry every 60 seconds until successful.
+- **Source name case-sensitivity in tests** - Fixed integration test assertions to use case-insensitive comparison for source names (device returns lowercase, UI displays title case)
+
+### Added
+- **UPnP debug script** - Added `scripts/debug/test_upnp_support.py` to test UPnP connectivity across all configured devices
+- **Group edge case tests** - Added integration tests for group edge cases: slave leave/rejoin, group dissolution, solo+solo→group, and slave migration to different group
+- **Friendly source name for URL playback** - `custompushurl` (raw API value when playing via `play_url()`) now displays as "URL Stream"
+
 ## [2.1.50] - 2025-12-07
 
 ### Fixed

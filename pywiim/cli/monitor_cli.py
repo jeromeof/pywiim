@@ -1076,13 +1076,8 @@ class PlayerMonitor:
             debug_parts.append(f"slaves={slaves_count}")
             debug_parts.append(f"wmrm={wmrm_ver}")
 
-        # Master info (only shown if slave)
-        if role == "slave":
-            if self.player.device_info:
-                master_ip = self.player.device_info.master_ip or "?"
-                debug_parts.append(f"master_ip={master_ip}")
-            if self.player.group and self.player.group.master:
-                debug_parts.append(f"master_name={self.player.group.master.name or self.player.group.master.host}")
+        # Note: Device API returns master_uuid for slaves, not master_ip
+        # We don't display it here since we already show "👥 Slave of: ..." above
 
         # Slave list (only shown if master with slaves)
         if role == "master":
@@ -1092,11 +1087,10 @@ class PlayerMonitor:
                     slaves_str += f" +{len(self.last_group_info.slave_hosts) - 3}"
                 debug_parts.append(f"slave_hosts=[{slaves_str}]")
 
-        # Player group object status
-        if self.player.group:
+        # Player group object status (only useful in multi-player contexts)
+        # In single-player monitor mode, this is less meaningful
+        if self.player.group and self.player.group.size > 1:
             debug_parts.append(f"group_obj=linked({self.player.group.size})")
-        else:
-            debug_parts.append("group_obj=None")
 
         if debug_parts:
             print(f"🔍 {role.upper()}: {' | '.join(debug_parts)}")
