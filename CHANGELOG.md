@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.52] - 2025-12-13
+
+### Fixed
+- **Slave device status endpoint** - Changed slave devices to use capability-configured status endpoint (`get_player_status()`) instead of hardcoded `get_status()` (which calls `getStatusEx`). This ensures slaves use the same capability-driven endpoint selection as masters, improving consistency and device compatibility. Fixes issue [#145](https://github.com/mjcumming/wiim/issues/145) where HCN_BWD03 devices failed to get status in multiroom mode because `getStatusEx` returns system info instead of player status - slaves now correctly use `getPlayerStatus` via capability detection.
+
 ## [2.1.51] - 2025-12-08
 
 ### Fixed

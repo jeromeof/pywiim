@@ -29,6 +29,7 @@
    - **Instead**: Step back, review the design patterns, identify what's actually wrong, and ASK THE USER how to proceed
    - If you find yourself writing convoluted logic or creating workaround files, that's a signal to stop and ask
    - A simple question is always better than a complex hack
+   - **First check**: "How does similar working code handle this?" (See "Before Adding Special Cases" section)
 
 ## When Implementing
 
@@ -36,6 +37,36 @@
 - Follow existing patterns in the codebase
 - If the design guide says "do X", do X - don't add extra complexity
 - If you're not sure, ask the user
+
+## Before Adding Special Cases or Fixes
+
+**CRITICAL: Always check existing patterns first before adding special cases or fixes.**
+
+1. **Question the problem statement** - Don't assume the problem description is correct
+   - If an issue says "X doesn't work", verify: "Is X using the wrong method/endpoint?"
+   - Check: "Are we using the same pattern that works elsewhere?"
+   - Example: If masters use capability-driven endpoints, slaves should too
+
+2. **Check how similar code paths handle it** - Look at existing working code
+   - Find similar functionality that works correctly
+   - Use the same pattern - don't invent a different approach
+   - Example: If masters use `get_player_status()` (capability-driven), check if slaves should too
+
+3. **Use capabilities consistently** - Capabilities are determined at device init
+   - If one code path uses capability-configured endpoints, similar paths should too
+   - Don't hard-code endpoints when capabilities already provide the right one
+   - Don't add device-specific checks - capabilities handle device differences
+
+4. **Don't add flags or special cases without checking** - Ask first:
+   - "Does the existing pattern already handle this?"
+   - "Why is this code path different from the working one?"
+   - "Can we use the same capability-driven approach?"
+
+5. **If you find yourself adding**:
+   - Device model checks → STOP: Use capabilities instead
+   - Endpoint string comparisons → STOP: Capabilities already provide the endpoint
+   - Special flags for device types → STOP: Check if capabilities already handle it
+   - Different logic for similar code paths → STOP: Make them consistent first
 
 ## Role Detection
 

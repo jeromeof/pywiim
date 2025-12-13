@@ -305,19 +305,13 @@ class StateManager:
         Returns:
             PlayerStatus model from device.
         """
-        # SLAVE OPTIMIZATION: Use getStatusEx instead of getPlayerStatusEx for slaves
+        # SLAVE OPTIMIZATION: Use capability-configured status endpoint for slaves
         # Slaves get playback state from master via propagation. We only need:
         # - Volume/mute (can be independent per-slave)
         # - Group membership (to detect if we leave the group)
-        # getStatusEx provides all of this and works on all devices (including HCN_BWD03 slaves)
-        # See: https://github.com/mjcumming/wiim/issues/145
+
         if self.player.is_slave:
-            _LOGGER.debug(
-                "Slave device %s - using getStatusEx (playback from master)",
-                self.player.host,
-            )
-            # Use get_status() which calls getStatusEx - works on all devices including slaves
-            status_dict = await self.player.client.get_status()
+            status_dict = await self.player.client.get_player_status()
 
             # Get existing status model to preserve playback fields from master propagation
             status = self.player._status_model
