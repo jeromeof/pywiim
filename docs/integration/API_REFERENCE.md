@@ -78,6 +78,11 @@ async def get_player_status_model() -> PlayerStatus:
 
 High-level player interface with state caching and convenient properties.
 
+> **⚠️ CRITICAL for Integrations: Do NOT call `refresh()` manually in entity methods or after commands!**  
+> The library handles state updates automatically via callbacks and UPnP events.  
+> **Only the coordinator should call `refresh()` on schedule** (every 5-10 seconds) to catch external changes.  
+> See [When to Use `refresh()`](#when-to-use-refresh) below for details.
+
 ### Initialization
 
 ```python
@@ -86,8 +91,8 @@ from pywiim import Player, WiiMClient
 client = WiiMClient("192.168.1.100")
 player = Player(client)
 
-# Refresh state cache
-await player.refresh()
+# Initial state fetch (one-time, for scripts without polling)
+await player.refresh()  # Only needed for one-off scripts, not in integrations
 ```
 
 ### Properties
@@ -98,6 +103,8 @@ await player.refresh()
 player.name               # str | None - Device name (e.g., "Living Room")
 player.model              # str | None - Device model (e.g., "WiiM Pro Plus")
 player.firmware           # str | None - Firmware version
+player.firmware_update_available  # bool - True if update is available and ready
+player.latest_firmware_version    # str | None - Latest available firmware version
 player.mac_address        # str | None - MAC address
 player.uuid               # str | None - Device UUID
 player.host               # str - IP/hostname
@@ -155,6 +162,70 @@ player.eq_preset  # str | None
 ```
 
 Current EQ preset name from cached status.
+
+#### Playback Presets (Radio Stations / Saved Favorites)
+
+```python
+player.presets  # list[dict[str, Any]] | None
+# Returns list of preset dictionaries with number, name, url, and picurl fields.
+# Returns None if presets not supported or not available.
+# Automatically fetched by player.refresh() on track change or periodically (every 60s).
+
+player.presets_full_data  # bool
+# True for WiiM devices (can read preset names/URLs via getPresetInfo)
+# False for LinkPlay devices (only preset count available via preset_key)
+
+await player.client.get_max_preset_slots()  # int
+# Returns maximum number of preset slots (6-20, or 0 if not supported)
+# Always available if supports_presets is True
+```
+
+**Device Differences:**
+- **WiiM devices**: `presets_full_data = True` - `getPresetInfo` works, returns full preset data (names, URLs, etc.)
+- **LinkPlay devices**: `presets_full_data = False` - `getPresetInfo` not available, only preset count via `preset_key`
+
+Each preset dictionary contains (when `presets_full_data = True`):
+- `number`: Preset slot number (1-20)
+- `name`: Preset name (e.g., "Radio Paradise", "BBC Radio 1")
+- `url`: Stream URL (may be `None` if not set)
+- `picurl`: Cover art URL (may be `None` if not set)
+
+**Example - WiiM devices (full data):**
+```python
+await player.refresh()  # Presets automatically fetched
+
+if player.supports_presets and player.presets_full_data and player.presets:
+    # Get preset names for source list
+    preset_names = [
+        preset.get("name", f"Preset {preset.get('number')}")
+        for preset in player.presets
+        if preset.get("name")  # Only include presets with names
+    ]
+    # Example: ["Radio Paradise", "BBC Radio 1", ...]
+    
+    # Access individual preset data
+    for preset in player.presets:
+        print(f"Preset {preset['number']}: {preset.get('name', 'Unnamed')}")
+```
+
+**Example - LinkPlay devices (count only):**
+```python
+if player.supports_presets and not player.presets_full_data:
+    # Only count available, not names
+    max_slots = await player.client.get_max_preset_slots()
+    print(f"Device supports {max_slots} preset slots")
+    
+    # Can still play presets by number (1 to max_slots)
+    # But can't show preset names in UI
+    await player.play_preset(1)  # Play preset 1
+```
+
+**Note:** Presets are automatically fetched by `player.refresh()`:
+- On full refresh
+- On track changes (may indicate preset switch)
+- Periodically (every 60 seconds)
+
+**For LinkPlay devices:** `player.presets` will be `None` or empty even if presets are supported. Use `get_max_preset_slots()` to get the count, and play presets by number.
 
 #### Multiroom / Group Role
 
@@ -518,11 +589,24 @@ player.supports_previous_track  # bool - True if previous track is supported
 # Spotify/streaming services have queue_count=0 but next/prev work perfectly.
 ```
 
+#### Device Capabilities
+
+```python
+player.supports_firmware_install  # bool - True if firmware installation via API is supported (WiiM only)
+player.supports_eq                # bool - True if EQ control is supported
+player.supports_presets           # bool - True if presets are supported
+player.presets_full_data          # bool - True if preset names/URLs available (WiiM), False if count only (LinkPlay)
+player.supports_alarms            # bool - True if alarms are supported (WiiM only)
+player.supports_sleep_timer       # bool - True if sleep timer is supported (WiiM only)
+```
+
 ### Methods
 
 ```python
 # State management
 await player.refresh()  # Fetch latest state from device
+# ⚠️ NOTE: In integrations, only call this in coordinator's _async_update_data()
+# See "When to Use refresh()" section below
 
 # Playback control
 await player.play()
@@ -540,6 +624,7 @@ await player.set_shuffle(enabled: bool)  # Preserves repeat state
 # Media playback
 await player.play_url(url: str, enqueue: str = "replace")  # Play URL directly
 await player.play_playlist(playlist_url: str)  # Play M3U playlist
+await player.play_preset(preset: int)  # Play preset by number (1-20)
 await player.play_notification(url: str)  # Play notification (auto volume handling)
 
 # EQ control
@@ -584,7 +669,14 @@ await player.sync_time(ts: int | None = None)
 
 ### When to Use `refresh()`
 
+**⚠️ CRITICAL: Integrations should NOT call `refresh()` manually in general.**
+
 **Command methods do NOT call `refresh()` internally.** State updates happen via UPnP events and coordinator polling in integrations.
+
+**General Rule:**
+- **Integrations**: Only the coordinator's `_async_update_data()` method should call `refresh()` on schedule (every 5-10 seconds)
+- **Entity methods**: Never call `refresh()` or `async_request_refresh()` after commands - state updates happen automatically via callbacks
+- **One-off scripts**: Can call `refresh()` to get initial state or verify changes
 
 #### ✅ Use `refresh()` for:
 
@@ -605,15 +697,27 @@ await player.refresh()
 assert player.volume_level == 0.5
 ```
 
-#### ❌ Don't use `refresh()` after commands in integrations:
+#### ❌ Don't use `refresh()` in integrations (except coordinator):
 
 ```python
-# Integration with coordinator/polling
-await player.play()
-# ❌ await player.refresh()  # Unnecessary!
-# State updates via:
-# - UPnP events (immediate)
-# - Coordinator polling (5-10 seconds)
+# ❌ WRONG - Entity method calling refresh manually
+async def async_media_play(self):
+    await self.coordinator.data["player"].play()
+    await self.coordinator.data["player"].refresh()  # ❌ NO! Unnecessary!
+    # State updates automatically via callback (immediate)
+
+# ✅ CORRECT - Entity method (no refresh needed)
+async def async_media_play(self):
+    await self.coordinator.data["player"].play()
+    # That's it! State updates via:
+    # - Callbacks (immediate, <1ms)
+    # - UPnP events (immediate when available)
+    # - Coordinator polling (5-10 seconds, scheduled)
+
+# ✅ CORRECT - Coordinator's scheduled polling
+async def _async_update_data(self):
+    await self.player.refresh()  # ✅ Only place refresh() should be called
+    return {"player": self.player}
 ```
 
 **See also**: `docs/design/OPERATION_PATTERNS.md` for detailed patterns
@@ -751,6 +855,95 @@ No timing logic, state saving, or manual restoration is needed - the device hand
 - Timer/alarm sounds
 
 This is the recommended approach for integrations that need to play announcements without interrupting the current audio source.
+
+### Firmware Updates
+
+The library provides methods to check for and install firmware updates. Update installation is **only available on WiiM devices** - other devices require manual reboot after an update is downloaded.
+
+#### Checking for Updates
+
+All devices expose firmware update availability through `device_info`:
+
+```python
+# Check if update is available
+if player.firmware_update_available:
+    print(f"Update available: {player.latest_firmware_version}")
+    print(f"Current version: {player.firmware}")
+
+# Access raw fields from device_info
+device_info = player.device_info
+if device_info:
+    print(f"Version update flag: {device_info.version_update}")
+    print(f"Latest version: {device_info.latest_version}")
+```
+
+**Properties:**
+- `player.firmware_update_available: bool` - True if `version_update="1"` (update downloaded and ready)
+- `player.latest_firmware_version: str | None` - Latest available version from `NewVer` field
+- `player.device_info.version_update: str | None` - Raw `VersionUpdate` field from `getStatusEx`
+- `player.device_info.latest_version: str | None` - Raw `NewVer` field from `getStatusEx`
+
+#### Installing Updates (WiiM Devices Only)
+
+WiiM devices support firmware update installation via API:
+
+```python
+# Check if firmware installation is supported
+if player.supports_firmware_install:
+    if player.firmware_update_available:
+        # Start installation (downloads and installs automatically)
+        await player.install_firmware_update()
+        
+        # Monitor download progress
+        download_status = await player.get_update_download_status()
+        print(f"Download status: {download_status}")
+        
+        # Monitor installation progress
+        install_status = await player.get_update_install_status()
+        print(f"Installation progress: {install_status.get('progress')}%")
+else:
+    # Non-WiiM device: reboot to install (if update is ready)
+    if player.firmware_update_available:
+        await player.reboot()
+```
+
+**WiiM-Specific Methods:**
+
+```python
+# Check for updates (WiiM only)
+update_check = await player.check_for_updates_wiim()
+
+# Install update (WiiM only)
+# WARNING: DO NOT POWER OFF THE DEVICE DURING THIS PROCESS!
+await player.install_firmware_update()
+
+# Get download status (WiiM only)
+download_status = await player.get_update_download_status()
+# Returns status codes: 10 (review), 25 (downloading), 27 (complete), 30 (verified)
+
+# Get installation progress (WiiM only)
+install_status = await player.get_update_install_status()
+# Returns: {"status": "0", "progress": "50"} (progress 0-100%)
+```
+
+**Important Notes:**
+- **WiiM devices only**: `install_firmware_update()` and related methods are only available on WiiM devices
+- **Do not power off**: The device must remain powered during installation
+- **Automatic reboot**: Device will reboot automatically after installation completes
+- **Progress tracking**: Use `get_update_download_status()` and `get_update_install_status()` to monitor progress
+- **Other devices**: For non-WiiM devices, use `reboot()` after an update is downloaded
+
+**Capability Check:**
+
+```python
+# Check if device supports firmware installation
+if player.supports_firmware_install:
+    # WiiM device - can install via API
+    await player.install_firmware_update()
+else:
+    # Other device - reboot to install
+    await player.reboot()
+```
 
 ## Models
 

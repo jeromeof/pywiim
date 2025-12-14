@@ -324,24 +324,29 @@ class TestRealDeviceCore:
             pytest.skip("Presets not supported on this device (capability check)")
 
         try:
-            # Get presets (may be None if not available or device doesn't have any)
-            presets = player.presets
-            if presets is not None:
-                assert isinstance(presets, list)
-                if len(presets) > 0:
-                    # Verify preset structure
-                    first_preset = presets[0]
-                    assert isinstance(first_preset, dict)
-                    # Presets should have at least a number or name
-                    assert "number" in first_preset or "name" in first_preset
-                    print(f"\nAvailable Presets: {len(presets)} preset(s)")
-                    # Print first few presets
-                    for preset in presets[:3]:
-                        name = preset.get("name", f"Preset {preset.get('number', '?')}")
-                        print(f"  - {name}")
+            # Verify presets_full_data capability
+            if player.presets_full_data:
+                # WiiM device: Should be able to read preset names
+                print("\nDevice supports full preset data (WiiM)")
+                presets = player.presets
+                if presets:
+                    assert isinstance(presets, list)
+                    for preset in presets:
+                        assert "number" in preset
+                        # Should have name if presets_full_data is True
+                        if preset.get("name"):
+                            print(f"  Preset {preset['number']}: {preset['name']}")
+                    print(f"Available Presets: {len(presets)} preset(s)")
+                else:
+                    print("\nNo presets configured on this device")
             else:
-                # Presets may be None if device doesn't have any configured
-                print("\nNo presets configured on this device")
+                # LinkPlay device: Only count available
+                print("\nDevice supports presets but only count available (LinkPlay)")
+                max_slots = await player.client.get_max_preset_slots()
+                assert max_slots > 0
+                print(f"  Max preset slots: {max_slots}")
+                # player.presets should be None or empty
+                assert player.presets is None or player.presets == []
 
         except Exception as e:
             # If we get here, there's an actual error (not just unsupported)

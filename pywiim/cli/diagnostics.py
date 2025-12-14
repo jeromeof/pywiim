@@ -278,6 +278,14 @@ class DeviceDiagnostics:
                     presets = result.get("presets", [])
                     max_slots = result.get("max_slots", 0)
                     preset_count = result.get("preset_count", 0)
+                    presets_full_data = result.get("presets_full_data", False)
+
+                    # Show capability info
+                    if presets_full_data:
+                        print("      Capability: Full preset data (WiiM) - names and URLs available")
+                    else:
+                        print("      Capability: Count only (LinkPlay) - preset names not available")
+
                     print(f"      Button Presets ({preset_count}/{max_slots} slots used):")
                     if presets:
                         for preset in presets:
@@ -289,7 +297,10 @@ class DeviceDiagnostics:
                             if url and url not in ["unknow", "unknown", ""]:
                                 print(f"                  URL: {url}")
                     else:
-                        print("         (no presets configured)")
+                        if presets_full_data:
+                            print("         (no presets configured)")
+                        else:
+                            print(f"         (preset names not available - can play by number 1-{max_slots})")
                     if max_slots > 0 and preset_count < max_slots:
                         print(f"      Available slots: {max_slots - preset_count}")
             except Exception as err:
@@ -304,11 +315,14 @@ class DeviceDiagnostics:
         try:
             presets = await self.client.get_presets()
             max_slots = await self.client.get_max_preset_slots()
+            # Check if full preset data is available
+            presets_full_data = self.client.capabilities.get("presets_full_data", False)
             return {
                 "supported": True,
                 "preset_count": len(presets),
                 "max_slots": max_slots,
                 "presets": presets,  # Return ALL presets
+                "presets_full_data": presets_full_data,  # Whether names/URLs are available
             }
         except WiiMError:
             return {"supported": False}

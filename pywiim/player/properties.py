@@ -34,6 +34,38 @@ class PlayerProperties:
             return None
         return self.player._device_info.name
 
+    @property
+    def firmware_update_available(self) -> bool:
+        """Whether a firmware update is available and ready to install.
+
+        Returns True if version_update="1" (update downloaded and ready),
+        False otherwise (no update or not ready).
+
+        Note: Updates cannot be installed via API. If an update is available
+        and downloaded, rebooting the device will install it. Use player.reboot()
+        to trigger installation.
+        """
+        if self.player._device_info is None:
+            return False
+        version_update = self.player._device_info.version_update
+        if version_update is None:
+            return False
+        return str(version_update).strip() == "1"
+
+    @property
+    def latest_firmware_version(self) -> str | None:
+        """Latest available firmware version from device info.
+
+        Returns the version string from NewVer field in getStatusEx,
+        or None if not available.
+        """
+        if self.player._device_info is None:
+            return None
+        latest = self.player._device_info.latest_version
+        if latest and str(latest).strip() not in ("0", "-", ""):
+            return str(latest).strip()
+        return None
+
     # === Volume and Mute ===
 
     @property
@@ -1250,6 +1282,18 @@ class PlayerProperties:
         return bool(self.player.client.capabilities.get("supports_presets", False))
 
     @property
+    def presets_full_data(self) -> bool:
+        """Whether preset names/URLs are available (WiiM devices) or only count (LinkPlay devices).
+
+        Returns:
+            True if getPresetInfo works (WiiM devices) - can read preset names, URLs, etc.
+            False if only preset_key available (LinkPlay devices) - only count available via get_max_preset_slots().
+        """
+        if not self.player.client:
+            return False
+        return bool(self.player.client.capabilities.get("presets_full_data", False))
+
+    @property
     def supports_audio_output(self) -> bool:
         """Whether audio output mode control is supported."""
         if not self.player.client:
@@ -1276,6 +1320,13 @@ class PlayerProperties:
         if not self.player.client:
             return False
         return bool(self.player.client.capabilities.get("supports_sleep_timer", False))
+
+    @property
+    def supports_firmware_install(self) -> bool:
+        """Whether firmware update installation via API is supported (WiiM devices only)."""
+        if not self.player.client:
+            return False
+        return bool(self.player.client.capabilities.get("supports_firmware_install", False))
 
     @property
     def supports_led_control(self) -> bool:

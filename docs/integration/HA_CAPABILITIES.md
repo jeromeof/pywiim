@@ -16,6 +16,7 @@ These capabilities are detected via endpoint probing during device initializatio
 |----------|-------------|---------|
 | `player.supports_eq` | EQ control (presets, bands) | Varies |
 | `player.supports_presets` | Playback presets/favorites | Varies |
+| `player.presets_full_data` | Preset names/URLs available (WiiM) vs count only (LinkPlay) | WiiM: True, LinkPlay: False |
 | `player.supports_audio_output` | Audio output mode control | Varies |
 | `player.supports_metadata` | Metadata retrieval (getMetaInfo) | Varies |
 | `player.supports_alarms` | Alarm clock feature | WiiM only |

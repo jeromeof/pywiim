@@ -3046,6 +3046,47 @@ class TestPlayerMediaMetadata:
         assert player.firmware == "5.0.123456"
 
     @pytest.mark.asyncio
+    async def test_firmware_update_properties(self, mock_client):
+        """Test firmware update availability properties from getStatusEx."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        # Test with the specific fixture requested:
+        # firmware="Linkplay.4.8.731953", VersionUpdate="1", NewVer="Linkplay.4.8.738046"
+        device_info = DeviceInfo(
+            uuid="test",
+            firmware="Linkplay.4.8.731953",
+            VersionUpdate="1",
+            NewVer="Linkplay.4.8.738046",
+        )
+        player._device_info = device_info
+
+        # Test raw fields from device_info
+        assert device_info.version_update == "1"
+        assert device_info.latest_version == "Linkplay.4.8.738046"
+
+        # Test convenience properties
+        assert player.firmware_update_available is True
+        assert player.latest_firmware_version == "Linkplay.4.8.738046"
+
+        # Test with no update available
+        device_info_no_update = DeviceInfo(
+            uuid="test",
+            firmware="Linkplay.4.8.731953",
+            VersionUpdate="0",
+            NewVer="Linkplay.4.8.731953",
+        )
+        player._device_info = device_info_no_update
+        assert player.firmware_update_available is False
+        assert player.latest_firmware_version == "Linkplay.4.8.731953"
+
+        # Test with None values
+        device_info_none = DeviceInfo(uuid="test", firmware="Linkplay.4.8.731953")
+        player._device_info = device_info_none
+        assert player.firmware_update_available is False
+        assert player.latest_firmware_version is None
+
+    @pytest.mark.asyncio
     async def test_mac_address_property(self, mock_client):
         """Test getting MAC address property."""
         from pywiim.player import Player
@@ -4687,6 +4728,23 @@ class TestPlayerCapabilities:
 
         mock_client._capabilities["supports_presets"] = False
         assert player.supports_presets is False
+
+    def test_presets_full_data(self, mock_client):
+        """Test presets_full_data property."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        mock_client._capabilities = {
+            "supports_presets": True,
+            "presets_full_data": True,
+        }
+        assert player.presets_full_data is True
+
+        mock_client._capabilities["presets_full_data"] = False
+        assert player.presets_full_data is False
+
+        mock_client._capabilities["supports_presets"] = False
+        assert player.presets_full_data is False
 
     def test_supports_audio_output(self, mock_client):
         """Test supports_audio_output property."""

@@ -105,6 +105,24 @@ class TestPresetAPIGetPresets:
         assert result == []
 
     @pytest.mark.asyncio
+    async def test_get_presets_linkplay_count_only(self, mock_client):
+        """Test that LinkPlay devices return empty list when only count available."""
+        # getPresetInfo fails (LinkPlay limitation)
+        mock_client._request = AsyncMock(side_effect=WiiMRequestError("404 Not Found", endpoint="/api"))
+        mock_client._capabilities = {
+            "supports_presets": True,
+            "presets_full_data": False,
+        }
+
+        result = await mock_client.get_presets()
+
+        # Should return empty list (names not available)
+        assert result == []
+        # Note: get_presets() sets supports_presets to False on 404, but presets_full_data should remain False
+        # The capability detection (in capabilities.py) handles LinkPlay differently by checking preset_key
+        assert mock_client.capabilities["presets_full_data"] is False
+
+    @pytest.mark.asyncio
     async def test_get_presets_non_dict_response(self, mock_client):
         """Test getting presets when response is not a dict."""
         mock_client._request = AsyncMock(return_value=[])

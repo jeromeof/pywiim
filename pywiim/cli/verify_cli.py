@@ -807,7 +807,16 @@ class FeatureTester:
         print("\n⭐ Testing Preset Controls...")
 
         try:
+            # Check capability first
+            presets_full_data = self.client.capabilities.get("presets_full_data", False)
+            if presets_full_data:
+                print("   ℹ️  Capability: Full preset data (WiiM) - names and URLs available")
+            else:
+                print("   ℹ️  Capability: Count only (LinkPlay) - preset names not available")
+
             presets = await self.client.get_presets()
+            max_slots = await self.client.get_max_preset_slots()
+
             if presets:
                 self.results["passed"].append("preset: get_presets")
                 print(f"   ✓ get_presets ({len(presets)} presets)")
@@ -824,6 +833,20 @@ class FeatureTester:
                     except Exception as e:
                         self.results["failed"].append(f"preset: play_preset({preset_num}) - {str(e)}")
                         print(f"   ✗ play_preset({preset_num}): {e}")
+            elif max_slots > 0:
+                # LinkPlay device: presets supported but names not available
+                self.results["passed"].append("preset: get_max_preset_slots")
+                print(f"   ✓ get_max_preset_slots ({max_slots} slots)")
+                print(f"   ℹ️  Preset names not available, but can play presets 1-{max_slots} by number")
+                # Test playing preset 1
+                try:
+                    await self.client.play_preset(1)
+                    await asyncio.sleep(1.0)
+                    self.results["passed"].append("preset: play_preset(1)")
+                    print("   ✓ play_preset(1)")
+                except Exception as e:
+                    self.results["failed"].append(f"preset: play_preset(1) - {str(e)}")
+                    print(f"   ✗ play_preset(1): {e}")
             else:
                 self.results["not_supported"].append("preset: get_presets - no presets available")
                 print("   ⊘ Presets not supported - no presets available")

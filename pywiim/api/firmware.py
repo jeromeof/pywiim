@@ -1,8 +1,12 @@
 """Firmware detection and update checking helpers for WiiM HTTP client.
 
 This mixin handles firmware version detection, parsing, and update availability checking.
-Note: Firmware updates cannot be installed via API - devices only expose availability flags.
-If an update is available and already downloaded, rebooting the device will install it.
+
+Update Installation:
+- Basic LinkPlay devices: Updates cannot be installed via API. If an update is available
+  and already downloaded, rebooting the device will install it.
+- WiiM devices only: Updates can be installed via API using getMvRemoteUpdateStart
+  and related commands. See install_firmware_update() for details.
 
 It assumes the base client provides the `_request` coroutine and device info access.
 """
@@ -11,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+from typing import Any, cast
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -154,11 +158,13 @@ class FirmwareAPI:
     This mixin provides methods for detecting firmware versions, checking for updates,
     and parsing version strings.
 
-    Important Notes:
-    - Firmware updates CANNOT be installed via API
-    - Devices only expose availability flags (version_update, latest_version)
-    - If an update is available and already downloaded, rebooting will install it
-    - Use DiagnosticsAPI.reboot() to trigger installation (if update is ready)
+    Update Installation:
+    - Basic LinkPlay devices: Updates cannot be installed via API. If an update is
+      available and already downloaded, rebooting the device will install it.
+      Use DiagnosticsAPI.reboot() to trigger installation.
+    - WiiM devices only: Updates can be installed via API using install_firmware_update()
+      and related methods. These methods check for updates, download them, and install
+      them automatically. WARNING: Do not power off the device during installation!
     """
 
     async def get_firmware_info(self) -> dict[str, Any]:
@@ -242,12 +248,15 @@ class FirmwareAPI:
             - current_version: Current firmware version
             - latest_version: Latest available version
             - update_ready: True if update is downloaded and ready to install
-            - can_install: True if update can be installed (requires reboot)
+            - can_install: True if update can be installed
 
         Note:
-            Firmware updates cannot be installed via API. If an update is available
-            and downloaded, rebooting the device will install it. Use the reboot()
-            method from DiagnosticsAPI to trigger installation.
+            - Basic LinkPlay devices: If an update is available and downloaded,
+              rebooting the device will install it. Use the reboot() method from
+              DiagnosticsAPI to trigger installation.
+            - WiiM devices only: Use install_firmware_update() to install updates
+              via API. This method checks for updates, downloads them, and installs
+              them automatically.
         """
         firmware_info = await self.get_firmware_info()
         update_available = firmware_info.get("update_available", False)
@@ -291,3 +300,140 @@ class FirmwareAPI:
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("Could not compare firmware versions: %s", err)
             return False
+
+    # === WiiM-Specific Firmware Update Installation ===
+    # These methods are only available on WiiM devices
+
+    async def _ensure_wiim_device(self) -> None:
+        """Ensure device supports firmware installation, raise error if not.
+
+        Uses device capabilities to check if firmware installation is supported.
+        This is only available on WiiM devices.
+
+        Raises:
+            WiiMError: If device does not support firmware installation.
+        """
+        # Check capabilities first (fast path, uses cached capabilities)
+        if hasattr(self, "_capabilities") and self._capabilities:
+            supports_install = self._capabilities.get("supports_firmware_install", False)
+            if supports_install:
+                return  # Device supports firmware installation
+
+        # Fallback: check if device is WiiM (capabilities might not be set yet)
+        # This should rarely happen as capabilities are set during client initialization
+        try:
+            device_info = await self.get_device_info_model()  # type: ignore[attr-defined]
+            from ..capabilities import is_wiim_device
+
+            if not is_wiim_device(device_info):
+                from ..exceptions import WiiMError
+
+                raise WiiMError(
+                    "Firmware update installation is only available on WiiM devices. "
+                    f"Detected device: {device_info.model or 'unknown'}. "
+                    "For other devices, use reboot() after an update is downloaded."
+                )
+        except Exception as err:
+            # If we can't check, assume it's not supported to be safe
+            from ..exceptions import WiiMError
+
+            raise WiiMError(
+                f"Firmware update installation is not supported on this device. "
+                f"Could not verify device capabilities: {err}"
+            ) from err
+
+    async def check_for_updates_wiim(self) -> dict[str, Any]:
+        """Check for firmware updates (WiiM devices only).
+
+        Uses the WiiM-specific getMvRemoteUpdateStartCheck command to search
+        for available firmware updates.
+
+        Returns:
+            Dictionary containing update check results. Exact format depends on device response.
+
+        Raises:
+            WiiMError: If device is not a WiiM device or request fails.
+        """
+        await self._ensure_wiim_device()
+        result = await self._request("/httpapi.asp?command=getMvRemoteUpdateStartCheck")  # type: ignore[attr-defined]
+        return cast(dict[str, Any], result)
+
+    async def install_firmware_update(self) -> None:
+        """Install firmware update (WiiM devices only).
+
+        This method:
+        1. Checks for available updates
+        2. Downloads the update if available
+        3. Installs the update automatically
+
+        WARNING: DO NOT POWER OFF THE DEVICE DURING THIS PROCESS!
+        The device will reboot automatically after installation completes.
+
+        The installation process can take several minutes. The device may become
+        unresponsive during installation. This is normal behavior.
+
+        Raises:
+            WiiMError: If device is not a WiiM device, no update is available,
+                or the installation process fails.
+        """
+        await self._ensure_wiim_device()
+
+        _LOGGER.warning(
+            "Starting firmware update installation on WiiM device. " "DO NOT POWER OFF THE DEVICE DURING THIS PROCESS!"
+        )
+
+        try:
+            # Start the update process (downloads and installs)
+            await self._request("/httpapi.asp?command=getMvRemoteUpdateStart")  # type: ignore[attr-defined]
+            _LOGGER.info("Firmware update installation started. Device will reboot when complete.")
+        except Exception as err:
+            _LOGGER.error("Firmware update installation failed: %s", err)
+            raise
+
+    async def get_update_download_status(self) -> dict[str, Any]:
+        """Get firmware update download status (WiiM devices only).
+
+        Returns the download progress and status of the firmware update process.
+
+        Status values (from OpenAPI docs):
+        - 10: Under review
+        - 20: (unknown)
+        - 21: Verification of downloaded update file failed
+        - 22: Downloading the update file failed
+        - 23: Verification of downloaded update file failed
+        - 25: Start downloading
+        - 27: Download complete
+        - 30: Downloading and verification completed
+
+        Returns:
+            Dictionary containing download status information.
+
+        Raises:
+            WiiMError: If device is not a WiiM device or request fails.
+        """
+        await self._ensure_wiim_device()
+        result = await self._request("/httpapi.asp?command=getMvRemoteUpdateStatus")  # type: ignore[attr-defined]
+        return cast(dict[str, Any], result)
+
+    async def get_update_install_status(self) -> dict[str, Any]:
+        """Get firmware update installation status (WiiM devices only).
+
+        Returns the installation progress and status of the firmware update process.
+
+        Response format (from OpenAPI docs):
+        {
+          "status": "0",  # State code
+          "progress": "50"  # Progress percentage (0-100)
+        }
+
+        Returns:
+            Dictionary containing:
+            - status: Installation state code (string)
+            - progress: Installation progress percentage 0-100 (string)
+
+        Raises:
+            WiiMError: If device is not a WiiM device or request fails.
+        """
+        await self._ensure_wiim_device()
+        result = await self._request("/httpapi.asp?command=getMvRomBurnPrecent")  # type: ignore[attr-defined]
+        return cast(dict[str, Any], result)

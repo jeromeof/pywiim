@@ -401,6 +401,70 @@ class Player(PlayerBase):
         """Reboot the device."""
         await self._diagnostics.reboot()
 
+    # === Firmware Updates (WiiM devices only) ===
+
+    async def check_for_updates_wiim(self) -> dict[str, Any]:
+        """Check for firmware updates (WiiM devices only).
+
+        Uses the WiiM-specific getMvRemoteUpdateStartCheck command to search
+        for available firmware updates.
+
+        Returns:
+            Dictionary containing update check results.
+
+        Raises:
+            WiiMError: If device is not a WiiM device or request fails.
+        """
+        return await self.client.check_for_updates_wiim()
+
+    async def install_firmware_update(self) -> None:
+        """Install firmware update (WiiM devices only).
+
+        This method:
+        1. Checks for available updates
+        2. Downloads the update if available
+        3. Installs the update automatically
+
+        WARNING: DO NOT POWER OFF THE DEVICE DURING THIS PROCESS!
+        The device will reboot automatically after installation completes.
+
+        The installation process can take several minutes. The device may become
+        unresponsive during installation. This is normal behavior.
+
+        Raises:
+            WiiMError: If device is not a WiiM device, no update is available,
+                or the installation process fails.
+        """
+        await self.client.install_firmware_update()
+
+    async def get_update_download_status(self) -> dict[str, Any]:
+        """Get firmware update download status (WiiM devices only).
+
+        Returns the download progress and status of the firmware update process.
+
+        Returns:
+            Dictionary containing download status information.
+
+        Raises:
+            WiiMError: If device is not a WiiM device or request fails.
+        """
+        return await self.client.get_update_download_status()
+
+    async def get_update_install_status(self) -> dict[str, Any]:
+        """Get firmware update installation status (WiiM devices only).
+
+        Returns the installation progress and status of the firmware update process.
+
+        Returns:
+            Dictionary containing:
+            - status: Installation state code (string)
+            - progress: Installation progress percentage 0-100 (string)
+
+        Raises:
+            WiiMError: If device is not a WiiM device or request fails.
+        """
+        return await self.client.get_update_install_status()
+
     # === Playback Control ===
 
     async def set_shuffle(self, enabled: bool) -> None:
@@ -569,6 +633,28 @@ class Player(PlayerBase):
     def device_name(self) -> str | None:
         """Device name from cached device info."""
         return self._properties.device_name
+
+    @property
+    def firmware_update_available(self) -> bool:
+        """Whether a firmware update is available and ready to install.
+
+        Returns True if version_update="1" (update downloaded and ready),
+        False otherwise (no update or not ready).
+
+        Note: Updates cannot be installed via API. If an update is available
+        and downloaded, rebooting the device will install it. Use player.reboot()
+        to trigger installation.
+        """
+        return self._properties.firmware_update_available
+
+    @property
+    def latest_firmware_version(self) -> str | None:
+        """Latest available firmware version from device info.
+
+        Returns the version string from NewVer field in getStatusEx,
+        or None if not available.
+        """
+        return self._properties.latest_firmware_version
 
     @property
     def volume_level(self) -> float | None:
@@ -891,6 +977,16 @@ class Player(PlayerBase):
         return self._properties.supports_presets
 
     @property
+    def presets_full_data(self) -> bool:
+        """Whether preset names/URLs are available (WiiM) or only count (LinkPlay).
+
+        Returns:
+            True if getPresetInfo works (WiiM devices) - can read preset names, URLs, etc.
+            False if only preset_key available (LinkPlay devices) - only count available.
+        """
+        return self._properties.presets_full_data
+
+    @property
     def supports_audio_output(self) -> bool:
         """Whether audio output mode control is supported."""
         return self._properties.supports_audio_output
@@ -909,6 +1005,11 @@ class Player(PlayerBase):
     def supports_sleep_timer(self) -> bool:
         """Whether sleep timer feature is supported."""
         return self._properties.supports_sleep_timer
+
+    @property
+    def supports_firmware_install(self) -> bool:
+        """Whether firmware update installation via API is supported (WiiM devices only)."""
+        return self._properties.supports_firmware_install
 
     @property
     def supports_led_control(self) -> bool:

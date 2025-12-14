@@ -42,6 +42,7 @@ class PlayerMonitor:
         self.last_upnp_event_time: float | None = None
         self._callback_host_override: str | None = None
         self.upnp_health_tracker: UpnpHealthTracker | None = None
+        self.upnp_verbose = False  # Flag to enable verbose UPnP event logging
 
         # Statistics tracking
         self.start_time: float | None = None
@@ -204,10 +205,39 @@ class PlayerMonitor:
                 self.upnp_health_tracker = UpnpHealthTracker()
 
                 # Create wrapper callback to mark UPnP events
-                def upnp_callback():
+                def upnp_callback(event_data: dict[str, Any] | None = None, service_type: str | None = None):
                     # Track that UPnP event was received (even if no state change)
                     self.upnp_event_count += 1
                     self.last_upnp_event_time = time.time()
+
+                    # Log UPnP event reception
+                    _LOGGER.info(
+                        "📡 UPnP event #%d received from %s",
+                        self.upnp_event_count,
+                        self.player.host,
+                    )
+
+                    # Log full event data if verbose mode is enabled
+                    if self.upnp_verbose and event_data is not None:
+                        import json
+
+                        try:
+                            # Format event data as JSON for readability
+                            event_json = json.dumps(event_data, indent=2, default=str)
+                            _LOGGER.info(
+                                "📡 UPnP event #%d full data (service=%s):\n%s",
+                                self.upnp_event_count,
+                                service_type or "Unknown",
+                                event_json,
+                            )
+                        except Exception:
+                            # Fallback to string representation if JSON serialization fails
+                            _LOGGER.info(
+                                "📡 UPnP event #%d full data (service=%s): %s",
+                                self.upnp_event_count,
+                                service_type or "Unknown",
+                                str(event_data),
+                            )
 
                     # Update health tracker with UPnP event data
                     if self.upnp_health_tracker:
@@ -1384,6 +1414,9 @@ Examples:
   # Enable verbose logging for debugging
   wiim-monitor 192.168.1.68 --verbose
   wiim-monitor 192.168.1.68 --log-level DEBUG
+
+  # Enable verbose UPnP event logging (shows full event JSON/XML)
+  wiim-monitor 192.168.1.68 --upnp-verbose
         """,
     )
     parser.add_argument(
@@ -1411,6 +1444,11 @@ Examples:
         action="store_true",
         help="Disable TUI mode (use scrolling log instead of fixed window)",
     )
+    parser.add_argument(
+        "--upnp-verbose",
+        action="store_true",
+        help="Enable verbose UPnP event logging (shows full event JSON/XML data)",
+    )
 
     args = parser.parse_args()
     device_ip = args.device_ip
@@ -1434,6 +1472,7 @@ Examples:
     monitor = PlayerMonitor(player)
     monitor.player._on_state_changed = monitor.on_state_changed  # Set callback
     monitor.use_tui = use_tui  # Set TUI mode preference
+    monitor.upnp_verbose = args.upnp_verbose  # Set UPnP verbose logging flag
 
     # Store callback host override for use in setup
     if callback_host_override:

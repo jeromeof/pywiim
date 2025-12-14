@@ -70,7 +70,7 @@ class UpnpEventer:
         upnp_client: UpnpClient,
         state_manager: Any,  # State manager with apply_diff() method and play_state property
         device_uuid: str,
-        state_updated_callback: Callable[[], None] | None = None,
+        state_updated_callback: Callable[[dict[str, Any], str], None] | Callable[[], None] | None = None,
     ) -> None:
         """Initialize UPnP eventer.
 
@@ -405,7 +405,14 @@ class UpnpEventer:
         # This allows monitor to track that events are being received
         if self.state_updated_callback:
             try:
-                self.state_updated_callback()
+                # Pass event data to callback if it accepts parameters, otherwise call without args
+                import inspect
+
+                sig = inspect.signature(self.state_updated_callback)
+                if len(sig.parameters) > 0:
+                    self.state_updated_callback(variables_dict, service_type)  # type: ignore[call-arg]
+                else:
+                    self.state_updated_callback()  # type: ignore[call-arg]
             except Exception as err:  # noqa: BLE001
                 _LOGGER.debug("Error calling state_updated_callback: %s", err)
 

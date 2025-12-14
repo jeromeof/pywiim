@@ -220,6 +220,9 @@ wiim-monitor 192.168.1.100 --verbose
 
 # Custom log level
 wiim-monitor 192.168.1.100 --log-level DEBUG
+
+# Verbose UPnP event logging (shows full event JSON/XML)
+wiim-monitor 192.168.1.100 --upnp-verbose
 ```
 
 **Options:**
@@ -227,6 +230,7 @@ wiim-monitor 192.168.1.100 --log-level DEBUG
 - `--callback-host <ip>` - Override UPnP callback host (auto-detected by default)
 - `--verbose, -v` - Enable verbose logging
 - `--log-level <level>` - Set log level (DEBUG, INFO, WARNING, ERROR)
+- `--upnp-verbose` - Enable verbose UPnP event logging (shows full event JSON/XML data)
 
 **What it displays:**
 - Play state (playing, paused, stopped)

@@ -689,6 +689,21 @@ async def _async_update_data(self):
             result_idx += 1
 
 
+    # Get preset names for source list (WiiM devices only)
+    preset_names = []
+    max_preset_slots = 0
+    if self.player.supports_presets:
+        if self.player.presets_full_data and self.player.presets:
+            # WiiM devices: Get preset names
+            preset_names = [
+                preset.get("name", f"Preset {preset.get('number')}")
+                for preset in self.player.presets
+                if preset.get("name")  # Only include presets with names
+            ]
+        elif not self.player.presets_full_data:
+            # LinkPlay devices: Only count available, not names
+            max_preset_slots = await self.player.client.get_max_preset_slots()
+    
     # Return data dict for entities (use Player properties)
     return {
         # Player state (from cached properties - already refreshed)
@@ -712,6 +727,9 @@ async def _async_update_data(self):
         "upnp_miss_rate": self.player.upnp_miss_rate,
         "source": self.player.source,
         "available_sources": self.player.available_sources,  # List of selectable input sources (smart detection)
+        "presets": self.player.presets,  # Full preset data (WiiM) or None (LinkPlay)
+        "preset_names": preset_names,  # Preset names for source list (WiiM only)
+        "max_preset_slots": max_preset_slots,  # Preset count (LinkPlay devices)
         "shuffle": self.player.shuffle,
         "repeat": self.player.repeat,
         "eq_preset": self.player.eq_preset,
@@ -722,7 +740,7 @@ async def _async_update_data(self):
     }
 ```
 
-**Note on `source`, `available_sources`, and `eq_presets`:**
+**Note on `source`, `available_sources`, `presets`, and `eq_presets`:**
 
 - **`source`**: Current source name, normalized to Title Case for consistent UI display (e.g., "AirPlay", "Spotify", "Line In", "Bluetooth"). This ensures professional casing in Home Assistant's UI. For comparisons, use `.lower()` (e.g., `player.source.lower() == "airplay"`).
 
@@ -734,6 +752,8 @@ async def _async_update_data(self):
   - **Always excluded**: WiFi (it's the network connection, not a selectable source)
   
   This filtering shows only physical inputs that users can manually select, plus the current source if it's not a physical input (e.g., AirPlay, Spotify, or a multi-room follower name like "Master Bedroom"). This ensures Home Assistant's dropdown shows selectable options while correctly displaying the current state. You can directly use `player.available_sources` without additional filtering.
+
+- **`presets`**: List of playback presets (radio stations, saved favorites) from cached state. Each preset is a dictionary with `number`, `name`, `url`, and `picurl` fields. Automatically fetched by `player.refresh()` on track change or periodically (every 60s). Returns `None` if presets not supported or not available. See [Using Playback Presets](#using-playback-presets) section below for details.
 
 - **`eq_presets`**: List of available EQ preset names from `get_eq_presets()` (e.g., `["Flat", "Rock", "Jazz", ...]`). Fetched every 60 seconds when EQ is supported.
   
@@ -1586,6 +1606,30 @@ class WiiMMediaPlayer(MediaPlayerEntity):
         """List of available input sources."""
         return self.coordinator.data.get("available_sources")
 
+    async def async_select_source(self, source: str) -> None:
+        """Select input source or play preset.
+        
+        Args:
+            source: Source name or preset name to select.
+        """
+        player = self.coordinator.data.get("player")
+        if not player:
+            return
+        
+        # Check if this is a preset name
+        if player.supports_presets and player.presets:
+            # Try to find preset by name
+            for preset in player.presets:
+                preset_name = preset.get("name", f"Preset {preset.get('number')}")
+                if preset_name == source:
+                    # Play preset by number
+                    await player.play_preset(preset["number"])
+                    return
+        
+        # Otherwise, treat as regular source
+        await player.set_source(source)
+        # State updates automatically via callback
+
     async def async_set_shuffle(self, shuffle: bool) -> None:
         """Set shuffle mode on the media player.
         
@@ -1626,6 +1670,133 @@ class WiiMMediaPlayer(MediaPlayerEntity):
                 _LOGGER.warning("Cannot set repeat: %s", e)
                 raise HomeAssistantError(str(e))
 ```
+
+## Using Playback Presets
+
+Playback presets are saved radio stations or favorites that users can quickly access. They're different from EQ presets (sound modes).
+
+### Getting Preset Names
+
+Presets are automatically fetched by `player.refresh()` and available via the `player.presets` property:
+
+**Device Differences:**
+- **WiiM devices**: `player.presets_full_data = True` - Can read preset names, URLs, etc. via `getPresetInfo`
+- **LinkPlay devices**: `player.presets_full_data = False` - Only preset count available via `preset_key`, not names
+
+```python
+async def _async_update_data(self):
+    """HA calls this method at the update_interval."""
+    await self.player.refresh()  # Presets automatically fetched
+    
+    # Get preset names for source list (WiiM devices only)
+    preset_names = []
+    max_preset_slots = 0
+    
+    if self.player.supports_presets:
+        if self.player.presets_full_data and self.player.presets:
+            # WiiM devices: Get preset names
+            preset_names = [
+                preset.get("name", f"Preset {preset.get('number')}")
+                for preset in self.player.presets
+                if preset.get("name")  # Only include presets with names
+            ]
+        elif not self.player.presets_full_data:
+            # LinkPlay devices: Only count available, not names
+            max_preset_slots = await self.player.client.get_max_preset_slots()
+            # Can't show preset names, but can still play by number (1 to max_preset_slots)
+    
+    return {
+        "player": self.player,
+        "available_sources": self.player.available_sources,
+        "presets": self.player.presets,  # Full preset data (WiiM) or None (LinkPlay)
+        "preset_names": preset_names,  # Preset names for source list (WiiM only)
+        "max_preset_slots": max_preset_slots,  # Preset count (LinkPlay devices)
+        # ... other data
+    }
+```
+
+### Including Presets in Source List
+
+To show presets in Home Assistant's source dropdown:
+
+**WiiM devices (with preset names):**
+```python
+@property
+def source_list(self) -> list[str] | None:
+    """List of available input sources and presets."""
+    sources = self.coordinator.data.get("available_sources", []) or []
+    preset_names = self.coordinator.data.get("preset_names", []) or []
+    return sources + preset_names  # Combine sources and presets
+```
+
+**LinkPlay devices (count only, no names):**
+```python
+@property
+def source_list(self) -> list[str] | None:
+    """List of available input sources."""
+    # LinkPlay devices: Can't show preset names, only count available
+    # Users can still play presets by number via play_preset() service
+    return self.coordinator.data.get("available_sources", []) or []
+```
+
+### Playing a Preset
+
+Use `play_preset()` to play a preset by number:
+
+```python
+async def async_select_source(self, source: str) -> None:
+    """Select input source or play preset."""
+    player = self.coordinator.data.get("player")
+    if not player:
+        return
+    
+    # Check if this is a preset name
+    if player.supports_presets and player.presets:
+        for preset in player.presets:
+            preset_name = preset.get("name", f"Preset {preset.get('number')}")
+            if preset_name == source:
+                # Play preset by number
+                await player.play_preset(preset["number"])
+                # State updates automatically via callback
+                return
+    
+    # Otherwise, treat as regular source
+    await player.set_source(source)
+    # State updates automatically via callback
+```
+
+### Preset Data Structure
+
+**WiiM devices (`presets_full_data = True`):**
+Each preset dictionary contains:
+- `number`: Preset slot number (1-20)
+- `name`: Preset name (e.g., "Radio Paradise", "BBC Radio 1")
+- `url`: Stream URL (may be `None` if not set)
+- `picurl`: Cover art URL (may be `None` if not set)
+
+**Example:**
+```python
+presets = player.presets
+# [
+#     {"number": 1, "name": "Radio Paradise", "url": "http://...", "picurl": "http://..."},
+#     {"number": 2, "name": "BBC Radio 1", "url": "http://...", "picurl": None},
+#     ...
+# ]
+```
+
+**LinkPlay devices (`presets_full_data = False`):**
+- `player.presets` returns `None` or empty list (names not available)
+- Use `await player.client.get_max_preset_slots()` to get count (e.g., 6, 20)
+- Can still play presets by number: `await player.play_preset(1)` through `await player.play_preset(max_slots)`
+
+### Automatic Fetching
+
+Presets are automatically fetched by `player.refresh()`:
+- On full refresh
+- On track changes (may indicate preset switch)
+- Periodically (every 60 seconds)
+
+**No manual fetching needed** - just use `player.presets` after the coordinator's scheduled refresh.
 
 ## Audio Output Selection
 
@@ -2004,6 +2175,126 @@ if miss_rate is not None:
 ```
 
 **Important**: These properties are included in the coordinator data automatically when you include them in your `_async_update_data()` method (see example in "Coordinator Implementation" section above).
+
+### Firmware Update Entity
+
+Home Assistant's `UpdateEntity` can be used to expose firmware update availability and installation:
+
+```python
+from homeassistant.components.update import UpdateEntity, UpdateEntityFeature
+from homeassistant.const import ATTR_INSTALLED_VERSION, ATTR_LATEST_VERSION
+
+class WiiMFirmwareUpdate(UpdateEntity):
+    """Firmware update entity for WiiM devices."""
+
+    def __init__(self, coordinator):
+        self.coordinator = coordinator
+        player = coordinator.data.get("player")
+        self._attr_unique_id = f"{coordinator.entry_id}_firmware_update"
+        self._attr_name = f"{player.name or player.host} Firmware Update"
+        self._attr_supported_features = UpdateEntityFeature.INSTALL
+        if player.supports_firmware_install:
+            self._attr_supported_features |= UpdateEntityFeature.PROGRESS
+
+    @property
+    def installed_version(self) -> str | None:
+        """Return the installed firmware version."""
+        player = self.coordinator.data.get("player")
+        return player.firmware
+
+    @property
+    def latest_version(self) -> str | None:
+        """Return the latest available firmware version."""
+        player = self.coordinator.data.get("player")
+        return player.latest_firmware_version
+
+    @property
+    def release_summary(self) -> str | None:
+        """Return release summary."""
+        if not self.available:
+            return None
+        if self.latest_version and self.installed_version:
+            return f"Update from {self.installed_version} to {self.latest_version}"
+        return None
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        player = self.coordinator.data.get("player")
+        return (
+            self.coordinator.last_update_success
+            and player is not None
+            and player.firmware is not None
+        )
+
+    async def async_install(self, version: str | None, backup: bool) -> None:
+        """Install the firmware update.
+        
+        Args:
+            version: Version to install (ignored, uses latest available)
+            backup: Whether to backup before install (ignored, device handles this)
+        """
+        player = self.coordinator.data.get("player")
+        if not player:
+            raise RuntimeError("Player not available")
+        
+        if player.supports_firmware_install:
+            # WiiM device: install via API
+            await player.install_firmware_update()
+        else:
+            # Other device: reboot to install (if update is ready)
+            if player.firmware_update_available:
+                await player.reboot()
+            else:
+                raise RuntimeError("No update available or not ready to install")
+
+    @property
+    def in_progress(self) -> bool | None:
+        """Return if update is in progress (WiiM devices only)."""
+        player = self.coordinator.data.get("player")
+        if not player or not player.supports_firmware_install:
+            return None
+        
+        # Check installation status (would need to be cached in coordinator)
+        # For now, return None (unknown)
+        return None
+
+    @property
+    def device_info(self):
+        """Return device information."""
+        return {
+            "identifiers": {("wiim", self.coordinator.entry_id)},
+            "name": self.coordinator.data.get("player").name,
+            "manufacturer": "WiiM",
+            "model": self.coordinator.data.get("player").model,
+        }
+```
+
+**Key Points:**
+- Use `player.firmware_update_available` to determine if update is available
+- Use `player.latest_firmware_version` for the latest version
+- Use `player.supports_firmware_install` to check if API installation is supported
+- For WiiM devices: `async_install()` calls `player.install_firmware_update()`
+- For other devices: `async_install()` calls `player.reboot()` (if update is ready)
+- The entity automatically updates when `coordinator.data` is refreshed
+
+**Coordinator Data:**
+
+Include firmware update info in coordinator data:
+
+```python
+async def _async_update_data(self):
+    """HA calls this method at the update_interval."""
+    await self.player.refresh()
+    
+    return {
+        "player": self.player,
+        "firmware_update_available": self.player.firmware_update_available,
+        "latest_firmware_version": self.player.latest_firmware_version,
+        "installed_firmware_version": self.player.firmware,
+        "supports_firmware_install": self.player.supports_firmware_install,
+    }
+```
 
 ### Accessing Group Information in Entities
 

@@ -718,21 +718,31 @@ class TestPreReleaseComprehensive:
                         except (ValueError, TypeError):
                             continue
 
-            # If no preset found in list, but device supports presets (via preset_key),
-            # try to get max slots and test with preset 1
+            # If no preset found in list, check if device only supports count (LinkPlay)
             if test_preset is None:
-                try:
-                    max_slots = await player.client.get_max_preset_slots()
-                    if max_slots > 0:
-                        # Device supports presets but we can't read names (getPresetInfo failed)
-                        # Test with preset 1 (should be valid if device supports presets)
-                        test_preset = 1
-                        print(f"  Device supports {max_slots} preset slots (preset_key), but preset names unavailable")
-                        print(f"  Testing playback of preset {test_preset} (by number)")
-                    else:
-                        pytest.skip("No presets configured on this device and max_slots is 0")
-                except Exception as e:
-                    pytest.skip(f"Could not determine preset slots: {e}")
+                if not player.presets_full_data:
+                    # LinkPlay device: Only count available, use preset 1
+                    print("  Device supports presets but only count available (LinkPlay)")
+                    try:
+                        max_slots = await player.client.get_max_preset_slots()
+                        if max_slots > 0:
+                            test_preset = 1
+                            print(f"  Testing with preset {test_preset} (max slots: {max_slots})")
+                        else:
+                            pytest.skip("No preset slots available")
+                    except Exception as e:
+                        pytest.skip(f"Could not determine preset slots: {e}")
+                else:
+                    # WiiM device but no presets configured
+                    try:
+                        max_slots = await player.client.get_max_preset_slots()
+                        if max_slots > 0:
+                            # Device supports presets but none configured
+                            pytest.skip(f"Device supports {max_slots} preset slots but none are configured")
+                        else:
+                            pytest.skip("No presets configured on this device and max_slots is 0")
+                    except Exception as e:
+                        pytest.skip(f"Could not determine preset slots: {e}")
 
             if test_preset is None:
                 pytest.skip("No valid preset numbers found in preset list")

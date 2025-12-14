@@ -195,6 +195,8 @@ class WiiMCapabilities:
         try:
             await client._request("/httpapi.asp?command=getPresetInfo")
             capabilities["supports_presets"] = True
+            capabilities["presets_full_data"] = True  # WiiM devices: can read preset names/URLs
+            _LOGGER.debug("Device %s supports presets with full data (getPresetInfo available)", client.host)
         except WiiMError:
             # Fallback: check if preset_key indicates preset support
             # preset_key > 0 means device supports presets (even if we can't read names)
@@ -203,21 +205,26 @@ class WiiMCapabilities:
                     preset_key_int = int(device_info.preset_key)
                     if preset_key_int > 0:
                         capabilities["supports_presets"] = True
+                        capabilities["presets_full_data"] = False  # LinkPlay devices: only count available
                         _LOGGER.debug(
-                            "Device %s supports presets (fallback: preset_key=%d, getPresetInfo not available)",
+                            "Device %s supports presets (fallback: preset_key=%d, "
+                            "getPresetInfo not available - count only)",
                             client.host,
                             preset_key_int,
                         )
                     else:
                         capabilities["supports_presets"] = False
+                        capabilities["presets_full_data"] = False
                         _LOGGER.debug("Device %s does not support presets (preset_key=%d)", client.host, preset_key_int)
                 except (TypeError, ValueError):
                     # Invalid preset_key value, assume no support
                     capabilities["supports_presets"] = False
+                    capabilities["presets_full_data"] = False
                     _LOGGER.debug("Device %s does not support getPresetInfo (invalid preset_key)", client.host)
             else:
                 # No preset_key available, assume no support
                 capabilities["supports_presets"] = False
+                capabilities["presets_full_data"] = False
                 _LOGGER.debug("Device %s does not support getPresetInfo (no preset_key)", client.host)
 
         # Probe for EQ support (read-only probe)
@@ -302,6 +309,7 @@ def detect_device_capabilities(device_info: DeviceInfo) -> dict[str, Any]:
         - supports_audio_output: Whether device supports audio output control
         - supports_alarms: Whether device supports alarm clocks (WiiM only)
         - supports_sleep_timer: Whether device supports sleep timer (WiiM only)
+        - supports_firmware_install: Whether device supports firmware update installation via API (WiiM only)
         - max_alarm_slots: Number of alarm slots supported (3 for WiiM, 0 otherwise)
         - response_timeout: Recommended timeout in seconds
         - retry_count: Recommended retry count
@@ -348,6 +356,7 @@ def detect_device_capabilities(device_info: DeviceInfo) -> dict[str, Any]:
         capabilities["supports_alarms"] = True  # WiiM devices support alarm clocks
         capabilities["supports_sleep_timer"] = True  # WiiM devices support sleep timer
         capabilities["max_alarm_slots"] = 3  # WiiM supports 3 independent alarms
+        capabilities["supports_firmware_install"] = True  # WiiM devices support firmware update installation via API
     elif capabilities["is_legacy_device"]:
         # Apply Audio Pro generation specific optimizations ONLY for Audio Pro devices
         # Other legacy devices (e.g., Arylic) should use defaults or be probed

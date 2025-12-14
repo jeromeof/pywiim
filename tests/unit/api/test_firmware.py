@@ -198,3 +198,153 @@ class TestFirmwareAPI:
 
         result = await client.is_firmware_version_at_least("6.0")
         assert result is False
+
+    @pytest.mark.asyncio
+    async def test_ensure_wiim_device_with_capabilities(self, mock_client):
+        """Test _ensure_wiim_device with capabilities set."""
+        from pywiim.models import DeviceInfo
+
+        device_info = DeviceInfo(uuid="test", model="WiiM Pro", firmware="5.0.1")
+        mock_client.get_device_info_model = AsyncMock(return_value=device_info)
+        mock_client._request = AsyncMock()
+
+        class TestClient(FirmwareAPI):
+            def __init__(self):
+                self._capabilities = {"supports_firmware_install": True}
+
+            async def get_device_info_model(self):
+                return device_info
+
+            async def _request(self, endpoint):
+                return {}
+
+        client = TestClient()
+        # Should not raise (capabilities indicate support)
+        await client._ensure_wiim_device()
+
+    @pytest.mark.asyncio
+    async def test_ensure_wiim_device_not_supported(self, mock_client):
+        """Test _ensure_wiim_device raises error for non-WiiM device."""
+        from pywiim.exceptions import WiiMError
+        from pywiim.models import DeviceInfo
+
+        device_info = DeviceInfo(uuid="test", model="Arylic H50", firmware="4.6.1")
+        mock_client.get_device_info_model = AsyncMock(return_value=device_info)
+
+        class TestClient(FirmwareAPI):
+            def __init__(self):
+                self._capabilities = {"supports_firmware_install": False}
+
+            async def get_device_info_model(self):
+                return device_info
+
+            async def _request(self, endpoint):
+                return {}
+
+        client = TestClient()
+
+        with pytest.raises(WiiMError, match="Firmware update installation is only available"):
+            await client._ensure_wiim_device()
+
+    @pytest.mark.asyncio
+    async def test_check_for_updates_wiim(self, mock_client):
+        """Test check_for_updates_wiim on WiiM device."""
+        from pywiim.models import DeviceInfo
+
+        device_info = DeviceInfo(uuid="test", model="WiiM Pro", firmware="5.0.1")
+        mock_client.get_device_info_model = AsyncMock(return_value=device_info)
+        mock_client._request = AsyncMock(return_value={"status": "ok"})
+
+        class TestClient(FirmwareAPI):
+            def __init__(self):
+                self._capabilities = {"supports_firmware_install": True}
+
+            async def get_device_info_model(self):
+                return device_info
+
+            async def _request(self, endpoint):
+                return {"status": "ok", "update_available": True}
+
+        client = TestClient()
+        result = await client.check_for_updates_wiim()
+
+        assert isinstance(result, dict)
+        assert result["status"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_install_firmware_update(self, mock_client):
+        """Test install_firmware_update on WiiM device."""
+        from pywiim.models import DeviceInfo
+
+        device_info = DeviceInfo(uuid="test", model="WiiM Pro", firmware="5.0.1")
+        request_mock = AsyncMock(return_value="OK")
+
+        class TestClient(FirmwareAPI):
+            def __init__(self):
+                self._capabilities = {"supports_firmware_install": True}
+                self._request_called = False
+
+            async def get_device_info_model(self):
+                return device_info
+
+            async def _request(self, endpoint):
+                self._request_called = True
+                return await request_mock(endpoint)
+
+        client = TestClient()
+        await client.install_firmware_update()
+
+        # Verify request was made
+        assert client._request_called
+        assert request_mock.called
+
+    @pytest.mark.asyncio
+    async def test_get_update_download_status(self, mock_client):
+        """Test get_update_download_status on WiiM device."""
+        from pywiim.models import DeviceInfo
+
+        device_info = DeviceInfo(uuid="test", model="WiiM Pro", firmware="5.0.1")
+        mock_client.get_device_info_model = AsyncMock(return_value=device_info)
+        mock_client._request = AsyncMock(return_value={"status": "27", "progress": "100"})
+
+        class TestClient(FirmwareAPI):
+            def __init__(self):
+                self._capabilities = {"supports_firmware_install": True}
+
+            async def get_device_info_model(self):
+                return device_info
+
+            async def _request(self, endpoint):
+                return {"status": "27", "progress": "100"}
+
+        client = TestClient()
+        result = await client.get_update_download_status()
+
+        assert isinstance(result, dict)
+        assert result["status"] == "27"
+
+    @pytest.mark.asyncio
+    async def test_get_update_install_status(self, mock_client):
+        """Test get_update_install_status on WiiM device."""
+        from pywiim.models import DeviceInfo
+
+        device_info = DeviceInfo(uuid="test", model="WiiM Pro", firmware="5.0.1")
+        mock_client.get_device_info_model = AsyncMock(return_value=device_info)
+        mock_client._request = AsyncMock(return_value={"status": "0", "progress": "50"})
+
+        class TestClient(FirmwareAPI):
+            def __init__(self):
+                self._capabilities = {"supports_firmware_install": True}
+
+            async def get_device_info_model(self):
+                return device_info
+
+            async def _request(self, endpoint):
+                return {"status": "0", "progress": "50"}
+
+        client = TestClient()
+        result = await client.get_update_install_status()
+
+        assert isinstance(result, dict)
+        assert result["status"] == "0"
+        assert result["progress"] == "50"

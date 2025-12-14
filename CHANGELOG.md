@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Preset data availability capability** - Added `presets_full_data` capability to distinguish between WiiM devices (full preset data) and LinkPlay devices (count only):
+  - `player.presets_full_data` - Boolean property indicating whether preset names/URLs are available
+  - WiiM devices: `presets_full_data = True` - Can read preset names, URLs, and cover art via `getPresetInfo`
+  - LinkPlay devices: `presets_full_data = False` - Only preset count available via `preset_key`, names not accessible
+  - Enables integrations to handle both device types correctly (show preset names for WiiM, play by number for LinkPlay)
+- **Preset documentation updates** - Enhanced documentation to cover preset usage:
+  - API Reference: Added "Playback Presets" section with device-specific examples
+  - HA Integration Guide: Added "Using Playback Presets" section with coordinator data examples
+  - HA Capabilities Guide: Added `presets_full_data` to capabilities table
+- **Preset capability tests** - Added comprehensive test coverage:
+  - Unit tests for capability detection (WiiM vs LinkPlay vs no presets)
+  - Unit tests for Player property access
+  - Integration tests for real device preset reading and playback
+  - CLI tools (diagnostics, verify) now display preset capability information
+- **UPnP verbose event logging in monitor CLI** - Added `--upnp-verbose` flag to `wiim-monitor` to display full UPnP event JSON/XML data for debugging and analysis. When enabled, shows complete event payload including all state variables and their values in formatted JSON format.
+- **Firmware update metadata and installation** - Exposed firmware update information from `getStatusEx` as part of `device_info`:
+  - `player.device_info.version_update` - Raw `VersionUpdate` field (string, "1" = update available)
+  - `player.device_info.latest_version` - Raw `NewVer` field (latest firmware version string)
+  - `player.firmware_update_available` - Boolean convenience property (True if update is ready)
+  - `player.latest_firmware_version` - String convenience property (latest version or None)
+  - `player.supports_firmware_install` - Boolean capability property (True for WiiM devices only)
+- **WiiM-specific firmware update installation** - Added API methods for installing firmware updates on WiiM devices:
+  - `player.check_for_updates_wiim()` - Check for available updates using `getMvRemoteUpdateStartCheck`
+  - `player.install_firmware_update()` - Download and install firmware update automatically (WARNING: Do not power off during process)
+  - `player.get_update_download_status()` - Get download progress and status
+  - `player.get_update_install_status()` - Get installation progress (0-100%)
+- **Firmware update capability detection** - Added `supports_firmware_install` capability flag (True for WiiM devices, False for others)
+- **Firmware update documentation** - Added comprehensive documentation:
+  - API Reference: Firmware update section with usage examples
+  - HA Integration Guide: Complete `UpdateEntity` implementation example
+- **Firmware update tests** - Added comprehensive test coverage:
+  - Unit tests for all firmware update methods and capability checks
+  - Integration tests for real-world firmware update scenarios
+  - Standalone test script (`scripts/test_firmware_update.py`) for manual testing
+
+### Notes
+- Firmware update installation is **only available on WiiM devices** - other devices require manual reboot after update is downloaded
+- For non-WiiM devices, use `player.reboot()` after an update is available and downloaded
+- Installation process can take several minutes - device will reboot automatically when complete
+- **Preset data availability**: WiiM devices support reading preset names/URLs via `getPresetInfo`, while LinkPlay devices only expose preset count via `preset_key`. Use `player.presets_full_data` to determine which approach to use in integrations.
+
 ## [2.1.52] - 2025-12-13
 
 ### Fixed

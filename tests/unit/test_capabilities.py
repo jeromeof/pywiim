@@ -283,6 +283,7 @@ class TestWiiMCapabilitiesClass:
         assert capabilities["supports_getstatuse"] is True
         assert capabilities["supports_metadata"] is True
         assert capabilities["supports_presets"] is True
+        assert capabilities["presets_full_data"] is True  # WiiM devices support full preset data
         assert capabilities["supports_eq"] is True
 
     @pytest.mark.asyncio
@@ -299,6 +300,7 @@ class TestWiiMCapabilitiesClass:
         assert capabilities["supports_getstatuse"] is False
         assert capabilities["supports_metadata"] is False
         assert capabilities["supports_presets"] is False
+        assert capabilities["presets_full_data"] is False
         assert capabilities["supports_eq"] is False
 
     @pytest.mark.asyncio
@@ -477,6 +479,66 @@ class TestWiiMCapabilitiesClass:
         assert capabilities["requires_client_cert"] is True
         assert capabilities["preferred_ports"] == [4443, 8443, 443]
         assert capabilities["supports_player_status_ex"] is False
+
+    @pytest.mark.asyncio
+    async def test_detect_capabilities_presets_full_data_wiim(self, mock_client):
+        """Test that WiiM devices get presets_full_data=True when getPresetInfo works."""
+        device_info = DeviceInfo(uuid="test-uuid", model="WiiM Pro", firmware="5.0.1")
+        mock_client.get_status = AsyncMock(return_value={"status": "ok"})
+
+        # getPresetInfo succeeds
+        def request_side_effect(endpoint, **kwargs):
+            if "getPresetInfo" in endpoint:
+                return {"preset_list": []}
+            return {"status": "ok"}
+
+        mock_client._request = AsyncMock(side_effect=request_side_effect)
+
+        detector = WiiMCapabilities()
+        capabilities = await detector.detect_capabilities(mock_client, device_info)
+
+        assert capabilities["supports_presets"] is True
+        assert capabilities["presets_full_data"] is True
+
+    @pytest.mark.asyncio
+    async def test_detect_capabilities_presets_count_only_linkplay(self, mock_client):
+        """Test that LinkPlay devices get presets_full_data=False when only preset_key available."""
+        device_info = DeviceInfo(uuid="test-uuid", model="LinkPlay Generic", preset_key="6")
+        mock_client.get_status = AsyncMock(return_value={"status": "ok"})
+
+        # getPresetInfo fails (404)
+        def request_side_effect(endpoint, **kwargs):
+            if "getPresetInfo" in endpoint:
+                raise WiiMError("404 Not Found")
+            return {"status": "ok"}
+
+        mock_client._request = AsyncMock(side_effect=request_side_effect)
+
+        detector = WiiMCapabilities()
+        capabilities = await detector.detect_capabilities(mock_client, device_info)
+
+        assert capabilities["supports_presets"] is True
+        assert capabilities["presets_full_data"] is False
+
+    @pytest.mark.asyncio
+    async def test_detect_capabilities_presets_not_supported(self, mock_client):
+        """Test that devices without presets get presets_full_data=False."""
+        device_info = DeviceInfo(uuid="test-uuid", model="Audio Pro A10 MkII", firmware="1.58")
+        mock_client.get_status = AsyncMock(return_value={"status": "ok"})
+
+        # getPresetInfo fails and no preset_key
+        def request_side_effect(endpoint, **kwargs):
+            if "getPresetInfo" in endpoint:
+                raise WiiMError("404 Not Found")
+            return {"status": "ok"}
+
+        mock_client._request = AsyncMock(side_effect=request_side_effect)
+
+        detector = WiiMCapabilities()
+        capabilities = await detector.detect_capabilities(mock_client, device_info)
+
+        assert capabilities["supports_presets"] is False
+        assert capabilities["presets_full_data"] is False
 
 
 class TestPollingInterval:
