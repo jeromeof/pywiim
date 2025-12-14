@@ -410,12 +410,52 @@ class GroupOperations:
         )
 
         # CRITICAL: join_slave() always returns "OK" even when it fails
-        # Refresh slave to verify the join actually worked by checking if device became a slave
-        await self.player.refresh(full=False)
+        # For Gen1 devices (especially WiFi Direct), the device needs time to:
+        # 1. Process the join command
+        # 2. Connect to master's WiFi Direct network (if applicable)
+        # 3. Update its internal state
+        # 4. Update the group field from "0" to "1"
+        # We need to wait and retry the check multiple times
+
+        # Determine wait time based on device type
+        if use_wifi_direct:
+            # WiFi Direct mode (Gen1) - needs significant time for network connection
+            # WiFi Direct connections can take 5-10+ seconds to establish
+            initial_delay = 10.0
+            retry_delay = 2.0
+            max_retries = 3
+        else:
+            # Router-based mode (modern devices) - usually faster (just API state update)
+            initial_delay = 1.0
+            retry_delay = 0.5
+            max_retries = 3
+
+        # Wait initial delay before first check
+        await asyncio.sleep(initial_delay)
+
+        # Retry checking if device became a slave
+        join_verified = False
+        for attempt in range(max_retries):
+            await self.player.refresh(full=False)
+
+            if not self.player.is_solo:
+                # Device is no longer solo - join succeeded!
+                join_verified = True
+                _LOGGER.debug(
+                    "Join verified for %s after %d attempt(s) (delay=%.1fs)",
+                    self.player.host,
+                    attempt + 1,
+                    initial_delay + (attempt * retry_delay),
+                )
+                break
+
+            # Still solo - wait and retry
+            if attempt < max_retries - 1:  # Don't wait after last attempt
+                await asyncio.sleep(retry_delay)
 
         # Verify the join actually worked by checking device state
-        # If still solo, the join failed (but API returned success)
-        if self.player.is_solo:
+        # If still solo after all retries, the join failed (but API returned success)
+        if not join_verified:
             # Re-fetch device info after refresh
             slave_info_after = self.player._device_info
             master_info_after = master._device_info

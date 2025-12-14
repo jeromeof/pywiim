@@ -293,7 +293,8 @@ async def is_linkplay_device(
     ]
 
     # Create SSL context that accepts self-signed certs (WiiM uses these)
-    ssl_context = ssl.create_default_context()
+    # Use executor to avoid blocking event loop (Python 3.13 detects blocking calls)
+    ssl_context = await asyncio.to_thread(ssl.create_default_context)
     ssl_context.check_hostname = False
     ssl_context.verify_mode = ssl.CERT_NONE
 

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.55] - 2025-12-14
+
+### Fixed
+- **Python 3.13 SSL blocking operations** - Fixed blocking SSL context creation in event loop by wrapping all SSL context creation in `asyncio.to_thread()`:
+  - `discovery.py`: `ssl.create_default_context()` now runs in executor thread
+  - `upnp/client.py`: `ssl.SSLContext()` creation now runs in executor thread (2 locations)
+  - `api/ssl.py`: SSL context creation already properly wrapped via helper function
+  - Prevents Home Assistant warnings about blocking calls to `load_default_certs()` and `set_default_verify_paths()` in Python 3.13
+  - No functional changes - SSL behavior is identical, just non-blocking
+
 ## [2.1.54] - 2025-12-14
 
 ### Fixed

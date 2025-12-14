@@ -17,6 +17,21 @@ from .constants import AUDIO_PRO_CLIENT_CERT, WIIM_CA_CERT
 _LOGGER = logging.getLogger(__name__)
 
 
+def _create_ssl_context_sync() -> ssl.SSLContext:
+    """Synchronous helper to create SSL context (runs in executor).
+
+    This function performs blocking SSL operations and must be called
+    via asyncio.to_thread() to avoid blocking the event loop.
+    """
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    ctx.minimum_version = ssl.TLSVersion.TLSv1
+    ctx.maximum_version = ssl.TLSVersion.TLSv1_3
+    ctx.set_ciphers("ALL:@SECLEVEL=0")
+    return ctx
+
+
 async def create_wiim_ssl_context(
     custom_context: ssl.SSLContext | None = None,
 ) -> ssl.SSLContext:
@@ -34,12 +49,9 @@ async def create_wiim_ssl_context(
     if custom_context is not None:
         return custom_context
 
-    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    ctx.minimum_version = ssl.TLSVersion.TLSv1
-    ctx.maximum_version = ssl.TLSVersion.TLSv1_3
-    ctx.set_ciphers("ALL:@SECLEVEL=0")
+    # Create SSL context in executor to avoid blocking event loop
+    # Python 3.13 detects blocking calls in load_default_certs/set_default_verify_paths
+    ctx = await asyncio.to_thread(_create_ssl_context_sync)
 
     try:
         ctx.load_verify_locations(cadata=WIIM_CA_CERT)

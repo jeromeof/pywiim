@@ -84,7 +84,8 @@ class UpnpClient:
                 _LOGGER.info("Using HTTPS for UPnP description (self-signed cert support enabled)")
                 # HTTPS with self-signed cert support - need special SSL config
                 # Create new session with custom SSL context
-                ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                # Use executor to avoid blocking event loop (Python 3.13 detects blocking calls)
+                ssl_context = await asyncio.to_thread(lambda: ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT))
                 ssl_context.check_hostname = False
                 ssl_context.verify_mode = ssl.CERT_NONE
                 ssl_context.set_ciphers("ALL:@SECLEVEL=0")
@@ -216,7 +217,8 @@ class UpnpClient:
             session = self.session
         else:
             # Create notify server (DLNA/DMR pattern) with SSL disabled for self-signed certs
-            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            # Use executor to avoid blocking event loop (Python 3.13 detects blocking calls)
+            ssl_context = await asyncio.to_thread(lambda: ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT))
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
             ssl_context.set_ciphers("ALL:@SECLEVEL=0")
