@@ -578,27 +578,45 @@ player.port  # int - Device port number
 player.timeout  # float - Network timeout in seconds
 ```
 
-#### Transport Support 
-
-```python
-# Use these to determine if next/prev buttons should be shown
-player.supports_next_track      # bool - True if next track is supported
-player.supports_previous_track  # bool - True if previous track is supported
-
-# IMPORTANT: Use these properties, NOT queue_count!
-# Spotify/streaming services have queue_count=0 but next/prev work perfectly.
-```
-
 #### Device Capabilities
+
+Device capabilities are detected via endpoint probing during initialization and exposed as boolean properties. These allow integrations to check feature support before calling methods, enabling proper UI rendering and avoiding errors.
+
+**HTTP API Capabilities** (detected via endpoint probing):
 
 ```python
 player.supports_firmware_install  # bool - True if firmware installation via API is supported (WiiM only)
 player.supports_eq                # bool - True if EQ control is supported
 player.supports_presets           # bool - True if presets are supported
 player.presets_full_data          # bool - True if preset names/URLs available (WiiM), False if count only (LinkPlay)
+player.supports_audio_output      # bool - True if audio output mode control is supported
+player.supports_metadata          # bool - True if metadata retrieval (getMetaInfo) is supported
 player.supports_alarms            # bool - True if alarms are supported (WiiM only)
 player.supports_sleep_timer       # bool - True if sleep timer is supported (WiiM only)
+player.supports_led_control       # bool - True if LED control is supported
+player.supports_enhanced_grouping # bool - True if enhanced multiroom features are supported (WiiM only)
 ```
+
+**UPnP Capabilities** (depend on UPnP client initialization):
+
+```python
+player.supports_upnp             # bool - True if UPnP client is available (requires upnp_client parameter)
+player.supports_queue_browse      # bool - True if full queue retrieval is available (WiiM Amp/Ultra + USB only)
+player.supports_queue_add         # bool - True if adding items to queue is supported (most devices with UPnP)
+player.supports_queue_count       # bool - Always True - queue count/position available via HTTP API
+```
+
+**Transport Capabilities** (depend on current playback source):
+
+```python
+player.supports_next_track        # bool - True if next track is supported for current source
+player.supports_previous_track    # bool - True if previous track is supported for current source
+player.supports_seek              # bool - True if seeking within track is supported for current source
+```
+
+⚠️ **IMPORTANT**: Use `supports_next_track` and `supports_previous_track` to determine feature support, NOT `queue_count`! Streaming services (Spotify, Amazon Music, etc.) always report `queue_count=0` because they manage their own queues internally, but next/previous track commands work perfectly.
+
+For detailed capability information and usage examples, see [HA_CAPABILITIES.md](HA_CAPABILITIES.md).
 
 ### Methods
 

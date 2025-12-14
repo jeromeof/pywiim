@@ -4,13 +4,16 @@ This document describes the proper release workflow for pywiim.
 
 ## Overview
 
-The release process is automated via `scripts/release.sh`, which:
-1. Runs all quality checks (formatting, linting, type checking, tests)
-2. Updates CHANGELOG.md (moves [Unreleased] → [VERSION])
-3. Bumps version number
-4. Commits, tags, and pushes to GitHub
-5. Creates GitHub release with changelog notes
-6. Triggers PyPI publishing (via GitHub Actions)
+The release process is automated via `make release VERSION=X.Y.Z`, which:
+1. **Verifies and updates version** in `pyproject.toml` to match the release version
+2. Runs all quality checks (formatting, linting, type checking, tests)
+3. Commits any uncommitted changes
+4. Verifies version still matches before tagging (prevents PyPI publish failures)
+5. Pushes commits to GitHub
+6. Creates and pushes git tag
+7. Triggers PyPI publishing (via GitHub Actions)
+
+**⚠️ CRITICAL:** The version in `pyproject.toml` MUST match the VERSION you specify. The Makefile now automatically updates it, but always verify before tagging.
 
 ## Step-by-Step Workflow
 
@@ -43,56 +46,51 @@ Before running the release script, ensure:
 - [ ] You're on the `main` branch
 - [ ] You've pulled latest changes from remote
 
-### 3. Run Release Script
+### 3. Run Release Command
 
 ```bash
-# For patch version bump (1.0.X → 1.0.X+1)
-bash scripts/release.sh patch
-
-# For minor version bump (1.X.0 → 1.X+1.0)
-bash scripts/release.sh minor
-
-# For major version bump (X.0.0 → X+1.0.0)
-bash scripts/release.sh major
+# Use make release with explicit version number
+make release VERSION=2.1.53
 ```
 
-### 4. What the Script Does
+**⚠️ IMPORTANT:** 
+- Always specify the exact version number (e.g., `2.1.53`, not `2.1.52+1`)
+- The Makefile will automatically update `pyproject.toml` if it doesn't match
+- Version will be verified again before tagging to prevent PyPI publish failures
 
-**Step 1-3: Quality Checks**
-- Formats code with `black` and `isort`
-- Lints with `ruff` (auto-fixes issues)
+### 4. What the Release Process Does
+
+**Step 0: Version Verification and Update**
+- Checks if `pyproject.toml` version matches the release VERSION
+- If mismatch detected: automatically updates `pyproject.toml` and commits the change
+- If match: proceeds with release
+- **This prevents PyPI publish failures** (e.g., "File already exists" errors)
+
+**Step 1: Quality Checks**
+- Checks import sorting with `isort`
+- Lints with `ruff`
 - Type checks with `mypy`
-- Runs full test suite
+- Runs full unit test suite
 
-**Step 4: Update CHANGELOG**
-- Finds `[Unreleased]` section
-- Renames it to `[CURRENT_VERSION] - YYYY-MM-DD`
-- Adds new empty `[Unreleased]` section above it
-- Example:
-  ```markdown
-  ## [Unreleased]
-  
-  ## [1.0.68] - 2025-11-18
-  
-  ### Added
-  - Feature that was under [Unreleased]
-  ```
+**Step 2: Commit Uncommitted Changes**
+- Stages all uncommitted changes
+- Commits with message: "chore: prepare release vX.Y.Z"
+- If working directory is clean, skips this step
 
-**Step 5-6: Bump Version**
-- Updates `pyproject.toml`
-- Updates `pywiim/__init__.py`
-- Verifies both files match
+**Step 3: Final Version Verification**
+- **CRITICAL STEP:** Verifies `pyproject.toml` version still matches VERSION
+- If mismatch: aborts with error (prevents PyPI publish failure)
+- This ensures the tag points to code with the correct version
 
-**Step 7-12: Git Operations**
-- Stages all changes
-- Commits with message: "Release vX.Y.Z"
-- Creates git tag `vX.Y.Z`
-- Pushes commit and tags to GitHub
+**Step 4: Push Commits**
+- Pushes all commits to `origin/main`
 
-**Step 13: GitHub Release**
-- Creates GitHub release with changelog notes
-- Uses CHANGELOG content for release description
-- Triggers PyPI publishing workflow
+**Step 5: Create and Push Tag**
+- Creates annotated git tag `vX.Y.Z`
+- Pushes tag to GitHub
+- Triggers GitHub Actions workflow for PyPI publishing
+
+**Note:** CHANGELOG.md should be updated manually before running `make release`. The Makefile does not automatically update CHANGELOG.md.
 
 ### 5. Post-Release
 
@@ -231,12 +229,27 @@ Follow [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format:
 
 ### Issue: Version Mismatch
 
-**Problem:** `pyproject.toml` and `__init__.py` have different versions
+**Problem:** `pyproject.toml` version doesn't match the release VERSION
 
-**Solution:** The release script verifies both files match. If they don't:
-1. Manually check both files
-2. Ensure they both have the same version
-3. Re-run the release script
+**Solution:** The Makefile now automatically handles this:
+1. **Automatic fix:** If `pyproject.toml` has a different version, it will be updated automatically
+2. **Verification:** Version is checked again before tagging to prevent PyPI failures
+3. **If still failing:** Manually check `pyproject.toml` and ensure it matches the VERSION you're releasing
+
+**Common Error:** "File already exists" on PyPI
+- **Cause:** Tag was created with wrong version in `pyproject.toml`
+- **Prevention:** The Makefile now verifies version before tagging
+- **Fix if it happens:**
+  ```bash
+  # Delete the tag
+  git tag -d vX.Y.Z
+  git push origin :refs/tags/vX.Y.Z
+  
+  # Update pyproject.toml version
+  # Recreate tag pointing to commit with correct version
+  git tag -a vX.Y.Z -m "Release vX.Y.Z"
+  git push origin vX.Y.Z
+  ```
 
 ### Issue: GitHub Release Failed
 
@@ -248,28 +261,40 @@ Follow [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format:
 3. If not authenticated: `gh auth login`
 4. Or set `GH_TOKEN` environment variable in `~/.bashrc`
 
-## Manual Release (If Script Fails)
+## Manual Release (If Makefile Fails)
 
-If the automated script fails, you can release manually:
+If `make release` fails, you can release manually:
 
 ```bash
 # 1. Update CHANGELOG.md manually (move [Unreleased] to version)
 
-# 2. Update version files
-sed -i 's/version = "1.0.X"/version = "1.0.Y"/' pyproject.toml
-sed -i 's/__version__ = "1.0.X"/__version__ = "1.0.Y"/' pywiim/__init__.py
+# 2. Update version in pyproject.toml (CRITICAL - must match tag!)
+sed -i 's/version = ".*"/version = "2.1.53"/' pyproject.toml
 
-# 3. Commit and tag
-git add CHANGELOG.md pyproject.toml pywiim/__init__.py
-git commit -m "Release v1.0.Y"
-git tag -a "v1.0.Y" -m "Release version 1.0.Y"
+# 3. Verify version matches
+grep '^version = ' pyproject.toml  # Should show: version = "2.1.53"
 
-# 4. Push
-git push && git push --tags
+# 4. Run all checks
+make check
 
-# 5. Create GitHub release (optional)
-gh release create "v1.0.Y" --title "Release v1.0.Y" --notes "See CHANGELOG.md"
+# 5. Commit version update
+git add pyproject.toml CHANGELOG.md
+git commit -m "chore: bump version to 2.1.53"
+
+# 6. Push commits
+git push origin main
+
+# 7. Create and push tag (VERIFY VERSION FIRST!)
+git tag -a "v2.1.53" -m "Release v2.1.53"
+git push origin v2.1.53
+
+# 8. GitHub Actions will automatically:
+#    - Build the package
+#    - Publish to PyPI
+#    - Create GitHub release
 ```
+
+**⚠️ CRITICAL REMINDER:** Always verify `pyproject.toml` version matches the tag before pushing! The GitHub Actions workflow reads the version from `pyproject.toml`, not from the tag name.
 
 ## Automation
 
@@ -289,12 +314,14 @@ GitHub release creation is automated via `release.sh`:
 
 ## Best Practices
 
-1. **Always use the script**: Don't manually bump versions or tag releases
-2. **Keep CHANGELOG updated**: Add entries to `[Unreleased]` as you work
-3. **Test before releasing**: The script runs tests, but test manually first
-4. **Verify after releasing**: Check GitHub releases and PyPI
-5. **Document everything**: CHANGELOG is the source of truth for release notes
-6. **Use semantic versioning**: Choose patch/minor/major appropriately
+1. **Always use `make release`**: Don't manually bump versions or tag releases
+2. **Verify version before release**: Check that `pyproject.toml` has the version you want (or let Makefile update it)
+3. **Keep CHANGELOG updated**: Add entries to `[Unreleased]` as you work
+4. **Test before releasing**: `make release` runs tests, but test manually first
+5. **Verify after releasing**: Check GitHub releases and PyPI
+6. **Document everything**: CHANGELOG is the source of truth for release notes
+7. **Use semantic versioning**: Choose patch/minor/major appropriately
+8. **Version must match**: The version in `pyproject.toml` MUST match the VERSION you specify - the Makefile now handles this automatically
 
 ## Troubleshooting
 

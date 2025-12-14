@@ -37,12 +37,13 @@ These capabilities depend on UPnP client initialization and service availability
 
 ### Transport Capabilities
 
-These properties indicate whether next/previous track commands are supported for the current source:
+These properties indicate whether next/previous track and seek commands are supported for the current source:
 
 | Property | Description | Notes |
 |----------|-------------|-------|
 | `player.supports_next_track` | Next track is supported | **Use this, NOT queue_count!** |
 | `player.supports_previous_track` | Previous track is supported | **Use this, NOT queue_count!** |
+| `player.supports_seek` | Seeking within track is supported | Depends on current source |
 
 ⚠️ **IMPORTANT**: Do NOT use `queue_count > 0` to determine next/prev support!
 
@@ -57,6 +58,10 @@ Streaming services (Spotify, Amazon Music, Tidal, etc.) always report `queue_cou
 **Returns False for:**
 - Live radio: TuneIn, iHeartRadio (no "next track" concept)
 - Physical inputs: Line-in, Optical, Coaxial, HDMI (passthrough audio)
+
+**Seek support (`supports_seek`):**
+- Returns True for sources where seeking within a track makes sense (USB, Network, streaming services with known duration)
+- Returns False for live streams, radio, and physical inputs
 
 ### Playback State Properties
 

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.54] - 2025-12-14
+
+### Fixed
+- **Documentation completeness** - Fixed missing capability properties in API and HA integration guides:
+  - API_REFERENCE.md: Added all 17 capability properties (was missing 11 capabilities)
+  - HA_CAPABILITIES.md: Added missing `supports_seek` capability
+  - Organized capabilities into clear categories (HTTP API, UPnP, Transport)
+  - Added cross-references between documentation files
+- **Documentation maintenance rule** - Added mandatory rule to `.cursorrules` requiring documentation updates when API changes are made
+
 ### Added
 - **Preset data availability capability** - Added `presets_full_data` capability to distinguish between WiiM devices (full preset data) and LinkPlay devices (count only):
   - `player.presets_full_data` - Boolean property indicating whether preset names/URLs are available

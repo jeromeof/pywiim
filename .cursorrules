@@ -38,6 +38,55 @@
 - If the design guide says "do X", do X - don't add extra complexity
 - If you're not sure, ask the user
 
+## Documentation Maintenance - CRITICAL
+
+**⚠️ MANDATORY: When ANY API changes are made, documentation MUST be updated immediately.**
+
+This includes:
+- Adding new properties, methods, or capabilities to the Player class
+- Changing method signatures or return types
+- Adding new capability properties (`supports_*`)
+- Modifying existing behavior that affects how integrations use the API
+- Adding new device capabilities or detection logic
+
+**Required documentation files to update:**
+
+1. **`docs/integration/API_REFERENCE.md`** - MUST be updated when:
+   - New properties are added to Player class
+   - New methods are added
+   - New capabilities are added
+   - Method signatures change
+   - Behavior changes that affect usage
+
+2. **`docs/integration/HA_CAPABILITIES.md`** - MUST be updated when:
+   - New capability properties are added (`supports_*`)
+   - Capability detection logic changes
+   - New capability categories are added
+
+3. **`docs/integration/HA_INTEGRATION.md`** - MUST be updated when:
+   - Integration patterns change
+   - New features require integration changes
+   - Best practices change
+
+**How to verify documentation is complete:**
+
+1. **After adding a new property/method/capability:**
+   - Search for the property/method name in the documentation files
+   - Verify it's documented with description, type, and usage notes
+   - Check that examples are updated if needed
+
+2. **After modifying existing API:**
+   - Verify the documentation reflects the current behavior
+   - Update any outdated examples or descriptions
+   - Check that breaking changes are clearly noted
+
+3. **Before committing:**
+   - Review all changes to `pywiim/player/` and `pywiim/capabilities.py`
+   - Verify corresponding documentation updates exist
+   - If documentation is missing, **STOP and update it before committing**
+
+**This is non-negotiable.** Outdated documentation causes confusion, wasted time, and integration bugs. Documentation drift is a serious issue that must be prevented.
+
 ## Before Adding Special Cases or Fixes
 
 **CRITICAL: Always check existing patterns first before adding special cases or fixes.**

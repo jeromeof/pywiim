@@ -7,7 +7,9 @@ help:
 	@echo "  make typecheck   - Type check with mypy"
 	@echo "  make test        - Run tests with pytest"
 	@echo "  make check       - Run all CI checks (format check + lint + test)"
-	@echo "  make release     - Run checks, bump version, commit, tag, and push"
+	@echo "  make release     - Run checks, update version in pyproject.toml, commit, tag, and push"
+	@echo "                    Usage: make release VERSION=2.1.53"
+	@echo "                    ⚠️  Version in pyproject.toml will be auto-updated to match VERSION"
 	@echo "  make clean       - Clean build artifacts"
 	@echo "  make install     - Install package"
 	@echo "  make dev-install - Install package with dev dependencies"
@@ -69,12 +71,44 @@ dev-install:
 	pre-commit install
 
 # Release workflow - ensures all checks pass before pushing
-# Usage: make release VERSION=2.1.48
+# 
+# CRITICAL: This target automatically updates pyproject.toml version to match VERSION.
+# The GitHub Actions workflow reads version from pyproject.toml, not the tag name.
+# If versions don't match, PyPI publish will fail with "File already exists" error.
+#
+# Usage: make release VERSION=2.1.53
+# 
+# Steps:
+# 1. Verifies/updates version in pyproject.toml to match VERSION
+# 2. Runs all CI checks (lint, typecheck, tests)
+# 3. Commits any uncommitted changes
+# 4. Verifies version still matches (prevents PyPI failures)
+# 5. Pushes commits
+# 6. Creates and pushes tag
 release:
 ifndef VERSION
 	$(error VERSION is required. Usage: make release VERSION=2.1.48)
 endif
 	@echo "🚀 Starting release v$(VERSION)..."
+	@echo ""
+	@echo "📋 Step 0: Verifying and updating version in pyproject.toml..."
+	@CURRENT_VERSION=$$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/'); \
+	if [ "$$CURRENT_VERSION" != "$(VERSION)" ]; then \
+		echo "⚠️  Version mismatch detected!"; \
+		echo "   pyproject.toml has: $$CURRENT_VERSION"; \
+		echo "   Release version: $(VERSION)"; \
+		echo ""; \
+		echo "📝 Updating pyproject.toml to version $(VERSION)..."; \
+		sed -i 's/^version = ".*"/version = "$(VERSION)"/' pyproject.toml; \
+		echo "✅ Version updated in pyproject.toml"; \
+		echo "📝 Staging version update..."; \
+		git add pyproject.toml; \
+		echo "💾 Committing version bump..."; \
+		git commit -m "chore: bump version to $(VERSION)" || true; \
+		echo "✅ Version bump committed"; \
+	else \
+		echo "✅ Version in pyproject.toml matches release version ($(VERSION))"; \
+	fi
 	@echo ""
 	@echo "📋 Step 1: Running all CI checks..."
 	@$(MAKE) check
@@ -90,10 +124,21 @@ endif
 		echo "✅ Working directory clean (no changes to commit)"; \
 	fi
 	@echo ""
-	@echo "📋 Step 3: Pushing commits..."
+	@echo "📋 Step 3: Verifying version still matches before tagging..."
+	@CURRENT_VERSION=$$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/'); \
+	if [ "$$CURRENT_VERSION" != "$(VERSION)" ]; then \
+		echo "❌ ERROR: Version mismatch after commits!"; \
+		echo "   pyproject.toml has: $$CURRENT_VERSION"; \
+		echo "   Release version: $(VERSION)"; \
+		echo "   This will cause PyPI publish to fail!"; \
+		exit 1; \
+	fi
+	@echo "✅ Version verified: pyproject.toml = $(VERSION)"
+	@echo ""
+	@echo "📋 Step 4: Pushing commits..."
 	@git push origin main
 	@echo ""
-	@echo "📋 Step 4: Creating and pushing tag v$(VERSION)..."
+	@echo "📋 Step 5: Creating and pushing tag v$(VERSION)..."
 	git tag -a v$(VERSION) -m "Release v$(VERSION)"
 	git push origin main --tags
 	@echo ""
