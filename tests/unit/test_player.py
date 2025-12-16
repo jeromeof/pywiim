@@ -1538,6 +1538,90 @@ class TestPlayerSourceConflicts:
         )
 
     @pytest.mark.asyncio
+    async def test_clear_playlist_with_playqueue_service(self, mock_client):
+        """Test clear_playlist with UPnP PlayQueue service."""
+        from pywiim.player import Player
+        from pywiim.upnp.client import UpnpClient
+
+        mock_upnp_client = MagicMock(spec=UpnpClient)
+        mock_upnp_client.async_call_action = AsyncMock(return_value={})
+        mock_upnp_client.play_queue = MagicMock()  # PlayQueue service available
+
+        mock_client.clear_playlist = AsyncMock()
+
+        player = Player(mock_client, upnp_client=mock_upnp_client)
+        await player.clear_playlist()
+
+        # Should use UPnP PlayQueue DeleteQueue action
+        mock_upnp_client.async_call_action.assert_called_once_with(
+            "play_queue",
+            "DeleteQueue",
+            {
+                "QueueName": "CurrentQueue",
+            },
+        )
+        # Should NOT call HTTP API when UPnP succeeds
+        mock_client.clear_playlist.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_clear_playlist_without_upnp(self, mock_client):
+        """Test clear_playlist without UPnP client falls back to HTTP API."""
+        from pywiim.player import Player
+
+        mock_client.clear_playlist = AsyncMock()
+
+        player = Player(mock_client)
+        await player.clear_playlist()
+
+        # Should fall back to HTTP API
+        mock_client.clear_playlist.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_clear_playlist_without_playqueue_service(self, mock_client):
+        """Test clear_playlist with UPnP client but no PlayQueue service falls back to HTTP API."""
+        from pywiim.player import Player
+        from pywiim.upnp.client import UpnpClient
+
+        mock_upnp_client = MagicMock(spec=UpnpClient)
+        mock_upnp_client.play_queue = None  # PlayQueue service not available
+
+        mock_client.clear_playlist = AsyncMock()
+
+        player = Player(mock_client, upnp_client=mock_upnp_client)
+        await player.clear_playlist()
+
+        # Should fall back to HTTP API
+        mock_client.clear_playlist.assert_called_once()
+        # Should NOT call UPnP when PlayQueue service is not available
+        mock_upnp_client.async_call_action.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_clear_playlist_playqueue_failure_fallback(self, mock_client):
+        """Test clear_playlist falls back to HTTP API when UPnP PlayQueue fails."""
+        from pywiim.player import Player
+        from pywiim.upnp.client import UpnpClient
+
+        mock_upnp_client = MagicMock(spec=UpnpClient)
+        mock_upnp_client.async_call_action = AsyncMock(side_effect=Exception("UPnP error"))
+        mock_upnp_client.play_queue = MagicMock()  # PlayQueue service available
+
+        mock_client.clear_playlist = AsyncMock()
+
+        player = Player(mock_client, upnp_client=mock_upnp_client)
+        await player.clear_playlist()
+
+        # Should try UPnP first
+        mock_upnp_client.async_call_action.assert_called_once_with(
+            "play_queue",
+            "DeleteQueue",
+            {
+                "QueueName": "CurrentQueue",
+            },
+        )
+        # Should fall back to HTTP API after UPnP failure
+        mock_client.clear_playlist.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_play_notification(self, mock_client):
         """Test play notification command."""
         from pywiim.models import DeviceInfo, PlayerStatus

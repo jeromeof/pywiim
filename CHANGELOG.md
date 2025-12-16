@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **UPnP PlayQueue service support for playlist clearing** - Added support for LinkPlay-specific PlayQueue service to improve `clear_playlist()` reliability:
+  - `clear_playlist()` now uses UPnP PlayQueue `DeleteQueue` action when available (more reliable on devices like Audio Pro C5MkII)
+  - Falls back to HTTP API `setPlayerCmd:clear_playlist` if UPnP PlayQueue service is not available or fails
+  - PlayQueue service is automatically discovered during UPnP initialization (optional, LinkPlay-specific service)
+  - Addresses issue where HTTP API `clear_playlist` command doesn't work on some devices (see GitHub issue #154)
+
 ## [2.1.55] - 2025-12-14
 
 ### Fixed

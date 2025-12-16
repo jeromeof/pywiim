@@ -398,8 +398,38 @@ class MediaControl:
             self.player._on_state_changed()
 
     async def clear_playlist(self) -> None:
-        """Clear the current playlist."""
-        # Call API (raises on failure)
+        """Clear the current playlist.
+
+        Uses UPnP PlayQueue DeleteQueue action if available, otherwise falls back to HTTP API.
+        The UPnP method is more reliable on some devices (e.g., Audio Pro C5MkII).
+
+        Raises:
+            WiiMError: If both UPnP and HTTP API methods fail
+        """
+        # Try UPnP PlayQueue DeleteQueue first (more reliable on some devices)
+        if self.player._upnp_client and self.player._upnp_client.play_queue is not None:
+            try:
+                await self.player._upnp_client.async_call_action(
+                    "play_queue",
+                    "DeleteQueue",
+                    {
+                        "QueueName": "CurrentQueue",
+                    },
+                )
+                _LOGGER.debug("Cleared playlist via UPnP PlayQueue on %s", self.player.host)
+
+                # Call callback to notify state change
+                if self.player._on_state_changed:
+                    self.player._on_state_changed()
+                return
+            except Exception as err:
+                _LOGGER.debug(
+                    "UPnP PlayQueue DeleteQueue failed for %s, falling back to HTTP API: %s",
+                    self.player.host,
+                    err,
+                )
+
+        # Fall back to HTTP API
         await self.player.client.clear_playlist()
 
         # Call callback to notify state change

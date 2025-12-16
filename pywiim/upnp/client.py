@@ -51,6 +51,7 @@ class UpnpClient:
         self._av_transport_service: Any | None = None
         self._rendering_control_service: Any | None = None
         self._content_directory_service: Any | None = None
+        self._play_queue_service: Any | None = None
         self._notify_server: AiohttpNotifyServer | None = None
         self._internal_session: ClientSession | None = None  # Session we created internally (only if needed)
 
@@ -150,6 +151,17 @@ class UpnpClient:
                     self.host,
                 )
 
+            # Get PlayQueue service (for playlist clearing) - optional, LinkPlay-specific
+            try:
+                self._play_queue_service = self._device.service("urn:schemas-wiimu-com:service:PlayQueue:1")
+            except KeyError:
+                # PlayQueue is optional - not all devices support it
+                self._play_queue_service = None
+                _LOGGER.debug(
+                    "Device %s does not advertise PlayQueue service - playlist clearing via UPnP will not be available",
+                    self.host,
+                )
+
             if not self._av_transport_service:
                 _LOGGER.warning(
                     "⚠️  Device %s does not advertise AVTransport service - UPnP eventing may not work",
@@ -167,11 +179,13 @@ class UpnpClient:
                 )
 
             _LOGGER.info(
-                "✅ UPnP client initialized for %s: AVTransport=%s, RenderingControl=%s, ContentDirectory=%s",
+                "✅ UPnP client initialized for %s: AVTransport=%s, RenderingControl=%s, "
+                "ContentDirectory=%s, PlayQueue=%s",
                 self.host,
                 self._av_transport_service is not None,
                 self._rendering_control_service is not None,
                 self._content_directory_service is not None,
+                self._play_queue_service is not None,
             )
 
         except TimeoutError as err:
@@ -381,6 +395,11 @@ class UpnpClient:
         return self._content_directory_service
 
     @property
+    def play_queue(self) -> Any:
+        """Get PlayQueue service."""
+        return self._play_queue_service
+
+    @property
     def notify_server(self) -> AiohttpNotifyServer:
         """Get notify server instance."""
         if self._notify_server is None:
@@ -413,6 +432,8 @@ class UpnpClient:
             "avtransport": "_av_transport_service",
             "renderingcontrol": "_rendering_control_service",
             "contentdirectory": "_content_directory_service",
+            "play_queue": "_play_queue_service",
+            "playqueue": "_play_queue_service",
         }
         service_attr = service_attr_map.get(service_name.lower())
         if not service_attr:
