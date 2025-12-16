@@ -53,6 +53,7 @@ DEVICE_CAPABILITIES: dict[str, DeviceInputs] = {
     ),
     "wiim_pro_plus": DeviceInputs(
         inputs=["bluetooth", "line_in", "optical", "coaxial"],
+        ignore_plm_bits=[2],  # Ignore bit 2 (USB) - USB-C is power only, not audio input
         notes="WiiM Pro Plus has Line In (RCA), Optical In, Coaxial In, Bluetooth, WiFi",
     ),
     "wiim_amp": DeviceInputs(

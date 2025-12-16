@@ -26,19 +26,65 @@ class AudioConfiguration:
         """Set audio input source.
 
         Args:
-            source: Source to switch to.
+            source: Source to switch to. Accepts various formats (e.g., "Line In", "Line-in", "line_in", "linein")
+                   and normalizes to API format (lowercase with underscores).
         """
+        # Normalize source name to API format (lowercase with underscores)
+        # Handles variations: "Line In", "Line-in", "line_in", "linein" → "line_in"
+        normalized_source = self._normalize_source_for_api(source)
+
         # Call API (raises on failure)
-        await self.player.client.set_source(source)
+        await self.player.client.set_source(normalized_source)
 
         # Update cached state immediately (optimistic)
         # If API returns success, we trust the device changed
         if self.player._status_model:
-            self.player._status_model.source = source.lower()
+            self.player._status_model.source = normalized_source
 
         # Call callback to notify state change
         if self.player._on_state_changed:
             self.player._on_state_changed()
+
+    def _normalize_source_for_api(self, source: str) -> str:
+        """Normalize source name to API format (lowercase with underscores).
+
+        Handles variations like "Line In", "Line-in", "line_in", "linein" → "line_in"
+
+        Args:
+            source: Source name in any format
+
+        Returns:
+            Normalized source name for API (lowercase with underscores)
+        """
+        if not source:
+            return source
+
+        source_lower = source.lower().strip()
+
+        # Handle common variations
+        # Replace spaces and hyphens with underscores
+        normalized = source_lower.replace(" ", "_").replace("-", "_")
+
+        # Handle known source name mappings
+        source_mappings = {
+            "linein": "line_in",
+            "line_in": "line_in",
+            "line-in": "line_in",
+            "line in": "line_in",
+            "coax": "coaxial",
+            "coaxial": "coaxial",
+            "wifi": "wifi",
+            "ethernet": "wifi",  # Ethernet maps to WiFi mode
+            "wi-fi": "wifi",
+            "wi_fi": "wifi",
+        }
+
+        # Check if we have a direct mapping
+        if normalized in source_mappings:
+            return source_mappings[normalized]
+
+        # For other sources, return normalized form (lowercase with underscores)
+        return normalized
 
     async def set_audio_output_mode(self, mode: str | int) -> None:
         """Set audio output mode by friendly name or integer.

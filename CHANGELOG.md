@@ -7,12 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- **UPnP PlayQueue service support for playlist clearing** - Added support for LinkPlay-specific PlayQueue service to improve `clear_playlist()` reliability:
-  - `clear_playlist()` now uses UPnP PlayQueue `DeleteQueue` action when available (more reliable on devices like Audio Pro C5MkII)
+## [2.1.56] - 2025-12-15
+
+### Fixed
+- **Source list capitalization and selection issues** - Fixed multiple source-related issues reported in GitHub issue #153:
+  - `available_sources` now returns Title Case format (e.g., "Line In", "Bluetooth") to match `source` property, fixing Home Assistant validation failures
+  - Added source name normalization in `set_source()` to handle variations ("Line In", "Line-in", "line_in", "linein" → "line_in")
+  - Fixed USB filtering for WiiM Pro Plus - added `ignore_plm_bits=[2]` to prevent incorrect USB input from appearing
+  - Included WiFi/Ethernet as selectable source (user can switch to network mode)
+  - Fixed capitalization for streaming services: "TuneIn" and "iHeartRadio" now display correctly
+  - All source names now consistently normalized for both display (Title Case) and API calls (lowercase with underscores)
+- **Playlist clearing reliability** - Fixed `clear_playlist()` not working on some devices (Audio Pro C5MkII, etc.) by adding UPnP PlayQueue service support:
+  - `clear_playlist()` now uses UPnP PlayQueue `DeleteQueue` action when available (more reliable than HTTP API on some devices)
   - Falls back to HTTP API `setPlayerCmd:clear_playlist` if UPnP PlayQueue service is not available or fails
   - PlayQueue service is automatically discovered during UPnP initialization (optional, LinkPlay-specific service)
-  - Addresses issue where HTTP API `clear_playlist` command doesn't work on some devices (see GitHub issue #154)
+  - Addresses GitHub issue #154 where HTTP API `clear_playlist` command doesn't work on some devices
+- **HCN_BWD03 slave device status timeout** - Fixed slave devices timing out when fetching status in multiroom mode:
+  - Added timeout fallback for HCN_BWD03 slave devices that timeout on `getPlayerStatus` in multiroom mode
+  - Automatically falls back to `getStatusEx` for HCN_BWD03 devices when `getPlayerStatus` times out
+  - Other devices continue to use `getPlayerStatus` and will raise timeout errors normally
+  - Ensures slave devices can refresh status even when master device is controlling playback
 
 ## [2.1.55] - 2025-12-14
 

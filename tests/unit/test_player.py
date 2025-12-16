@@ -2810,12 +2810,15 @@ class TestPlayerMediaMetadata:
         device_info = DeviceInfo(uuid="test", input_list=["wifi", "bluetooth", "line_in"])
         player._device_info = device_info
 
-        # WiFi should be filtered out, returns only physical inputs
-        assert player.available_sources == ["bluetooth", "line_in"]
+        # Returns physical inputs + WiFi (normalized to Title Case)
+        result = player.available_sources
+        assert "Bluetooth" in result
+        assert "Line In" in result
+        assert "WiFi" in result  # WiFi is now included
 
     @pytest.mark.asyncio
     async def test_available_sources_filters_wifi_variations(self, mock_client):
-        """Test that WiFi is filtered out regardless of case."""
+        """Test that WiFi variations are normalized and included."""
         from pywiim.player import Player
 
         player = Player(mock_client)
@@ -2823,8 +2826,11 @@ class TestPlayerMediaMetadata:
         device_info = DeviceInfo(uuid="test", input_list=["WiFi", "WIFI", "wifi", "bluetooth", "line_in"])
         player._device_info = device_info
 
-        # All WiFi variations should be filtered out, returns only physical inputs
-        assert player.available_sources == ["bluetooth", "line_in"]
+        # WiFi is normalized and included, returns physical inputs + WiFi (Title Case)
+        result = player.available_sources
+        assert "Bluetooth" in result
+        assert "Line In" in result
+        assert "WiFi" in result  # WiFi is now included (normalized)
 
     @pytest.mark.asyncio
     async def test_available_sources_no_wifi(self, mock_client):
@@ -2835,8 +2841,12 @@ class TestPlayerMediaMetadata:
         device_info = DeviceInfo(uuid="test", input_list=["bluetooth", "line_in", "optical"])
         player._device_info = device_info
 
-        # Returns only physical inputs (no current source)
-        assert player.available_sources == ["bluetooth", "line_in", "optical"]
+        # Returns physical inputs + WiFi (always added) in Title Case
+        result = player.available_sources
+        assert "Bluetooth" in result
+        assert "Line In" in result
+        assert "Optical" in result
+        assert "WiFi" in result  # WiFi is always added
 
     @pytest.mark.asyncio
     async def test_available_sources_only_wifi(self, mock_client):
@@ -2847,8 +2857,12 @@ class TestPlayerMediaMetadata:
         device_info = DeviceInfo(uuid="test", input_list=["wifi"])
         player._device_info = device_info
 
-        # WiFi is filtered out, fallback adds default physical inputs
-        assert player.available_sources == ["bluetooth", "line_in", "optical"]
+        # WiFi is included, fallback adds default physical inputs (Title Case)
+        result = player.available_sources
+        assert "WiFi" in result
+        assert "Bluetooth" in result
+        assert "Line In" in result
+        assert "Optical" in result
 
     @pytest.mark.asyncio
     async def test_available_sources_empty_when_no_device_info(self, mock_client):
@@ -2873,16 +2887,17 @@ class TestPlayerMediaMetadata:
         player._device_info = device_info
         player._status_model = None  # No current source
 
-        # Should return only physical sources (no streaming services unless active)
+        # Should return only physical sources (no streaming services unless active) in Title Case
         result = player.available_sources
-        assert "bluetooth" in result
-        assert "line_in" in result
-        assert "airplay" not in result  # Not active, filtered out
-        assert "dlna" not in result  # Not in input_list (filtered from input_list)
-        assert "spotify" not in result  # Not active, filtered out
-        assert "tidal" not in result
-        assert "amazon" not in result
-        assert "qobuz" not in result
+        assert "Bluetooth" in result
+        assert "Line In" in result
+        assert "WiFi" in result  # WiFi is always included
+        assert "AirPlay" not in result  # Not active, filtered out
+        assert "DLNA" not in result  # Not in input_list (filtered from input_list)
+        assert "Spotify" not in result  # Not active, filtered out
+        assert "Tidal" not in result
+        assert "Amazon" not in result
+        assert "Qobuz" not in result
 
     @pytest.mark.asyncio
     async def test_available_sources_includes_active_streaming_service(self, mock_client):
@@ -2900,15 +2915,16 @@ class TestPlayerMediaMetadata:
         status = PlayerStatus(source="spotify", play_state="play", volume=50, mute=False)
         player._status_model = status
 
-        # Should include spotify since it's the current source
+        # Should include spotify since it's the current source (Title Case)
         result = player.available_sources
-        assert "bluetooth" in result
-        assert "line_in" in result
-        assert "airplay" not in result  # Not active, filtered out
-        assert "dlna" not in result  # Not in input_list (filtered from input_list)
-        assert "spotify" in result  # Included because it's the current source
-        assert "tidal" not in result  # Not active
-        assert "amazon" not in result  # Not active
+        assert "Bluetooth" in result
+        assert "Line In" in result
+        assert "WiFi" in result  # WiFi is always included
+        assert "AirPlay" not in result  # Not active, filtered out
+        assert "DLNA" not in result  # Not in input_list (filtered from input_list)
+        assert "Spotify" in result  # Included because it's the current source
+        assert "Tidal" not in result  # Not active
+        assert "Amazon" not in result  # Not active
 
     @pytest.mark.asyncio
     async def test_available_sources_dlna_only_when_active(self, mock_client):
@@ -2921,10 +2937,11 @@ class TestPlayerMediaMetadata:
         player._status_model = None
 
         result = player.available_sources
-        assert "dlna" not in result  # Not active, filtered out
-        assert "spotify" not in result  # Not active, filtered out
-        assert "bluetooth" in result
-        assert "line_in" in result
+        assert "DLNA" not in result  # Not active, filtered out
+        assert "Spotify" not in result  # Not active, filtered out
+        assert "Bluetooth" in result
+        assert "Line In" in result
+        assert "WiFi" in result  # WiFi is always included
 
     @pytest.mark.asyncio
     async def test_available_sources_streaming_service_variations(self, mock_client):
@@ -2940,10 +2957,11 @@ class TestPlayerMediaMetadata:
         player._status_model = None
 
         result = player.available_sources
-        assert "bluetooth" in result
+        assert "Bluetooth" in result
+        assert "WiFi" in result  # WiFi is always included
         # All streaming services should be filtered out when not active
         assert "Spotify" not in result
-        assert "TIDAL" not in result
+        assert "Tidal" not in result  # Normalized to Title Case
         assert "Amazon Music" not in result
         assert "iHeartRadio" not in result
 
@@ -2962,9 +2980,10 @@ class TestPlayerMediaMetadata:
 
         # Should include the multi-room master name as current source (preserves original casing)
         result = player.available_sources
-        assert "bluetooth" in result
-        assert "line_in" in result
-        assert "optical" in result
+        assert "Bluetooth" in result
+        assert "Line In" in result
+        assert "Optical" in result
+        assert "WiFi" in result  # WiFi is always included
         assert "Master Bedroom" in result  # Included because it's the current source (casing preserved)
 
     @pytest.mark.asyncio
@@ -2976,12 +2995,12 @@ class TestPlayerMediaMetadata:
         device_info = DeviceInfo(uuid="test", input_list=["bluetooth", "line_in", "optical"])
         player._device_info = device_info
 
-        # Test various properly-cased source names
+        # Test various properly-cased source names (normalized to Title Case)
         test_cases = [
-            ("AirPlay", "AirPlay"),
-            ("Spotify", "Spotify"),
-            ("Amazon Music", "Amazon Music"),
-            ("TIDAL", "TIDAL"),
+            ("AirPlay", "AirPlay"),  # Special case preserved
+            ("Spotify", "Spotify"),  # Title Case preserved
+            ("Amazon Music", "Amazon Music"),  # Multi-word preserved
+            ("tidal", "Tidal"),  # Normalized to Title Case (not TIDAL)
         ]
 
         for source_name, expected_name in test_cases:
@@ -2989,10 +3008,7 @@ class TestPlayerMediaMetadata:
             player._status_model = status
 
             result = player.available_sources
-            assert expected_name in result, f"Expected {expected_name} to be preserved in available_sources"
-            assert (
-                source_name.lower() not in result or source_name == source_name.lower()
-            ), f"Source should not be lowercased: got {result}"
+            assert expected_name in result, f"Expected {expected_name} to be in available_sources, got {result}"
 
     @pytest.mark.asyncio
     async def test_audio_output_mode(self, mock_client):

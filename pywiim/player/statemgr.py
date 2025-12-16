@@ -18,6 +18,9 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
+import aiohttp
+
+from ..exceptions import WiiMTimeoutError
 from ..polling import PollingStrategy
 from ..state import PLAYING_STATES, normalize_play_state
 from .debounce import PlayStateDebouncer
@@ -309,9 +312,27 @@ class StateManager:
         # Slaves get playback state from master via propagation. We only need:
         # - Volume/mute (can be independent per-slave)
         # - Group membership (to detect if we leave the group)
+        #
+        # Note: HCN_BWD03 slaves in multiroom mode don't respond to getPlayerStatus
+        # (timeout). Fall back to getStatusEx which works for these devices.
 
         if self.player.is_slave:
-            status_dict = await self.player.client.get_player_status()
+            try:
+                status_dict = await self.player.client.get_player_status()
+            except (TimeoutError, WiiMTimeoutError, aiohttp.ServerTimeoutError):
+                # HCN_BWD03 slaves in multiroom mode timeout on getPlayerStatus
+                # Fall back to getStatusEx which works for these devices
+                device_type = self.player.client._capabilities.get("device_type", "")
+                if device_type == "HCN_BWD03":
+                    _LOGGER.debug(
+                        "HCN_BWD03 slave %s: getPlayerStatus timed out in multiroom mode, "
+                        "falling back to getStatusEx",
+                        self.player.host,
+                    )
+                    status_dict = await self.player.client.get_status()
+                else:
+                    # Re-raise timeout for other devices
+                    raise
 
             # Get existing status model to preserve playback fields from master propagation
             status = self.player._status_model

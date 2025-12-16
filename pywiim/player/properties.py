@@ -703,7 +703,7 @@ class PlayerProperties:
         Returns:
             Formatted source name (e.g., "AirPlay", "Line In", "Bluetooth")
         """
-        # Special handling for specific sources
+        # Special handling for specific sources with non-standard capitalization
         source_lower = source.lower()
         if source_lower == "airplay":
             return "AirPlay"
@@ -711,6 +711,10 @@ class PlayerProperties:
             return "WiFi"  # WiFi is the correct capitalization (not WIFI)
         elif source_lower == "custompushurl":
             return "URL Stream"  # Device reports this when playing via play_url() API
+        elif source_lower == "tunein":
+            return "TuneIn"  # TuneIn (capital T, capital I)
+        elif source_lower == "iheartradio":
+            return "iHeartRadio"  # iHeartRadio (lowercase i, capital H, capital R)
 
         # Known acronyms that should be all uppercase
         acronyms = {"dlna", "usb", "hdmi", "rssi"}
@@ -922,10 +926,13 @@ class PlayerProperties:
 
                 source_lower = source.lower()
 
-                # Skip wifi variations (unless it's the current source)
-                if source_lower == "wifi":
-                    if current_source and source_lower == current_source.lower():
-                        physical_inputs.append(source)
+                # Include WiFi/Ethernet as selectable source (user can switch to network mode)
+                # Note: WiFi is the network connection mode, not a physical input, but users can select it
+                if source_lower in ("wifi", "ethernet", "wi-fi"):
+                    # Normalize to "wifi" for consistency
+                    if "wifi" not in physical_inputs_lower:
+                        physical_inputs.append("wifi")
+                        physical_inputs_lower.add("wifi")
                     continue
 
                 # Include current source even if it's a streaming service (for state display)
@@ -972,7 +979,9 @@ class PlayerProperties:
         # Augment with device capability database when input_list is not available or empty after filtering
         # plm_support is incomplete/unreliable for both WiiM AND Arylic devices
         # (e.g., Arylic UP2STREAM_AMP_V4 doesn't set line_in bit but has line_in hardware)
-        if self.player._device_info.input_list is None or not physical_inputs:
+        # Also trigger fallback if only WiFi is present (need physical inputs)
+        only_wifi = len(physical_inputs) == 1 and physical_inputs[0].lower() in ("wifi", "ethernet", "wi-fi")
+        if self.player._device_info.input_list is None or not physical_inputs or only_wifi:
             vendor = self.player.client.capabilities.get("vendor", "").lower() if self.player.client else None
             device_inputs = get_device_inputs(self.player._device_info.model, vendor)
 
@@ -985,8 +994,9 @@ class PlayerProperties:
                 )
                 # Add model-specific inputs from database (removes duplicates later)
                 physical_inputs.extend(device_inputs.inputs)
-            elif not physical_inputs:
+            elif not physical_inputs or only_wifi:
                 # Last resort: no plm_support, no input_list (or all filtered out), no model match
+                # Also use fallback if only WiFi is present (need physical inputs)
                 _LOGGER.debug("No plm_support, input_list, or model match - using default fallback")
                 physical_inputs.extend(["bluetooth", "line_in", "optical"])
 
@@ -1010,7 +1020,20 @@ class PlayerProperties:
 
         # Remove duplicates while preserving order
         all_sources = list(dict.fromkeys(physical_inputs))
-        return all_sources
+
+        # Always include WiFi/Ethernet as it's always available (network connection)
+        # Users can select it to switch to network mode
+        all_sources_lower = {s.lower() for s in all_sources}
+        if "wifi" not in all_sources_lower and "ethernet" not in all_sources_lower:
+            all_sources.append("wifi")
+
+        # Normalize source names to Title Case format to match source property
+        # This ensures Home Assistant validation works correctly (current source matches available_sources)
+        normalized_sources = []
+        for source in all_sources:
+            normalized_sources.append(self._normalize_source_name(source))
+
+        return normalized_sources
 
     @property
     def audio_output_mode(self) -> str | None:

@@ -66,6 +66,20 @@ async def test_firmware_update_properties():
         model_lower = player.model.lower()
         assert "wiim" in model_lower, f"Expected WiiM device, got {player.model}"
 
+    # Test get_firmware_info() for detailed firmware information
+    firmware_info = await client.get_firmware_info()
+    assert isinstance(firmware_info, dict)
+    assert "current_version" in firmware_info
+    assert "update_available" in firmware_info
+    assert firmware_info["current_version"] == player.firmware
+    assert firmware_info["update_available"] == update_available
+
+    if update_available:
+        assert firmware_info.get("latest_version") is not None
+        assert firmware_info["latest_version"] == player.latest_firmware_version
+
+    print(f"Detailed firmware info: {firmware_info}")
+
     await client.close()
 
 
