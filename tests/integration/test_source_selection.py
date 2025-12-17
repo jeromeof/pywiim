@@ -15,7 +15,7 @@ Example:
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -42,16 +42,6 @@ class TestSourceSelectionIntegration:
         # Check that all source names are properly formatted
         # Known acronyms that should be uppercase
         known_acronyms = {"wifi", "usb", "hdmi", "dlna"}
-        # Known multi-word sources that should be Title Case with spaces
-        expected_formats = {
-            "line in": "Line In",
-            "line in 2": "Line In 2",
-            "coaxial": "Coaxial",  # NOT "CoaxIal"
-            "optical": "Optical",
-            "bluetooth": "Bluetooth",
-            "airplay": "AirPlay",
-            "spotify": "Spotify",
-        }
 
         print(f"\nAvailable sources: {sources}")
 
@@ -87,7 +77,6 @@ class TestSourceSelectionIntegration:
 
         # Track what API calls are made
         api_calls = []
-        original_request = player.client._request
 
         async def tracking_request(url, *args, **kwargs):
             api_calls.append(url)
