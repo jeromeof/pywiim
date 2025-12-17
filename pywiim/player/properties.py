@@ -698,7 +698,7 @@ class PlayerProperties:
         """Normalize source name to Title Case, handling acronyms correctly.
 
         Args:
-            source: Source name (e.g., "airplay", "line_in", "bluetooth")
+            source: Source name (e.g., "airplay", "line_in", "line-in", "bluetooth")
 
         Returns:
             Formatted source name (e.g., "AirPlay", "Line In", "Bluetooth")
@@ -719,8 +719,9 @@ class PlayerProperties:
         # Known acronyms that should be all uppercase
         acronyms = {"dlna", "usb", "hdmi", "rssi"}
 
-        # Replace underscores with spaces
-        formatted = source.replace("_", " ")
+        # Replace underscores AND hyphens with spaces for consistent word splitting
+        # This handles both "line_in" and "line-in" variations
+        formatted = source.replace("_", " ").replace("-", " ")
 
         # Split into words
         words = formatted.split()
@@ -733,7 +734,8 @@ class PlayerProperties:
                 # Acronyms should be all uppercase
                 formatted_words.append(word_lower.upper())
             else:
-                # Regular words: capitalize first letter
+                # Regular words: capitalize first letter, lowercase rest
+                # This ensures "CoaxIal" becomes "Coaxial"
                 formatted_words.append(word.capitalize())
 
         return " ".join(formatted_words)

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.57] - 2025-12-17
+
+### Fixed
+- **Source selection not working for Line In** - Fixed GitHub issue #153 where selecting "Line In" via Home Assistant silently did nothing:
+  - API normalization now correctly uses hyphens (`line-in`) instead of underscores (`line_in`) for the WiiM `switchmode` command
+  - Fixed all physical input sources: "Line In" → `line-in`, "Line In 2" → `line-in-2`, "Wi-Fi" → `wifi`, etc.
+  - Fixed "CoaxIal" capitalization - now displays as "Coaxial" in source list
+  - All source name variants (spaces, underscores, hyphens) now correctly normalize to the API-expected format
+
+### Added
+- **Integration tests for source selection** - Added `tests/integration/test_source_selection.py` with real-device tests:
+  - Verifies correct API format is sent to device (catches `line_in` vs `line-in` bugs)
+  - Tests source name display formatting (catches "CoaxIal" capitalization issues)
+  - Tests actual source selection roundtrip on real hardware
+- **Testing requirements in .cursorrules** - Added explicit rule requiring tests for new code to prevent similar issues
+
 ## [2.1.56] - 2025-12-15
 
 ### Fixed

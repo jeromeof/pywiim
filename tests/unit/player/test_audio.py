@@ -535,3 +535,158 @@ class TestAudioConfiguration:
         mock_player.client.set_audio_output_mode.assert_called_once_with("Line Out")
         # Verify refresh was attempted
         mock_player.refresh.assert_called_once_with(full=True)
+
+
+class TestSourceNormalization:
+    """Test source name normalization for API calls.
+
+    The WiiM/LinkPlay API's switchmode command expects specific formats:
+    - Multi-word sources use hyphens: "line-in" (NOT "line_in")
+    - Single-word sources are lowercase: "wifi", "bluetooth", "optical"
+
+    These tests ensure the normalization converts various user inputs to
+    the correct API format. See GitHub issue #153.
+    """
+
+    @pytest.fixture
+    def audio_config(self, mock_client):
+        """Create an AudioConfiguration instance."""
+        from pywiim.player import Player
+        from pywiim.player.audio import AudioConfiguration
+
+        player = Player(mock_client)
+        return AudioConfiguration(player)
+
+    # Line In variations - all should become "line-in"
+    @pytest.mark.parametrize(
+        "input_source,expected",
+        [
+            ("Line In", "line-in"),  # Title case with space (from available_sources)
+            ("line in", "line-in"),  # Lowercase with space
+            ("line_in", "line-in"),  # Underscore (common API format)
+            ("line-in", "line-in"),  # Hyphenated (correct API format)
+            ("linein", "line-in"),  # No separator
+            ("LINE IN", "line-in"),  # Uppercase
+            ("Line_In", "line-in"),  # Mixed case with underscore
+            ("Line-In", "line-in"),  # Mixed case with hyphen
+        ],
+    )
+    def test_normalize_source_line_in(self, audio_config, input_source, expected):
+        """Test Line In normalization to API format (line-in)."""
+        result = audio_config._normalize_source_for_api(input_source)
+        assert result == expected
+
+    # Line In 2 variations
+    @pytest.mark.parametrize(
+        "input_source,expected",
+        [
+            ("Line In 2", "line-in-2"),
+            ("line_in_2", "line-in-2"),
+            ("line-in-2", "line-in-2"),
+            ("linein_2", "line-in-2"),
+        ],
+    )
+    def test_normalize_source_line_in_2(self, audio_config, input_source, expected):
+        """Test Line In 2 normalization."""
+        result = audio_config._normalize_source_for_api(input_source)
+        assert result == expected
+
+    # Coaxial variations
+    @pytest.mark.parametrize(
+        "input_source,expected",
+        [
+            ("Coaxial", "coaxial"),
+            ("coaxial", "coaxial"),
+            ("coax", "coaxial"),
+            ("Coax", "coaxial"),
+            ("CoaxIal", "coaxial"),  # Bug report: device returns wrong capitalization
+        ],
+    )
+    def test_normalize_source_coaxial(self, audio_config, input_source, expected):
+        """Test Coaxial normalization."""
+        result = audio_config._normalize_source_for_api(input_source)
+        assert result == expected
+
+    # WiFi variations
+    @pytest.mark.parametrize(
+        "input_source,expected",
+        [
+            ("WiFi", "wifi"),
+            ("wifi", "wifi"),
+            ("Wi-Fi", "wifi"),
+            ("wi-fi", "wifi"),
+            ("wi_fi", "wifi"),
+            ("Ethernet", "wifi"),  # Ethernet maps to WiFi mode
+            ("ethernet", "wifi"),
+        ],
+    )
+    def test_normalize_source_wifi(self, audio_config, input_source, expected):
+        """Test WiFi/Ethernet normalization."""
+        result = audio_config._normalize_source_for_api(input_source)
+        assert result == expected
+
+    # Single-word sources (no change needed except lowercase)
+    @pytest.mark.parametrize(
+        "input_source,expected",
+        [
+            ("Bluetooth", "bluetooth"),
+            ("bluetooth", "bluetooth"),
+            ("BLUETOOTH", "bluetooth"),
+            ("Optical", "optical"),
+            ("optical", "optical"),
+            ("USB", "usb"),
+            ("usb", "usb"),
+            ("HDMI", "hdmi"),
+            ("hdmi", "hdmi"),
+            ("Phono", "phono"),
+            ("phono", "phono"),
+        ],
+    )
+    def test_normalize_source_single_word(self, audio_config, input_source, expected):
+        """Test single-word source normalization."""
+        result = audio_config._normalize_source_for_api(input_source)
+        assert result == expected
+
+    # Streaming services (pass through as-is, lowercase)
+    @pytest.mark.parametrize(
+        "input_source,expected",
+        [
+            ("AirPlay", "airplay"),
+            ("airplay", "airplay"),
+            ("Spotify", "spotify"),
+            ("DLNA", "dlna"),
+            ("Amazon", "amazon"),
+            ("Tidal", "tidal"),
+        ],
+    )
+    def test_normalize_source_streaming(self, audio_config, input_source, expected):
+        """Test streaming service normalization."""
+        result = audio_config._normalize_source_for_api(input_source)
+        assert result == expected
+
+    # Edge cases
+    def test_normalize_source_empty(self, audio_config):
+        """Test empty source returns as-is."""
+        assert audio_config._normalize_source_for_api("") == ""
+
+    def test_normalize_source_none(self, audio_config):
+        """Test None source returns None."""
+        assert audio_config._normalize_source_for_api(None) is None
+
+    def test_normalize_source_whitespace(self, audio_config):
+        """Test whitespace handling."""
+        result = audio_config._normalize_source_for_api("  line in  ")
+        assert result == "line-in"
+
+    @pytest.mark.asyncio
+    async def test_set_source_uses_normalized_format(self, audio_config, mock_client):
+        """Test that set_source uses the normalized API format."""
+        mock_client.set_source = AsyncMock()
+        audio_config.player._status_model = MagicMock()
+        audio_config.player._on_state_changed = None
+
+        # User selects "Line In" from UI (Title Case from available_sources)
+        await audio_config.set_source("Line In")
+
+        # API should receive "line-in" (hyphenated format)
+        mock_client.set_source.assert_called_once_with("line-in")

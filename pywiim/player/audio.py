@@ -46,44 +46,75 @@ class AudioConfiguration:
             self.player._on_state_changed()
 
     def _normalize_source_for_api(self, source: str) -> str:
-        """Normalize source name to API format (lowercase with underscores).
+        """Normalize source name to API format for switchmode command.
 
-        Handles variations like "Line In", "Line-in", "line_in", "linein" → "line_in"
+        The WiiM/LinkPlay API's switchmode command expects specific formats:
+        - Multi-word sources use hyphens: "line-in" (NOT "line_in")
+        - Single-word sources are lowercase: "wifi", "bluetooth", "optical"
+
+        Handles variations like "Line In", "Line-in", "line_in", "linein" → "line-in"
 
         Args:
-            source: Source name in any format
+            source: Source name in any format (from UI or available_sources)
 
         Returns:
-            Normalized source name for API (lowercase with underscores)
+            Normalized source name for API (format expected by switchmode command)
         """
         if not source:
             return source
 
         source_lower = source.lower().strip()
 
-        # Handle common variations
-        # Replace spaces and hyphens with underscores
-        normalized = source_lower.replace(" ", "_").replace("-", "_")
+        # Normalize separators - replace underscores and spaces with hyphens for comparison
+        normalized = source_lower.replace("_", "-").replace(" ", "-")
 
-        # Handle known source name mappings
+        # Handle known source name mappings to API format
+        # The WiiM API switchmode command expects these specific strings
         source_mappings = {
-            "linein": "line_in",
-            "line_in": "line_in",
-            "line-in": "line_in",
-            "line in": "line_in",
+            # Line In variations → "line-in" (hyphenated)
+            "linein": "line-in",
+            "line-in": "line-in",
+            "line_in": "line-in",
+            "line in": "line-in",
+            # Line In 2 variations
+            "linein-2": "line-in-2",
+            "line-in-2": "line-in-2",
+            "linein_2": "line-in-2",
+            "line_in_2": "line-in-2",
+            "line in 2": "line-in-2",
+            # Coaxial variations
             "coax": "coaxial",
             "coaxial": "coaxial",
+            # WiFi/Ethernet variations
             "wifi": "wifi",
-            "ethernet": "wifi",  # Ethernet maps to WiFi mode
             "wi-fi": "wifi",
             "wi_fi": "wifi",
+            "ethernet": "wifi",  # Ethernet maps to WiFi mode
+            # Single-word sources (no change needed)
+            "bluetooth": "bluetooth",
+            "optical": "optical",
+            "usb": "usb",
+            "hdmi": "hdmi",
+            "phono": "phono",
+            # Streaming services (pass through as-is)
+            "airplay": "airplay",
+            "dlna": "dlna",
+            "spotify": "spotify",
+            "amazon": "amazon",
+            "tidal": "tidal",
+            "qobuz": "qobuz",
+            "deezer": "deezer",
         }
 
-        # Check if we have a direct mapping
+        # Check if we have a direct mapping (use normalized form for lookup)
         if normalized in source_mappings:
             return source_mappings[normalized]
 
-        # For other sources, return normalized form (lowercase with underscores)
+        # Also check the original lowercase form (handles "linein" without separators)
+        if source_lower in source_mappings:
+            return source_mappings[source_lower]
+
+        # For unknown sources, return lowercase with hyphens (safer default for API)
         return normalized
 
     async def set_audio_output_mode(self, mode: str | int) -> None:
