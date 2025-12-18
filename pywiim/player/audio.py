@@ -27,10 +27,10 @@ class AudioConfiguration:
 
         Args:
             source: Source to switch to. Accepts various formats (e.g., "Line In", "Line-in", "line_in", "linein")
-                   and normalizes to API format (lowercase with underscores).
+                   and normalizes to API format (lowercase with hyphens for multi-word sources).
         """
-        # Normalize source name to API format (lowercase with underscores)
-        # Handles variations: "Line In", "Line-in", "line_in", "linein" → "line_in"
+        # Normalize source name to API format (lowercase with hyphens for multi-word)
+        # Handles variations: "Line In", "Line-in", "line_in", "linein" → "line-in"
         normalized_source = self._normalize_source_for_api(source)
 
         # Call API (raises on failure)
