@@ -4216,6 +4216,46 @@ class TestPlayerGroupOperations:
         await player.leave_group()  # Should not raise
 
     @pytest.mark.asyncio
+    async def test_leave_group_wifi_direct_routes_via_master(
+        self, mock_client, mock_aiohttp_session, mock_capabilities
+    ):
+        """Test WiFi Direct slave routes unjoin through master."""
+        from pywiim.client import WiiMClient
+        from pywiim.group import Group
+        from pywiim.models import DeviceInfo
+        from pywiim.player import Player
+
+        master_client = WiiMClient(
+            host="192.168.1.100", port=80, session=mock_aiohttp_session, capabilities=mock_capabilities
+        )
+        slave_client = WiiMClient(
+            host="192.168.1.101", port=80, session=mock_aiohttp_session, capabilities=mock_capabilities
+        )
+
+        master = Player(master_client)
+        master._detected_role = "master"
+        slave = Player(slave_client)
+        slave._detected_role = "slave"
+        # Old firmware = WiFi Direct mode
+        slave._device_info = DeviceInfo(uuid="uuid:ABC123", firmware="3.8.5515", name="OldSlave")
+
+        group = Group(master)
+        group.add_slave(slave)
+
+        # Mock master's get_slaves_info and kick_slave
+        master_client.get_slaves_info = AsyncMock(
+            return_value=[{"uuid": "uuid:ABC123", "ip": "10.10.10.92", "name": "OldSlave"}]
+        )
+        master_client.kick_slave = AsyncMock()
+        master_client._request = AsyncMock(return_value={"status": "ok"})
+
+        await slave.leave_group()
+
+        # Should have kicked via master with the 10.10.10.x IP
+        master_client.kick_slave.assert_called_once_with("10.10.10.92")
+        assert slave not in group.slaves
+
+    @pytest.mark.asyncio
     async def test_join_group_wmrm_version_compatible(
         self, mock_client, mock_player_status, mock_aiohttp_session, mock_capabilities
     ):

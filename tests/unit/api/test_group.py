@@ -300,6 +300,24 @@ class TestGroupAPISlaveManagement:
         assert result == []
 
     @pytest.mark.asyncio
+    async def test_get_slaves_info(self, mock_client):
+        """Test getting full slave info with UUIDs."""
+        mock_response = {
+            "slaves": 2,
+            "slave_list": [
+                {"ip": "10.10.10.92", "uuid": "uuid:ABC123", "name": "Slave1"},
+                {"ip": "10.10.10.93", "uuid": "uuid:DEF456", "name": "Slave2"},
+            ],
+        }
+        mock_client._request = AsyncMock(return_value=mock_response)
+
+        result = await mock_client.get_slaves_info()
+
+        assert len(result) == 2
+        assert result[0]["uuid"] == "uuid:ABC123"
+        assert result[1]["ip"] == "10.10.10.93"
+
+    @pytest.mark.asyncio
     async def test_kick_slave(self, mock_client):
         """Test kicking a slave."""
         mock_client._group_master = "192.168.1.100"

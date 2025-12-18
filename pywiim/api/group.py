@@ -375,6 +375,22 @@ class GroupAPI:
         _logger.debug("get_slaves() data is not a list, returning empty")
         return []
 
+    async def get_slaves_info(self) -> list[dict]:
+        """Get full slave info including UUID (master only).
+
+        Used for WiFi Direct multiroom where slaves move to 10.10.10.x
+        and must be matched by UUID to find their internal IP.
+
+        Returns:
+            List of slave dicts with ip, uuid, name, etc.
+        """
+        resp = await self._request(API_ENDPOINT_GROUP_SLAVES)  # type: ignore[attr-defined]
+        if isinstance(resp, dict):
+            slave_list = resp.get("slave_list", [])
+            if isinstance(slave_list, list):
+                return slave_list
+        return []
+
     async def kick_slave(self, slave_ip: str) -> None:
         """Remove a slave device from the group (master only).
 

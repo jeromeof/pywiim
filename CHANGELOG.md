@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.58] - 2025-12-18
+
+### Added
+- **WiFi Direct multiroom unjoin support** - Fixed unjoin not working for old Linkplay devices (firmware < 4.2.8020):
+  - Old Linkplay devices (Xoro, Medion, etc.) use WiFi Direct mode where slaves move to internal 10.10.10.x network
+  - Slaves become unreachable from LAN, so direct `Ungroup` command fails
+  - `leave_group()` now detects WiFi Direct mode and routes unjoin through the master using `SlaveKickout`
+  - Matches slave by UUID in master's slave list to find the 10.10.10.x IP
+  - Falls back to direct `Ungroup` if master kick fails
+  - Added `get_slaves_info()` API method to get full slave data including UUIDs
+
 ## [2.1.57] - 2025-12-17
 
 ### Fixed

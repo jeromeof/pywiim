@@ -497,6 +497,41 @@ class GroupOperations:
         if old_group is not None and old_group != master.group:
             self._notify_all_group_members(old_group)
 
+    async def _leave_via_master_kick(self, master: Any) -> None:
+        """Leave group by having master kick us (for WiFi Direct mode).
+
+        In WiFi Direct multiroom, slaves move to 10.10.10.x network and
+        become unreachable. We find our 10.10.10.x IP by matching UUID
+        in master's slave list, then have master kick us.
+        """
+        slave_uuid = self.player._device_info.uuid if self.player._device_info else None
+        if not slave_uuid:
+            _LOGGER.warning("No UUID for WiFi Direct kick, falling back to direct Ungroup")
+            await self.player.client._request("/httpapi.asp?command=multiroom:Ungroup")
+            return
+
+        try:
+            slaves_info = await master.client.get_slaves_info()
+            for info in slaves_info:
+                info_uuid = info.get("uuid", "")
+                # Normalize UUIDs for comparison (remove prefix, dashes, lowercase)
+                if self._normalize_uuid(info_uuid) == self._normalize_uuid(slave_uuid):
+                    slave_ip = info.get("ip")
+                    if slave_ip:
+                        _LOGGER.info("Kicking via master: %s -> %s", slave_uuid, slave_ip)
+                        await master.client.kick_slave(slave_ip)
+                        return
+            _LOGGER.warning("UUID not found in master's slave list, falling back to direct")
+            await self.player.client._request("/httpapi.asp?command=multiroom:Ungroup")
+        except Exception as e:
+            _LOGGER.warning("Master kick failed: %s, falling back to direct", e)
+            await self.player.client._request("/httpapi.asp?command=multiroom:Ungroup")
+
+    @staticmethod
+    def _normalize_uuid(uuid: str) -> str:
+        """Normalize UUID for comparison."""
+        return uuid.lower().replace("uuid:", "").replace("-", "")
+
     async def leave_group(self) -> None:
         """Leave the current group.
 
@@ -531,7 +566,13 @@ class GroupOperations:
         else:
             # Slave leaving = just leave the group
             _LOGGER.debug("Player %s is slave, leaving group", self.player.host)
-            await self.player.client._request("/httpapi.asp?command=multiroom:Ungroup")
+
+            # WiFi Direct mode: slave is on 10.10.10.x, must kick via master
+            if self.player._device_info and self.player._device_info.needs_wifi_direct_multiroom and master:
+                await self._leave_via_master_kick(master)
+            else:
+                await self.player.client._request("/httpapi.asp?command=multiroom:Ungroup")
+
             group.remove_slave(self.player)
 
             if len(group.slaves) == 0:
