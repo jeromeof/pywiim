@@ -16,7 +16,7 @@ class TestUpnpHealthTrackerInitialization:
         tracker = UpnpHealthTracker()
 
         assert tracker._grace_period == 2.0
-        assert tracker._min_samples == 3
+        assert tracker._min_samples == 10
         assert tracker._detected_changes == 0
         assert tracker._missed_changes == 0
         assert tracker._upnp_working is True
@@ -62,13 +62,13 @@ class TestUpnpHealthTrackerProperties:
     def test_statistics(self):
         """Test statistics property."""
         tracker = UpnpHealthTracker()
-        tracker._detected_changes = 5
-        tracker._missed_changes = 1
+        tracker._detected_changes = 15
+        tracker._missed_changes = 3
 
         stats = tracker.statistics
 
-        assert stats["detected_changes"] == 5
-        assert stats["missed_changes"] == 1
+        assert stats["detected_changes"] == 15
+        assert stats["missed_changes"] == 3
         assert stats["miss_rate"] == 0.2
         assert stats["is_healthy"] is True
         assert stats["has_enough_samples"] is True
@@ -76,7 +76,7 @@ class TestUpnpHealthTrackerProperties:
     def test_statistics_insufficient_samples(self):
         """Test statistics with insufficient samples."""
         tracker = UpnpHealthTracker()
-        tracker._detected_changes = 2  # Less than min_samples (3)
+        tracker._detected_changes = 5  # Less than min_samples (10)
 
         stats = tracker.statistics
 
@@ -235,23 +235,23 @@ class TestUpnpHealthTrackerHealthStatus:
 
     def test_health_status_insufficient_samples(self):
         """Test health status not updated with insufficient samples."""
-        tracker = UpnpHealthTracker(min_samples=3)
+        tracker = UpnpHealthTracker(min_samples=10)
         tracker._last_poll_state = {"play_state": "stop"}
 
-        # Only 2 changes detected (less than min_samples)
-        tracker.on_poll_update({"play_state": "play"})
-        tracker.on_poll_update({"play_state": "pause"})
+        # Only 5 changes detected (less than min_samples)
+        for i in range(5):
+            tracker.on_poll_update({"play_state": f"state{i}"})
 
         # Should still be healthy (not enough samples to make decision)
         assert tracker.is_healthy is True
 
     def test_health_status_unhealthy_threshold(self):
         """Test health status becomes unhealthy at threshold."""
-        tracker = UpnpHealthTracker(min_samples=3)
+        tracker = UpnpHealthTracker(min_samples=10)
         tracker._last_poll_state = {"play_state": "stop"}
 
         # Create enough missed changes to exceed 50% threshold
-        for i in range(5):
+        for i in range(11):
             tracker.on_poll_update({"play_state": f"state{i}"})
             # UPnP doesn't catch any (no events)
 
@@ -259,14 +259,14 @@ class TestUpnpHealthTrackerHealthStatus:
 
     def test_health_status_healthy_threshold(self):
         """Test health status becomes healthy at threshold."""
-        tracker = UpnpHealthTracker(min_samples=3)
+        tracker = UpnpHealthTracker(min_samples=10)
         tracker._last_poll_state = {"play_state": "stop"}
         tracker._upnp_working = False  # Start unhealthy
 
         import time
 
         # Create changes that UPnP catches (within grace period)
-        for i in range(5):
+        for i in range(11):
             tracker._last_upnp_state = {"play_state": f"state{i}"}
             tracker._last_upnp_event_time = time.time()
             tracker.on_poll_update({"play_state": f"state{i}"})
@@ -276,12 +276,11 @@ class TestUpnpHealthTrackerHealthStatus:
 
     def test_health_status_hysteresis(self):
         """Test health status uses hysteresis to avoid flapping."""
-        tracker = UpnpHealthTracker(min_samples=3)
+        tracker = UpnpHealthTracker(min_samples=10)
         tracker._last_poll_state = {"play_state": "stop"}
 
         # Create exactly 50% miss rate (should not change from healthy)
-        for i in range(4):
-            tracker.on_poll_update({"play_state": f"state{i}"})
+        for i in range(10):
             if i % 2 == 0:
                 # Every other change is caught by UPnP
                 import time
@@ -289,13 +288,16 @@ class TestUpnpHealthTrackerHealthStatus:
                 tracker._last_upnp_state = {"play_state": f"state{i}"}
                 tracker._last_upnp_event_time = time.time()
 
-        # 50% miss rate should trigger unhealthy (threshold is >50%)
-        # But we need >50%, so with exactly 50% it depends on implementation
-        # Let's test with >50%
-        tracker._missed_changes = 3
-        tracker._detected_changes = 5
-        tracker._update_health_status()
+            tracker.on_poll_update({"play_state": f"state{i}"})
 
+        # Threshold is >50%, so exactly 50% should stay healthy
+        # Current stats: 5 missed / 10 total = 50%
+        assert tracker.miss_rate == 0.5
+        assert tracker.is_healthy is True
+
+        # Now exceed 50%
+        # Next miss: 6 missed / 11 total = 54.5%
+        tracker.on_poll_update({"play_state": "final_miss"})
         assert tracker.is_healthy is False
 
 
@@ -353,6 +355,18 @@ class TestUpnpHealthTrackerHelperMethods:
 
         changes = tracker._detect_changes(old_state, new_state)
 
+        assert changes == {}
+
+    def test_detect_changes_ignores_unknown_metadata(self):
+        """Test that changes to 'Unknown' metadata are ignored."""
+        tracker = UpnpHealthTracker()
+
+        old_state = {"title": "Song", "artist": "Artist"}
+        new_state = {"title": "Unknown", "artist": "unknown", "album": "none"}
+
+        changes = tracker._detect_changes(old_state, new_state)
+
+        # All metadata changes to "Unknown" should be ignored
         assert changes == {}
 
     def test_upnp_saw_change_no_events(self):

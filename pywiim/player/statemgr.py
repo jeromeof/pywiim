@@ -352,7 +352,13 @@ class StateManager:
                 status.group = status_dict.get("group")
 
             # Try UPnP for more accurate volume (slaves can have independent volume)
-            if self.player._upnp_client and self.player._upnp_client.rendering_control:
+            # Skip if UPnP is marked unhealthy to avoid stressing the device's UPnP server
+            # during mode/source transitions. See: https://github.com/mjcumming/wiim/issues/157
+            if (
+                self.player._upnp_client
+                and self.player._upnp_client.rendering_control
+                and self.player.upnp_is_healthy is not False
+            ):
                 try:
                     volume_from_upnp = await self.player._upnp_client.get_volume()
                     mute_from_upnp = await self.player._upnp_client.get_mute()
@@ -372,10 +378,24 @@ class StateManager:
         status = await self.player.client.get_player_status_model()
 
         # Try UPnP GetVolume first if available, fallback to HTTP
+        # Skip if UPnP is marked unhealthy to avoid stressing the device's UPnP server
+        # during mode/source transitions. See: https://github.com/mjcumming/wiim/issues/157
         upnp_volume: int | None = None
         upnp_mute: bool | None = None
 
-        if self.player._upnp_client and self.player._upnp_client.rendering_control:
+        _LOGGER.debug(
+            "UPnP status for %s: client=%s, rendering_control=%s, healthy=%s",
+            self.player.host,
+            self.player._upnp_client is not None,
+            self.player._upnp_client.rendering_control is not None if self.player._upnp_client else False,
+            self.player.upnp_is_healthy,
+        )
+
+        if (
+            self.player._upnp_client
+            and self.player._upnp_client.rendering_control
+            and self.player.upnp_is_healthy is not False
+        ):
             try:
                 upnp_volume = await self.player._upnp_client.get_volume()
                 upnp_mute = await self.player._upnp_client.get_mute()
@@ -531,6 +551,9 @@ class StateManager:
                 try:
                     metadata = await self.player.client.get_meta_info()
                     self.player._metadata = metadata if metadata else None
+                    # Track last successful/attempted getMetaInfo fetch so periodic refresh
+                    # doesn't immediately re-fetch in the same refresh cycle.
+                    self.player._last_metadata_check = time.time()
 
                     # Apply title/artist/album from getMetaInfo when status values are "Unknown"
                     # This is critical for Bluetooth AVRCP sources where getPlayerStatusEx returns "Unknown"
@@ -599,6 +622,35 @@ class StateManager:
         # Detect source change
         current_source = status.source if status else None
         source_changed = self._last_source is not None and current_source != self._last_source
+
+        # getMetaInfo (Audio Quality Metadata) - Fetch on startup, full refresh, track change,
+        # or periodically while playing (every 60s).
+        #
+        # Rationale:
+        # - Bitrate/sample rate/bit depth live ONLY in getMetaInfo, not in getPlayerStatusEx.
+        # - Track-change detection can miss first track (signature not yet established) and
+        #   some radio sources where title/artist are stable.
+        # - Periodic refresh while playing ensures integrations see these fields reliably.
+        metadata_supported = self.player.client.capabilities.get("supports_metadata", False)
+        is_playing = bool(status and status.play_state and status.play_state in PLAYING_STATES)
+        should_fetch_metainfo = (
+            full
+            or self.player._metadata is None
+            or (
+                is_playing
+                and self._polling_strategy
+                and self._polling_strategy.should_fetch_configuration(self.player._last_metadata_check, now=now)
+            )
+        )
+        if should_fetch_metainfo and metadata_supported and hasattr(self.player.client, "get_meta_info"):
+            try:
+                meta_info = await self.player.client.get_meta_info()
+                self.player._metadata = meta_info if meta_info else None
+            except Exception as err:
+                _LOGGER.debug("Failed to fetch getMetaInfo metadata for %s: %s", self.player.host, err)
+                self.player._metadata = None
+            finally:
+                self.player._last_metadata_check = now
 
         # Audio Output Status - Fetch on first refresh, full refresh, source change, or periodically (every 60s)
         # CRITICAL: Fetch on startup (when None) so audio_output_mode property works immediately

@@ -83,6 +83,7 @@ class PlayerBase:
 
         # Cached metadata (audio quality info - updated via refresh())
         self._metadata: dict[str, Any] | None = None
+        self._last_metadata_check: float = 0  # Track when getMetaInfo was last fetched
 
         # Cached Bluetooth history (updated via refresh() every 60 seconds)
         self._bluetooth_history: list[dict[str, Any]] = []

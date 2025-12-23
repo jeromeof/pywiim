@@ -201,7 +201,7 @@ Key lessons:
 
 ### Known Limitations
 - Audio Pro MkII: Requires client certificate for HTTPS
-- Audio Pro MkII: Does not support getMetaInfo endpoint
+- Audio Pro MkII: getMetaInfo support varies by firmware/model (probe to confirm)
 - Audio Pro MkII: Does not support EQ commands
 - Audio Pro MkII: Does not support presets
 - Some devices: HTTP volume control not available (use UPnP)

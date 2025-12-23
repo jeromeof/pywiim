@@ -16,7 +16,7 @@ This differs from some other implementations (like [WiiM Play](https://github.co
 - Play/pause/stop state changes
 - Volume changes
 - Mute state changes
-- Track metadata updates
+- Track metadata updates (title/artist/album/artwork)
 - Position updates
 
 ❌ **What We DON'T Use UPnP For**:
@@ -476,6 +476,18 @@ def _on_event(self, service, state_variables):
 5. **Optional optimization** - UPnP is nice-to-have, not required for functionality
 6. **No health checking** - UPnP has no heartbeat, events only on changes
 7. **Cooperative sources** - HTTP and UPnP work together, not one authoritative
+
+## Audio-Quality Metadata (Bitrate / Sample Rate / Bit Depth)
+
+UPnP DIDL-Lite metadata does **not** reliably include audio-quality fields. In `pywiim`,
+these fields are retrieved from the HTTP endpoint `getMetaInfo` and cached as
+`player.metadata` (used by `player.media_bit_rate`, `player.media_sample_rate`,
+`player.media_bit_depth`).
+
+Because `getMetaInfo` is not part of the core UPnP event flow, `pywiim` refreshes it:
+- On startup / full refresh
+- On track change
+- Periodically while playing
 
 ## Related Documentation
 

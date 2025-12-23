@@ -20,6 +20,7 @@ When a master device's state changes (via UPnP event or HTTP refresh), the maste
 The following fields are propagated from master to slaves:
 
 - **Metadata**: `title`, `artist`, `album`, `image_url`
+- **Audio-quality metadata** (from `getMetaInfo`, cached as `player.metadata`): `sampleRate`, `bitDepth`, `bitRate`
 - **Playback state**: `play_state`, `position`, `duration`
 
 ### Source Identification: `source="propagated"`

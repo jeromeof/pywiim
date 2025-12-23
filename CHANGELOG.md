@@ -7,9 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.1.58] - 2025-12-18
+## [2.1.58] - 2025-12-23
 
 ### Added
+- **USB Output support for WiiM Ultra** - Added hardware output mode 6 for external DAC support (Issue #160):
+  - Added `AUDIO_OUTPUT_MODE_USB_OUT = 6` constant and mapping.
+  - Included "USB Out" in `available_output_modes` for WiiM Ultra models.
+  - Updated selection logic to support switching to USB output by name.
+- **"Thin Integration" Source Overhaul** - Centralized device-specific source abstraction and UI-ready formatting in the library:
+  - **Model-Specific Filtering**: Authoritative hardware filtering using `device_capabilities.py` (e.g., hiding USB on WiiM Pro, hiding Coaxial on Pro Plus).
+  - **Unified "Network" Source**: Standardized all WiFi/Ethernet variations into a single "Network" source for UI stability and consistency.
+  - **"UI Master" Formatting**: Source names are now returned ready for display:
+    - Proper acronym capitalization (`USB`, `HDMI`, `DLNA`, `SPDIF`, `RCA`).
+    - Title Case enforcement with "In" suffixes for physical inputs (e.g., "Optical In", "Line In").
+    - Typo fixes at the library level (e.g., "CoaxIal" → "Coaxial").
+  - **Highly Resilient `set_source`**: Accepts Title Case, underscores, hyphens, or no-space variants and maps them to the correct API command.
+  - **Essential Source Injection**: "Network" is now always present in `available_sources`, providing a consistent way to return to streaming mode from physical inputs.
+  - **Match Guarantee**: `player.source` is guaranteed to match an entry in `player.available_sources` for reliable UI selection highlighting.
+  - **WiiM Sound Support**: Added hardware profile for the new WiiM Sound model with correct input filtering.
 - **WiFi Direct multiroom unjoin support** - Fixed unjoin not working for old Linkplay devices (firmware < 4.2.8020):
   - Old Linkplay devices (Xoro, Medion, etc.) use WiFi Direct mode where slaves move to internal 10.10.10.x network
   - Slaves become unreachable from LAN, so direct `Ungroup` command fails
@@ -17,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Matches slave by UUID in master's slave list to find the 10.10.10.x IP
   - Falls back to direct `Ungroup` if master kick fails
   - Added `get_slaves_info()` API method to get full slave data including UUIDs
+
+### Fixed
+- **UPnP health tracking robustness** (Issue #157) - Improved handling of transient metadata changes and mode transitions:
+  - Relaxed `UpnpHealthTracker` to ignore metadata changes to "Unknown" or empty values, common during source switches.
+  - Increased `min_samples` from 3 to 10 to require more sustained failure before marking UPnP as degraded.
+  - Optimized `StateManager` to skip UPnP control calls (`GetVolume`, `GetMute`) when eventing is unhealthy, preventing device overload and disconnects during mode transitions.
+- **Artwork fallback logic** - Fixed pre-existing unit test failures where artwork fallbacks were being handled inconsistently between the parser and the player property.
 
 ## [2.1.57] - 2025-12-17
 

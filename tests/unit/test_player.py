@@ -2021,8 +2021,8 @@ class TestPlayerMediaMetadata:
         # Ensure state synchronizer has source data (property reads from synchronizer first)
         player._state_synchronizer.update_from_http({"source": "wifi"})
 
-        # Property normalizes to Title Case (WiFi is an acronym, so all uppercase)
-        assert player.source == "WiFi"
+        # Property normalizes to Title Case (Network is the standardized name)
+        assert player.source == "Network"
 
     @pytest.mark.asyncio
     async def test_media_duration_zero(self, mock_client):
@@ -2810,11 +2810,11 @@ class TestPlayerMediaMetadata:
         device_info = DeviceInfo(uuid="test", input_list=["wifi", "bluetooth", "line_in"])
         player._device_info = device_info
 
-        # Returns physical inputs + WiFi (normalized to Title Case)
+        # Returns physical inputs + Network (normalized to Title Case)
         result = player.available_sources
         assert "Bluetooth" in result
         assert "Line In" in result
-        assert "WiFi" in result  # WiFi is now included
+        assert "Network" in result  # Network is now included
 
     @pytest.mark.asyncio
     async def test_available_sources_filters_wifi_variations(self, mock_client):
@@ -2826,11 +2826,11 @@ class TestPlayerMediaMetadata:
         device_info = DeviceInfo(uuid="test", input_list=["WiFi", "WIFI", "wifi", "bluetooth", "line_in"])
         player._device_info = device_info
 
-        # WiFi is normalized and included, returns physical inputs + WiFi (Title Case)
+        # Network is normalized and included, returns physical inputs + Network (Title Case)
         result = player.available_sources
         assert "Bluetooth" in result
         assert "Line In" in result
-        assert "WiFi" in result  # WiFi is now included (normalized)
+        assert "Network" in result  # Network is now included (normalized)
 
     @pytest.mark.asyncio
     async def test_available_sources_no_wifi(self, mock_client):
@@ -2841,12 +2841,12 @@ class TestPlayerMediaMetadata:
         device_info = DeviceInfo(uuid="test", input_list=["bluetooth", "line_in", "optical"])
         player._device_info = device_info
 
-        # Returns physical inputs + WiFi (always added) in Title Case
+        # Returns physical inputs + Network (always added) in Title Case
         result = player.available_sources
         assert "Bluetooth" in result
         assert "Line In" in result
-        assert "Optical" in result
-        assert "WiFi" in result  # WiFi is always added
+        assert "Optical In" in result
+        assert "Network" in result  # Network is always added
 
     @pytest.mark.asyncio
     async def test_available_sources_only_wifi(self, mock_client):
@@ -2857,12 +2857,12 @@ class TestPlayerMediaMetadata:
         device_info = DeviceInfo(uuid="test", input_list=["wifi"])
         player._device_info = device_info
 
-        # WiFi is included, fallback adds default physical inputs (Title Case)
+        # Network is included, fallback adds default physical inputs (Title Case)
         result = player.available_sources
-        assert "WiFi" in result
+        assert "Network" in result
         assert "Bluetooth" in result
         assert "Line In" in result
-        assert "Optical" in result
+        assert "Optical In" in result
 
     @pytest.mark.asyncio
     async def test_available_sources_empty_when_no_device_info(self, mock_client):
@@ -2891,7 +2891,7 @@ class TestPlayerMediaMetadata:
         result = player.available_sources
         assert "Bluetooth" in result
         assert "Line In" in result
-        assert "WiFi" in result  # WiFi is always included
+        assert "Network" in result  # Network is always included
         assert "AirPlay" not in result  # Not active, filtered out
         assert "DLNA" not in result  # Not in input_list (filtered from input_list)
         assert "Spotify" not in result  # Not active, filtered out
@@ -2919,7 +2919,7 @@ class TestPlayerMediaMetadata:
         result = player.available_sources
         assert "Bluetooth" in result
         assert "Line In" in result
-        assert "WiFi" in result  # WiFi is always included
+        assert "Network" in result  # Network is always included
         assert "AirPlay" not in result  # Not active, filtered out
         assert "DLNA" not in result  # Not in input_list (filtered from input_list)
         assert "Spotify" in result  # Included because it's the current source
@@ -2941,7 +2941,7 @@ class TestPlayerMediaMetadata:
         assert "Spotify" not in result  # Not active, filtered out
         assert "Bluetooth" in result
         assert "Line In" in result
-        assert "WiFi" in result  # WiFi is always included
+        assert "Network" in result  # Network is always included
 
     @pytest.mark.asyncio
     async def test_available_sources_streaming_service_variations(self, mock_client):
@@ -2958,7 +2958,7 @@ class TestPlayerMediaMetadata:
 
         result = player.available_sources
         assert "Bluetooth" in result
-        assert "WiFi" in result  # WiFi is always included
+        assert "Network" in result  # Network is always included
         # All streaming services should be filtered out when not active
         assert "Spotify" not in result
         assert "Tidal" not in result  # Normalized to Title Case
@@ -2982,8 +2982,8 @@ class TestPlayerMediaMetadata:
         result = player.available_sources
         assert "Bluetooth" in result
         assert "Line In" in result
-        assert "Optical" in result
-        assert "WiFi" in result  # WiFi is always included
+        assert "Optical In" in result
+        assert "Network" in result  # Network is always included
         assert "Master Bedroom" in result  # Included because it's the current source (casing preserved)
 
     @pytest.mark.asyncio

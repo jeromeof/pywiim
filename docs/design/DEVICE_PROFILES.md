@@ -451,9 +451,9 @@ Audio Pro devices have **three generations** with distinct capabilities. See [Au
 ### getMetaInfo
 - **WiiM Devices**: ✅ Supported
 - **Arylic Devices**: ⚠️ May not be supported
-- **Audio Pro MkII**: ❌ Not supported (returns 404)
+- **Audio Pro MkII**: ⚠️ Varies by firmware/model (probe at runtime)
 - **Audio Pro W-Generation**: ⚠️ May not be supported
-- **Notes**: Metadata endpoint, gracefully handle 404
+- **Notes**: Metadata endpoint, gracefully handle 404/"unknown command"
 
 ### EQ Endpoints
 - **WiiM Devices**: ✅ Supported

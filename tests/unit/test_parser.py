@@ -281,24 +281,20 @@ class TestParsePlayerStatus:
 
     def test_parse_artwork_invalid_values(self):
         """Test artwork URL filtering of invalid values - should use WiiM logo as fallback."""
-        from pywiim.api.constants import DEFAULT_WIIM_LOGO_URL
-
         invalid_values = ["unknow", "unknown", "un_known", "", "none"]
 
         for invalid in invalid_values:
             raw = {"cover": invalid}
             parsed, _ = parse_player_status(raw)
-            # When invalid cover art is provided, should use WiiM logo as fallback
-            assert parsed.get("entity_picture") == DEFAULT_WIIM_LOGO_URL
+            # When invalid cover art is provided, should return None (fallback handled by Player property)
+            assert parsed.get("entity_picture") is None
 
     def test_parse_artwork_no_cover(self):
-        """Test that entity_picture uses WiiM logo when no cover art field is present."""
-        from pywiim.api.constants import DEFAULT_WIIM_LOGO_URL
-
+        """Test that entity_picture is None when no cover art field is present."""
         raw = {"Title": "Test Song", "Artist": "Test Artist"}
         parsed, _ = parse_player_status(raw)
-        # When no cover art is provided, should use WiiM logo as fallback
-        assert parsed.get("entity_picture") == DEFAULT_WIIM_LOGO_URL
+        # When no cover art is provided, should return None (fallback handled by Player property)
+        assert parsed.get("entity_picture") is None
 
     def test_parse_eq_numeric_mapping(self):
         """Test EQ preset numeric to text mapping."""

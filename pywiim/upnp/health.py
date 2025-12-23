@@ -58,7 +58,7 @@ class UpnpHealthTracker:
         >>>     print("UPnP working!")
     """
 
-    def __init__(self, grace_period: float = 2.0, min_samples: int = 3):
+    def __init__(self, grace_period: float = 2.0, min_samples: int = 10):
         """Initialize health tracker.
 
         Args:
@@ -227,9 +227,22 @@ class UpnpHealthTracker:
 
             # Check if value changed
             if old_value != new_value and new_value is not None:
+                # Ignore metadata changes to "Unknown" or similar sentinel values.
+                # These often occur during track/source transitions and are unreliable.
+                # See: https://github.com/mjcumming/wiim/issues/157
+                if field in ("title", "artist", "album") and self._is_invalid_metadata(new_value):
+                    continue
+
                 changes[field] = new_value
 
         return changes
+
+    def _is_invalid_metadata(self, val: Any) -> bool:
+        """Check if metadata value is invalid/unknown."""
+        if not val:
+            return True
+        val_lower = str(val).strip().lower()
+        return val_lower in ("unknow", "unknown", "un_known", "", "none")
 
     def _upnp_saw_change(self, field: str, new_value: Any) -> bool:
         """Check if UPnP event captured this change within grace period.

@@ -307,19 +307,18 @@ def parse_player_status(
         except Exception as e:
             _LOGGER.debug("Error processing artwork URL %s: %s", cover, e)
 
-    # No valid cover art available - use WiiM logo as fallback
-    # Check if entity_picture is missing, None, empty, or invalid
+    # If artwork is invalid (sentinel values from API), clear it.
+    # Note: Fallback to WiiM logo is handled at the property level (Player.media_image_url)
+    # to allow StateSynchronizer to prefer real artwork from other sources (UPnP).
     entity_picture = data.get("entity_picture")
-    if not entity_picture or str(entity_picture).strip() in (
+    if entity_picture and str(entity_picture).strip() in (
         "unknow",
         "unknown",
         "un_known",
         "",
         "none",
     ):
-        from .constants import DEFAULT_WIIM_LOGO_URL
-
-        data["entity_picture"] = DEFAULT_WIIM_LOGO_URL
+        data["entity_picture"] = None
 
     # Source mapping from *mode* field.
     # Always derive source from mode if source is missing, None, empty, or invalid.

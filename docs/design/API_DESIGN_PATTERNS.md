@@ -145,6 +145,25 @@ async def get_eq_status(self) -> bool:
         return False
 ```
 
+## Thin Integration Pattern: Source Management
+
+To keep integrations (like Home Assistant) simple and maintenance-free, `pywiim` takes on the full responsibility for device-specific abstraction and UI-ready formatting.
+
+### 1. Authoritative Hardware Filtering
+We don't rely solely on the device's inconsistent `plm_support` bitmask or `input_list`. Instead, we use a central hardware database (`device_capabilities.py`) to filter available sources based on the actual physical hardware of each model. This prevents "phantom" inputs (like USB on a WiiM Pro) from appearing in the UI.
+
+### 2. UI-Ready Formatting
+The library is the "UI Master" for source names. Properties like `player.source` and `player.available_sources` return strings that are ready for display:
+- **Acronyms**: Proper capitalization (`USB`, `HDMI`, `DLNA`).
+- **Standardization**: Unified naming (e.g., all network variations become "Network").
+- **Title Case**: Consistent formatting (e.g., `CoaxIal` → `Coaxial`).
+- **Input Suffixes**: Physical inputs use the "In" suffix (e.g., "Optical In", "Line In") for clarity.
+
+### 3. Resilient Command Normalization
+The `player.set_source(source)` method accepts any logical variation of a source name (Title Case, underscore, hyphen, or no spaces) and handles the mapping to the correct API command internally.
+
+See [SOURCE_ENUMERATION_VS_SELECTION.md](SOURCE_ENUMERATION_VS_SELECTION.md) for detailed implementation details.
+
 ## Two-Layer Source System
 
 WiiM devices have a hierarchical source system with enumerable physical inputs and selectable services. See [SOURCE_ENUMERATION_VS_SELECTION.md](SOURCE_ENUMERATION_VS_SELECTION.md) for detailed documentation.
@@ -492,7 +511,7 @@ The audio output control API is **WiiM-specific** and not universally supported 
 
 | Vendor | GET Status | SET Mode | Notes |
 |--------|------------|----------|-------|
-| **WiiM** | ✅ | ✅ | Full support (modes 0-3) |
+| **WiiM** | ✅ | ✅ | Full support (modes 0-7) |
 | **Arylic** | ⚠️ | ❌ | Read-only or not supported |
 | **Audio Pro** | ❓ | ❓ | Unknown (needs testing) |
 
@@ -508,6 +527,9 @@ According to the official WiiM API documentation (Section 2.10 Audio Output Cont
 - **Mode 1**: `AUDIO_OUTPUT_SPDIF_MODE` - Optical/TOSLINK output
 - **Mode 2**: `AUDIO_OUTPUT_AUX_MODE` - Line Out/Auxiliary/RCA output (primary line out)
 - **Mode 3**: `AUDIO_OUTPUT_COAX_MODE` - Coaxial output
+- **Mode 4**: `AUDIO_OUTPUT_BT_MODE` - Bluetooth Out (or Headphone Out on Ultra with source=0)
+- **Mode 6**: `AUDIO_OUTPUT_USB_MODE` - USB Audio Out (WiiM Ultra to external DAC)
+- **Mode 7**: `AUDIO_OUTPUT_HDMI_MODE` - HDMI ARC output (WiiM Amp Ultra)
 - **Mode 0**: Undocumented but functional on WiiM devices (legacy mode)
 
 **Key Finding:** Mode 2 is the official primary line out mode, not mode 0.
@@ -608,6 +630,13 @@ curl -k https://DEVICE_IP/httpapi.asp?command=disconnectbta2dpsynk
 # 1. Connect to Bluetooth device (automatically sets source=1)
 curl -k https://DEVICE_IP/httpapi.asp?command=connectbta2dpsynk:AA:BB:CC:DD:EE:FF
 ```
+
+### WiiM Ultra USB Audio Output
+
+- **USB Audio Output**: **Mode 6** (WiiM Ultra only)
+  - Listed in `available_output_modes` as "USB Out"
+  - Supported on WiiM Ultra for external DAC connection
+  - Full support in pywiim: `AUDIO_OUTPUT_MODE_USB_OUT = 6`
 
 ### WiiM Ultra / WiiM Amp Ultra HDMI Output
 

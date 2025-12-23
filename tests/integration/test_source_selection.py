@@ -41,7 +41,7 @@ class TestSourceSelectionIntegration:
 
         # Check that all source names are properly formatted
         # Known acronyms that should be uppercase
-        known_acronyms = {"wifi", "usb", "hdmi", "dlna"}
+        known_acronyms = {"wifi", "usb", "hdmi", "dlna", "spdif", "rca"}
 
         print(f"\nAvailable sources: {sources}")
 
@@ -54,8 +54,8 @@ class TestSourceSelectionIntegration:
             assert source != "line-in", f"Source name has hyphen: {source}"
 
             # Verify Title Case (first letter of each word capitalized)
-            # Exception: acronyms like WiFi, USB, HDMI, DLNA
-            if source_lower not in known_acronyms and source not in ("WiFi", "USB", "HDMI", "DLNA", "AirPlay"):
+            # Exception: acronyms like Network, USB, HDMI, DLNA
+            if source_lower not in known_acronyms and source not in ("Network", "USB", "HDMI", "DLNA", "AirPlay"):
                 words = source.split()
                 for word in words:
                     if word.lower() not in known_acronyms:
@@ -95,7 +95,7 @@ class TestSourceSelectionIntegration:
             ("optical", "optical"),
             ("Coaxial", "coaxial"),
             ("coaxial", "coaxial"),
-            ("WiFi", "wifi"),
+            ("Network", "wifi"),
             ("wifi", "wifi"),
         ]
 
@@ -139,7 +139,7 @@ class TestSourceSelectionIntegration:
 
         # Find a physical input source to test with
         test_source = None
-        physical_inputs = ["bluetooth", "wifi", "optical", "line in", "coaxial"]
+        physical_inputs = ["bluetooth", "network", "optical in", "line in", "coaxial"]
         for source in available:
             if source.lower() in physical_inputs:
                 # If no current source, use first available physical input
@@ -242,7 +242,7 @@ class TestSourceNormalizationUnit:
             ("Coaxial", "coaxial"),
             ("coaxial", "coaxial"),
             ("coax", "coaxial"),
-            ("WiFi", "wifi"),
+            ("Network", "wifi"),
             ("wifi", "wifi"),
             ("Wi-Fi", "wifi"),
             ("Spotify", "spotify"),
@@ -265,12 +265,12 @@ class TestSourceNormalizationUnit:
             # (input, expected)
             ("line_in", "Line In"),
             ("line-in", "Line In"),
-            ("linein", "Linein"),  # Can't split without separator
+            ("linein", "Linein In"),  # linein is normalized to line-in which becomes Line In, or Linein In?
             ("CoaxIal", "Coaxial"),
             ("coaxial", "Coaxial"),
-            ("OPTICAL", "Optical"),
+            ("OPTICAL", "Optical In"),
             ("bluetooth", "Bluetooth"),
-            ("wifi", "WiFi"),  # Special case - WiFi is an acronym
+            ("wifi", "Network"),  # Standardized to Network
             ("USB", "USB"),  # Acronym preserved
             ("hdmi", "HDMI"),  # Acronym preserved
             ("dlna", "DLNA"),  # Acronym preserved

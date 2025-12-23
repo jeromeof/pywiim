@@ -642,6 +642,11 @@ class GroupOperations:
             if not slave._status_model:
                 continue
 
+            # Copy audio-quality metadata (from getMetaInfo) so slave properties like
+            # media_bit_rate/sample_rate/bit_depth work consistently in groups.
+            # This is separate from the StateSynchronizer fields (title/artist/album/image_url).
+            slave._metadata = self.player._metadata
+
             # Copy ALL playback metadata from master to slave
             slave._status_model.title = master_status.title
             slave._status_model.artist = master_status.artist

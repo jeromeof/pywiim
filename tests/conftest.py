@@ -284,6 +284,9 @@ def restore_player_properties_after_test():
         "audio_output_mode",
         "is_bluetooth_output_active",
         "source",
+        "upnp_is_healthy",
+        "is_solo",
+        "is_slave",
     ]
     for prop_name in property_names:
         original_properties[prop_name] = getattr(Player, prop_name, None)

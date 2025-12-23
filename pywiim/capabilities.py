@@ -373,7 +373,10 @@ def detect_device_capabilities(device_info: DeviceInfo) -> dict[str, Any]:
                 capabilities["supports_player_status_ex"] = False  # Use getStatusEx instead
                 capabilities["supports_presets"] = False  # getPresetInfo not supported
                 capabilities["supports_eq"] = False  # EQ commands not supported
-                capabilities["supports_metadata"] = False  # getMetaInfo not supported
+                # Audio Pro MkII: getMetaInfo support varies by firmware/model - probe at runtime.
+                # Default to True here because getMetaInfo is read-only and the library handles
+                # "unknown command"/404 gracefully.
+                capabilities["supports_metadata"] = True
                 capabilities["status_endpoint"] = "/httpapi.asp?command=getStatusEx"
             elif generation == "w_generation":
                 capabilities["supports_enhanced_grouping"] = True

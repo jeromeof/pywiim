@@ -74,6 +74,7 @@ class TestStateManager:
         mock_player._last_bt_history_check = None
         mock_player._upnp_health_tracker = None
         mock_player._metadata = None
+        mock_player._last_metadata_check = 0
         mock_player._eq_presets = None
         mock_player._presets = []
         mock_player._bluetooth_history = []
@@ -305,6 +306,28 @@ class TestStateManager:
         mock_player.client.get_meta_info.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_refresh_startup_fetches_metadata_when_missing(self, state_manager, mock_player):
+        """Test refresh fetches getMetaInfo on startup when metadata cache is empty.
+
+        Regression: track-change detection can miss the first track (no prior signature),
+        so we must fetch getMetaInfo at least once to populate audio-quality fields.
+        """
+        mock_status = PlayerStatus(play_state="play", title="Same", artist="Same")
+        mock_player.client.get_player_status_model = AsyncMock(return_value=mock_status)
+        TestStateManager._setup_refresh_mocks(mock_player, state_manager)
+        type(mock_player.client).capabilities = PropertyMock(return_value={"supports_metadata": True})
+        mock_player.client.get_meta_info = AsyncMock(return_value={"metaData": {"bitRate": "128"}})
+        # Ensure track change detector returns False (first signature)
+        mock_player._coverart_mgr._last_track_signature = None
+        mock_player._metadata = None
+
+        with patch("pywiim.player.groupops.GroupOperations") as mock_groupops:
+            mock_groupops.return_value._synchronize_group_state = AsyncMock()
+            await state_manager.refresh(full=False)  # First refresh is coerced to full internally
+
+        mock_player.client.get_meta_info.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_refresh_eq_preset_changed(self, state_manager, mock_player):
         """Test refresh when EQ preset changes."""
         mock_status = PlayerStatus(play_state="play", eq_preset="rock")
@@ -426,6 +449,29 @@ class TestStateManager:
         # Health tracker should have been updated
         assert mock_player._upnp_health_tracker._last_poll_state is not None
 
+    @pytest.mark.asyncio
+    async def test_refresh_skips_upnp_when_unhealthy(self, state_manager, mock_player):
+        """Test that refresh skips UPnP control calls when UPnP is marked unhealthy."""
+        mock_status = PlayerStatus(play_state="play", volume=50)
+        mock_player.client.get_player_status_model = AsyncMock(return_value=mock_status)
+        TestStateManager._setup_refresh_mocks(mock_player, state_manager)
+        mock_player._upnp_client = MagicMock()
+        mock_player._upnp_client.rendering_control = MagicMock()
+        mock_player._upnp_client.get_volume = AsyncMock(return_value=75)
+
+        # Mark UPnP as unhealthy
+        type(mock_player).upnp_is_healthy = PropertyMock(return_value=False)
+
+        with patch("pywiim.player.groupops.GroupOperations") as mock_groupops:
+            mock_groupops.return_value._synchronize_group_state = AsyncMock()
+
+            await state_manager.refresh(full=False)
+
+        # Should NOT use UPnP volume because it's unhealthy
+        mock_player._upnp_client.get_volume.assert_not_called()
+        call_args = mock_player._state_synchronizer.update_from_http.call_args[0][0]
+        assert call_args["volume"] == 50  # Should use HTTP volume (50) instead of UPnP (75)
+
     def test_propagate_metadata_to_slaves(self, state_manager, mock_player):
         """Test that propagate_metadata_to_slaves correctly copies metadata from master to slaves.
 
@@ -441,6 +487,7 @@ class TestStateManager:
         )
         type(mock_player).is_master = PropertyMock(return_value=True)
         mock_player._status_model = mock_status
+        mock_player._metadata = {"metaData": {"bitRate": "320", "sampleRate": "44100"}}
 
         # Create a real PlayerStatus object for the slave
         slave_status = PlayerStatus()
@@ -473,6 +520,7 @@ class TestStateManager:
         assert slave._status_model.artist == "Master Artist"
         assert slave._status_model.album == "Master Album"
         assert slave._status_model.play_state == "play"
+        assert slave._metadata == mock_player._metadata
 
         # Verify state synchronizer was updated with metadata
         # (may be called multiple times, but should include the metadata call)

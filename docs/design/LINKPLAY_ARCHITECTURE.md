@@ -130,6 +130,8 @@ Control authority shifts based on the active input protocol, creating fundamenta
 
 **Mode Value**: `11` (USB) or `10` (Network/DLNA as initiator)
 
+**Note on WiiM Ultra**: The WiiM Ultra supports both USB Input (playing from a drive) and **USB Audio Output (Hardware Mode 6)** for external DACs. This documentation refers to the playback mode (Scenario C) where the device acts as the control point.
+
 **Architecture**:
 - WiiM device is the **absolute master** of the playback session
 - Device's Linux OS manages the file system, queue indexing, and track progression

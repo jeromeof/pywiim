@@ -362,8 +362,22 @@ class PlayerProperties:
 
     @property
     def media_image_url(self) -> str | None:
-        """Media image URL from cached status."""
-        return self._status_field("entity_picture", "cover_url")
+        """Media image URL from cached status.
+
+        Returns the first available artwork URL from:
+        1. Merged state (image_url) - from HTTP or UPnP
+        2. Cached status model (entity_picture or cover_url)
+        3. Fallback to WiiM logo if no other artwork available
+        """
+        # First check merged state and status model for any valid artwork
+        url = self._status_field("image_url", "entity_picture", "cover_url")
+        if url:
+            return url
+
+        # Fallback to WiiM logo sentinel if no artwork found
+        from ..api.constants import DEFAULT_WIIM_LOGO_URL
+
+        return DEFAULT_WIIM_LOGO_URL
 
     @property
     def queue_count(self) -> int | None:
@@ -707,17 +721,19 @@ class PlayerProperties:
         source_lower = source.lower()
         if source_lower == "airplay":
             return "AirPlay"
-        elif source_lower == "wifi":
-            return "WiFi"  # WiFi is the correct capitalization (not WIFI)
+        elif source_lower in ("wifi", "ethernet", "wi-fi", "network"):
+            return "Network"  # Standardize on "Network" for streaming mode
         elif source_lower == "custompushurl":
             return "URL Stream"  # Device reports this when playing via play_url() API
         elif source_lower == "tunein":
             return "TuneIn"  # TuneIn (capital T, capital I)
         elif source_lower == "iheartradio":
             return "iHeartRadio"  # iHeartRadio (lowercase i, capital H, capital R)
+        elif source_lower == "aux":
+            return "Aux In"  # Aux In is more descriptive for UI
 
         # Known acronyms that should be all uppercase
-        acronyms = {"dlna", "usb", "hdmi", "rssi"}
+        acronyms = {"dlna", "usb", "hdmi", "rssi", "spdif", "rca"}
 
         # Replace underscores AND hyphens with spaces for consistent word splitting
         # This handles both "line_in" and "line-in" variations
@@ -733,10 +749,26 @@ class PlayerProperties:
             if word_lower in acronyms:
                 # Acronyms should be all uppercase
                 formatted_words.append(word_lower.upper())
+            elif (
+                word_lower == "in"
+                and formatted_words
+                and formatted_words[-1].lower() in ("line", "optical", "coaxial", "aux")
+            ):
+                # "In" suffix for inputs should be capitalized (Title Case)
+                formatted_words.append("In")
             else:
                 # Regular words: capitalize first letter, lowercase rest
                 # This ensures "CoaxIal" becomes "Coaxial"
                 formatted_words.append(word.capitalize())
+
+        # Ensure "In" suffix for specific physical inputs if missing
+        if len(formatted_words) == 1:
+            if formatted_words[0] == "Line":
+                formatted_words.append("In")
+            elif formatted_words[0] == "Optical":
+                formatted_words.append("In")
+            elif formatted_words[0] == "Aux":
+                formatted_words.append("In")
 
         return " ".join(formatted_words)
 
@@ -1023,6 +1055,42 @@ class PlayerProperties:
         # Remove duplicates while preserving order
         all_sources = list(dict.fromkeys(physical_inputs))
 
+        # Final filtering against device capability database if available
+        # This ensures that even if firmware reports incorrect inputs in plm_support
+        # or input_list, we only show what the hardware actually supports.
+        vendor = self.player.client.capabilities.get("vendor", "").lower() if self.player.client else None
+        device_info = get_device_inputs(self.player._device_info.model, vendor)
+        if device_info and device_info.inputs:
+            # Build authoritative set of allowed inputs from database
+            allowed_inputs = {s.lower() for s in device_info.inputs}
+
+            # Always allow the "Network" mode (internal name "wifi") and current source
+            # Every WiiM/LinkPlay device supports network streaming
+            allowed_inputs.update({"wifi", "network"})
+
+            if current_source:
+                allowed_inputs.add(current_source.lower())
+
+            # Streaming services are always allowed (they are added later or already present)
+            allowed_inputs.update(streaming_services)
+
+            filtered_sources = []
+            for s in all_sources:
+                s_lower = s.lower()
+                # Normalize transport variations for the filtering check
+                # e.g., "ethernet" or "wi-fi" should be checked as "wifi" if not explicitly allowed
+                if s_lower in ("ethernet", "wi-fi"):
+                    check_val = "wifi"
+                else:
+                    check_val = s_lower
+
+                if s_lower in allowed_inputs or check_val in allowed_inputs:
+                    filtered_sources.append(s)
+                elif any(svc in s_lower for svc in streaming_services):
+                    filtered_sources.append(s)
+
+            all_sources = filtered_sources
+
         # Always include WiFi/Ethernet as it's always available (network connection)
         # Users can select it to switch to network mode
         all_sources_lower = {s.lower() for s in all_sources}
@@ -1150,8 +1218,8 @@ class PlayerProperties:
         elif "wiim mini" in model_lower or ("mini" in model_lower and "wiim" in model_lower):
             return ["Line Out", "Optical Out"]
         elif "wiim ultra" in model_lower or "ultra" in model_lower:
-            # Ultra has headphone output - check for "ultra" in model name (more lenient)
-            return ["Line Out", "Optical Out", "Coax Out", "Headphone Out", "HDMI Out"]
+            # Ultra has headphone output and USB out - check for "ultra" in model name (more lenient)
+            return ["Line Out", "Optical Out", "Coax Out", "USB Out", "Headphone Out", "HDMI Out"]
         elif "wiim pro" in model_lower or ("pro" in model_lower and "wiim" in model_lower):
             return ["Line Out", "Optical Out", "Coax Out"]
         elif "wiim" in model_lower:

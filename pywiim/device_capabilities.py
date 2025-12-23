@@ -43,22 +43,29 @@ DEVICE_CAPABILITIES: dict[str, DeviceInputs] = {
     # WiiM Devices (plm_support is marked "Reserved" in WiiM docs - unreliable)
     "wiim_mini": DeviceInputs(
         inputs=["bluetooth", "line_in", "optical"],
-        notes="WiiM Mini has Line In (RCA), Optical In (TOSLINK), Bluetooth, WiFi",
+        ignore_plm_bits=[5],  # Ignore bit 5 (Coaxial)
+        notes="WiiM Mini has Line In (RCA), Optical In (TOSLINK), Bluetooth, WiFi. "
+        "Does not have Ethernet or Coaxial.",
     ),
     "wiim_pro": DeviceInputs(
         inputs=["bluetooth", "line_in", "optical"],
-        ignore_plm_bits=[2],  # Ignore bit 2 (USB) - USB-C is power only, not audio input
+        ignore_plm_bits=[2, 5],  # Ignore bit 2 (USB) and bit 5 (Coaxial)
         notes="WiiM Pro has Line In (RCA), Optical In (TOSLINK/SPDIF), Bluetooth, WiFi. "
         "Has Coax OUT but not Coax IN. USB-C is power only.",
     ),
     "wiim_pro_plus": DeviceInputs(
-        inputs=["bluetooth", "line_in", "optical", "coaxial"],
-        ignore_plm_bits=[2],  # Ignore bit 2 (USB) - USB-C is power only, not audio input
-        notes="WiiM Pro Plus has Line In (RCA), Optical In, Coaxial In, Bluetooth, WiFi",
+        inputs=["bluetooth", "line_in", "optical"],
+        ignore_plm_bits=[2, 5],  # Ignore bit 2 (USB) and bit 5 (Coaxial)
+        notes="WiiM Pro Plus has Line In (RCA), Optical In, Bluetooth, WiFi. "
+        "Note: Per user requirement, coaxial is excluded despite hardware support.",
     ),
     "wiim_amp": DeviceInputs(
-        inputs=["bluetooth", "line_in"],
-        notes="WiiM Amp has Line In (RCA), Bluetooth, WiFi. Integrated amplifier.",
+        inputs=["bluetooth", "line_in", "optical", "usb", "hdmi"],
+        notes="WiiM Amp has Line In (RCA), Optical In, USB, HDMI ARC, Bluetooth, WiFi.",
+    ),
+    "wiim_sound": DeviceInputs(
+        inputs=["bluetooth", "aux"],
+        notes="WiiM Sound has Aux In (Line In), Bluetooth, WiFi. " "Excludes USB, Optical, and Coaxial.",
     ),
     "wiim_ultra": DeviceInputs(
         inputs=["bluetooth", "line_in", "optical", "coaxial", "usb", "hdmi", "phono"],
@@ -131,6 +138,8 @@ def get_device_inputs(model: str | None, vendor: str | None = None) -> DeviceInp
         return DEVICE_CAPABILITIES["wiim_amp"]
     elif "wiim_mini" in model_lower or "mini" in model_lower:
         return DEVICE_CAPABILITIES["wiim_mini"]
+    elif "wiim_sound" in model_lower or "sound" in model_lower:
+        return DEVICE_CAPABILITIES["wiim_sound"]
     elif "wiim" in model_lower:
         return DEVICE_CAPABILITIES["wiim_generic"]
 

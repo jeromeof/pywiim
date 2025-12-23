@@ -419,6 +419,7 @@ AUDIO_OUTPUT_MODE_SPDIF_OUT = 1  # AUDIO_OUTPUT_SPDIF_MODE (Optical/TOSLINK)
 AUDIO_OUTPUT_MODE_AUX_OUT = 2  # AUDIO_OUTPUT_AUX_MODE (Line Out/Auxiliary/RCA)
 AUDIO_OUTPUT_MODE_COAX_OUT = 3  # AUDIO_OUTPUT_COAX_MODE (Coaxial)
 AUDIO_OUTPUT_MODE_BLUETOOTH_OUT = 4  # Bluetooth Out (or Headphone Out on Ultra with source=0)
+AUDIO_OUTPUT_MODE_USB_OUT = 6  # USB Out (WiiM Ultra)
 AUDIO_OUTPUT_MODE_HDMI_OUT = 7  # HDMI ARC output (WiiM Amp Ultra)
 
 # Legacy aliases for backward compatibility
@@ -434,6 +435,7 @@ AUDIO_OUTPUT_MODE_MAP: dict[int, str] = {
     AUDIO_OUTPUT_MODE_AUX_OUT: "Line Out",  # Mode 2 - AUX (primary line out)
     AUDIO_OUTPUT_MODE_COAX_OUT: "Coax Out",  # Mode 3 - COAX
     AUDIO_OUTPUT_MODE_BLUETOOTH_OUT: "Bluetooth Out",  # Mode 4 - default mapping
+    AUDIO_OUTPUT_MODE_USB_OUT: "USB Out",  # Mode 6 - USB (WiiM Ultra)
     AUDIO_OUTPUT_MODE_HDMI_OUT: "HDMI Out",  # Mode 7 - HDMI ARC (WiiM Amp Ultra)
 }
 
@@ -456,6 +458,8 @@ AUDIO_OUTPUT_MODE_NAME_TO_INT: dict[str, int] = {
     "headphones": AUDIO_OUTPUT_MODE_BLUETOOTH_OUT,
     "bluetooth out": AUDIO_OUTPUT_MODE_BLUETOOTH_OUT,  # Mode 4
     "bluetooth": AUDIO_OUTPUT_MODE_BLUETOOTH_OUT,
+    "usb out": AUDIO_OUTPUT_MODE_USB_OUT,  # Mode 6
+    "usb": AUDIO_OUTPUT_MODE_USB_OUT,
     "hdmi out": AUDIO_OUTPUT_MODE_HDMI_OUT,  # Mode 7 (WiiM Amp Ultra)
     "hdmi": AUDIO_OUTPUT_MODE_HDMI_OUT,
     "hdmi arc": AUDIO_OUTPUT_MODE_HDMI_OUT,
@@ -492,6 +496,7 @@ __all__ = [
     "AUDIO_OUTPUT_MODE_LINE_OUT_2",  # Legacy alias
     "AUDIO_OUTPUT_MODE_COAX_OUT",
     "AUDIO_OUTPUT_MODE_BLUETOOTH_OUT",
+    "AUDIO_OUTPUT_MODE_USB_OUT",
     "AUDIO_OUTPUT_MODE_HDMI_OUT",
     "AUDIO_OUTPUT_MODE_MAP",
     "AUDIO_OUTPUT_MODE_NAME_TO_INT",

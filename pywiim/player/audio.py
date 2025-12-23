@@ -52,7 +52,7 @@ class AudioConfiguration:
         - Multi-word sources use hyphens: "line-in" (NOT "line_in")
         - Single-word sources are lowercase: "wifi", "bluetooth", "optical"
 
-        Handles variations like "Line In", "Line-in", "line_in", "linein" → "line-in"
+        Highly resilient: accepts "Line In", "line_in", "line-in", "linein" → "line-in".
 
         Args:
             source: Source name in any format (from UI or available_sources)
@@ -65,6 +65,10 @@ class AudioConfiguration:
 
         source_lower = source.lower().strip()
 
+        # Handle "Network" display name mapping back to "wifi"
+        if source_lower == "network":
+            return "wifi"
+
         # Normalize separators - replace underscores and spaces with hyphens for comparison
         normalized = source_lower.replace("_", "-").replace(" ", "-")
 
@@ -74,14 +78,10 @@ class AudioConfiguration:
             # Line In variations → "line-in" (hyphenated)
             "linein": "line-in",
             "line-in": "line-in",
-            "line_in": "line-in",
-            "line in": "line-in",
             # Line In 2 variations
             "linein-2": "line-in-2",
             "line-in-2": "line-in-2",
-            "linein_2": "line-in-2",
-            "line_in_2": "line-in-2",
-            "line in 2": "line-in-2",
+            "linein2": "line-in-2",
             # Coaxial variations
             "coax": "coaxial",
             "coaxial": "coaxial",
@@ -90,12 +90,15 @@ class AudioConfiguration:
             "wi-fi": "wifi",
             "wi_fi": "wifi",
             "ethernet": "wifi",  # Ethernet maps to WiFi mode
+            "network": "wifi",
             # Single-word sources (no change needed)
             "bluetooth": "bluetooth",
             "optical": "optical",
             "usb": "usb",
             "hdmi": "hdmi",
             "phono": "phono",
+            "aux": "line-in",  # Map "Aux" to "line-in"
+            "aux-in": "line-in",
             # Streaming services (pass through as-is)
             "airplay": "airplay",
             "dlna": "dlna",
@@ -113,6 +116,12 @@ class AudioConfiguration:
         # Also check the original lowercase form (handles "linein" without separators)
         if source_lower in source_mappings:
             return source_mappings[source_lower]
+
+        # If it contains "line" and "in", it's likely line-in
+        if "line" in source_lower and "in" in source_lower:
+            if "2" in source_lower:
+                return "line-in-2"
+            return "line-in"
 
         # For unknown sources, return lowercase with hyphens (safer default for API)
         return normalized

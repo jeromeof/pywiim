@@ -640,6 +640,8 @@ class TestSourceNormalization:
             ("hdmi", "hdmi"),
             ("Phono", "phono"),
             ("phono", "phono"),
+            ("Aux", "line-in"),
+            ("Aux In", "line-in"),
         ],
     )
     def test_normalize_source_single_word(self, audio_config, input_source, expected):
