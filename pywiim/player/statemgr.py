@@ -383,14 +383,6 @@ class StateManager:
         upnp_volume: int | None = None
         upnp_mute: bool | None = None
 
-        _LOGGER.debug(
-            "UPnP status for %s: client=%s, rendering_control=%s, healthy=%s",
-            self.player.host,
-            self.player._upnp_client is not None,
-            self.player._upnp_client.rendering_control is not None if self.player._upnp_client else False,
-            self.player.upnp_is_healthy,
-        )
-
         if (
             self.player._upnp_client
             and self.player._upnp_client.rendering_control
