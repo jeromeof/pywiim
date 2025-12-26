@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 import aiohttp
 
 from ..exceptions import WiiMTimeoutError
+from ..metadata import is_valid_metadata_value
 from ..polling import PollingStrategy
 from ..state import PLAYING_STATES, normalize_play_state
 from .debounce import PlayStateDebouncer
@@ -137,6 +138,25 @@ class StateManager:
         Args:
             data: Dictionary with state fields from UPnP event.
         """
+        # SLAVE RULE (strict):
+        # In slave mode we NEVER accept slave-local playback/metadata (HTTP or UPnP).
+        # Slaves only contribute their own volume/mute. All playback + media metadata
+        # must come from the master via propagation; if master has no data, there is no data.
+        #
+        # This prevents transient/incorrect slave UPnP metadata (common during source switches)
+        # from overwriting propagated master state.
+        if self.player.is_slave:
+            # Normalize mute key if needed
+            if "muted" not in data and "mute" in data:
+                data = dict(data)
+                data["muted"] = data.get("mute")
+
+            allowed_keys = {"volume", "muted"}
+            filtered = {k: v for k, v in data.items() if k in allowed_keys}
+            if not filtered:
+                return
+            data = filtered
+
         # Handle debounce for play state to smooth track changes
         # Devices often report STOPPED/PAUSED briefly between tracks
         if "play_state" in data:
@@ -439,13 +459,25 @@ class StateManager:
             }
             self.player._upnp_health_tracker.on_poll_update(poll_state)
 
-        # Update cached models
         # Preserve optimistic source if new status doesn't have one (e.g., when mode=0 is ignored)
         # This prevents optimistic sources set by set_source() from being cleared when device reports mode=0
         # See: https://github.com/mjcumming/wiim/issues/138
         if status and not status.source and self.player._status_model and self.player._status_model.source:
             # Preserve existing source - device may have reported mode=0 which correctly doesn't set source="idle"
             # but we should keep the optimistic source that was set by set_source()
+            status.source = self.player._status_model.source
+
+        # Preserve optimistic source if it was recently set
+        # Device status endpoint may return stale source data after a switch
+        source_preservation_window = 30.0  # seconds to preserve optimistic source
+        if (
+            status
+            and self.player._status_model
+            and self.player._status_model.source
+            and self.player._last_source_set_time > 0
+            and (time.time() - self.player._last_source_set_time) < source_preservation_window
+        ):
+            # Recently set source via set_source() - preserve the optimistic value
             status.source = self.player._status_model.source
 
         # Preserve optimistic EQ preset if it was recently set
@@ -525,17 +557,12 @@ class StateManager:
         elif source_changed:
             self._last_source = current_source
 
-        # Helper to check if a metadata value is invalid/unknown
-        def is_invalid_metadata(val: str | None) -> bool:
-            if not val:
-                return True
-            val_lower = str(val).strip().lower()
-            return val_lower in ("unknow", "unknown", "un_known", "", "none")
-
         # Check if we need to enrich metadata (title/artist are Unknown - common with Bluetooth AVRCP)
         status_title = status.title if status else None
         status_artist = status.artist if status else None
-        needs_metadata_enrichment = is_invalid_metadata(status_title) or is_invalid_metadata(status_artist)
+        needs_metadata_enrichment = (not is_valid_metadata_value(status_title)) or (
+            not is_valid_metadata_value(status_artist)
+        )
 
         if track_changed or needs_metadata_enrichment:
             # Track changed OR metadata needs enrichment (Bluetooth AVRCP case)
@@ -556,7 +583,11 @@ class StateManager:
 
                         # Extract and apply title if status has invalid value
                         meta_title = meta_data.get("title")
-                        if meta_title and not is_invalid_metadata(meta_title) and is_invalid_metadata(status_title):
+                        if (
+                            meta_title
+                            and is_valid_metadata_value(meta_title)
+                            and (not is_valid_metadata_value(status_title))
+                        ):
                             update["title"] = meta_title
                             update["Title"] = meta_title
                             if status:
@@ -564,7 +595,11 @@ class StateManager:
 
                         # Extract and apply artist if status has invalid value
                         meta_artist = meta_data.get("artist")
-                        if meta_artist and not is_invalid_metadata(meta_artist) and is_invalid_metadata(status_artist):
+                        if (
+                            meta_artist
+                            and is_valid_metadata_value(meta_artist)
+                            and (not is_valid_metadata_value(status_artist))
+                        ):
                             update["artist"] = meta_artist
                             update["Artist"] = meta_artist
                             if status:
@@ -573,7 +608,11 @@ class StateManager:
                         # Extract and apply album if status has invalid value
                         status_album = status.album if status else None
                         meta_album = meta_data.get("album")
-                        if meta_album and not is_invalid_metadata(meta_album) and is_invalid_metadata(status_album):
+                        if (
+                            meta_album
+                            and is_valid_metadata_value(meta_album)
+                            and (not is_valid_metadata_value(status_album))
+                        ):
                             update["album"] = meta_album
                             update["Album"] = meta_album
                             if status:

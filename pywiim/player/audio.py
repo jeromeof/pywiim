@@ -29,6 +29,8 @@ class AudioConfiguration:
             source: Source to switch to. Accepts various formats (e.g., "Line In", "Line-in", "line_in", "linein")
                    and normalizes to API format (lowercase with hyphens for multi-word sources).
         """
+        import time
+
         # Normalize source name to API format (lowercase with hyphens for multi-word)
         # Handles variations: "Line In", "Line-in", "line_in", "linein" → "line-in"
         normalized_source = self._normalize_source_for_api(source)
@@ -40,6 +42,14 @@ class AudioConfiguration:
         # If API returns success, we trust the device changed
         if self.player._status_model:
             self.player._status_model.source = normalized_source
+
+        # Update state synchronizer (for immediate property reads)
+        # This ensures player.source returns the new value before the next poll
+        self.player._state_synchronizer.update_from_http({"source": normalized_source})
+
+        # Track when source was set for preserving optimistic update during refresh
+        # Device status endpoint may return stale source data after a switch
+        self.player._last_source_set_time = time.time()
 
         # Call callback to notify state change
         if self.player._on_state_changed:
@@ -85,6 +95,27 @@ class AudioConfiguration:
             # Coaxial variations
             "coax": "coaxial",
             "coaxial": "coaxial",
+            "coaxial-in": "coaxial",
+            "coaxial_in": "coaxial",
+            # Optical variations
+            "optical": "optical",
+            "optical-in": "optical",
+            "optical_in": "optical",
+            # Phono variations
+            "phono": "phono",
+            "phono-in": "phono",
+            "phono_in": "phono",
+            # HDMI variations
+            "hdmi": "hdmi",
+            "hdmi-in": "hdmi",
+            "hdmi_in": "hdmi",
+            "hdmi-arc": "hdmi",
+            # USB variations
+            "usb": "usb",
+            "usb-in": "usb",
+            "usb_in": "usb",
+            "usb-audio": "usb",
+            "usb_audio": "usb",
             # WiFi/Ethernet variations
             "wifi": "wifi",
             "wi-fi": "wifi",
@@ -93,11 +124,7 @@ class AudioConfiguration:
             "network": "wifi",
             # Single-word sources (no change needed)
             "bluetooth": "bluetooth",
-            "optical": "optical",
-            "usb": "usb",
-            "hdmi": "hdmi",
-            "phono": "phono",
-            "aux": "line-in",  # Map "Aux" to "line-in"
+            "aux": "line-in",  # Map "Aux" to "line-in" (standard LinkPlay)
             "aux-in": "line-in",
             # Streaming services (pass through as-is)
             "airplay": "airplay",
@@ -112,6 +139,22 @@ class AudioConfiguration:
         # Check if we have a direct mapping (use normalized form for lookup)
         if normalized in source_mappings:
             return source_mappings[normalized]
+
+        # Smart fallback: check device's own input_list if available
+        # This handles cases where the device uses underscores (line_in) or
+        # other non-standard variations that we didn't hardcode.
+        if self.player._device_info and self.player._device_info.input_list:
+            # Create a simplified version of the input source for comparison
+            source_simple = "".join(c for c in source_lower if c.isalnum())
+            for raw_input in self.player._device_info.input_list:
+                if not raw_input:
+                    continue
+                # Normalize raw input from device list for comparison
+                # "line_in" -> "linein", "Line In" -> "linein"
+                device_simple = "".join(c for c in raw_input.lower() if c.isalnum())
+                if source_simple == device_simple:
+                    _LOGGER.debug("Mapping source '%s' to device-reported '%s'", source, raw_input)
+                    return raw_input
 
         # Also check the original lowercase form (handles "linein" without separators)
         if source_lower in source_mappings:

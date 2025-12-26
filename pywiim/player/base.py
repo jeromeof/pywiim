@@ -77,6 +77,10 @@ class PlayerBase:
         # Device status endpoint may return stale loop_mode data
         self._last_loop_mode_set_time: float = 0
 
+        # Track when source was set (for preserving optimistic updates during refresh)
+        # Device status endpoint may return stale source data after a switch
+        self._last_source_set_time: float = 0
+
         # Cached preset stations (playback presets - updated via refresh())
         self._presets: list[dict[str, Any]] | None = None
         self._last_presets_check: float = 0  # Track when presets were last fetched

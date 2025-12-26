@@ -265,14 +265,15 @@ class TestSourceNormalizationUnit:
             # (input, expected)
             ("line_in", "Line In"),
             ("line-in", "Line In"),
-            ("linein", "Linein In"),  # linein is normalized to line-in which becomes Line In, or Linein In?
+            ("linein", "Linein"),
             ("CoaxIal", "Coaxial"),
             ("coaxial", "Coaxial"),
             ("OPTICAL", "Optical In"),
             ("bluetooth", "Bluetooth"),
             ("wifi", "Network"),  # Standardized to Network
             ("USB", "USB"),  # Acronym preserved
-            ("hdmi", "HDMI"),  # Acronym preserved
+            ("hdmi", "HDMI"),
+            ("phono", "Phono"),
             ("dlna", "DLNA"),  # Acronym preserved
             ("spotify", "Spotify"),
             ("airplay", "AirPlay"),  # Special case

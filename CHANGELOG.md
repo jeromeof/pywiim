@@ -5,7 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.1.59] - 2025-12-26
+
+### Fixed
+- **Source Selection Resilience (Issue #161)**: Fixed physical source selection failure caused by "In" suffix mismatch in recent standardization.
+  - Implemented **Smart Normalization**: `set_source()` now uses alphanumeric matching against the device's own reported `InputList` to find the correct command format.
+  - Added explicit mappings for common variations: "Optical In" → `optical`, "Coaxial In" → `coaxial`, etc.
+  - Reverted "In" suffix for **Coaxial**, **HDMI**, **Phono**, and **USB** display names to stop UI churn and preserve Home Assistant automation stability (ADR 001).
+- **Source Selection Logic**: Improved source normalization to handle mixed case, underscores, and hyphens more robustly.
+
+### Added
+- **ADR 001: Source Naming Stability**: Formalized decision to lock hardware source display names and use smart normalization for API compatibility.
+- **Regression Tests**: Added unit and integration tests covering standardized source naming and device-specific command mapping.
 
 ## [2.1.58] - 2025-12-23
 

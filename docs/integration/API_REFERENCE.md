@@ -459,10 +459,12 @@ Different sources have different position/duration characteristics:
 | **USB/Local Files** | ✅ Always | ✅ Always | milliseconds | Most reliable |
 | **Spotify/Tidal/Qobuz** | ✅ Always | ✅ Always | **microseconds** | Auto-detected |
 | **AirPlay** | ✅ Always | ✅ Always | milliseconds | totlen = total duration |
-| **Bluetooth** | ✅ Usually | ✅ Usually | milliseconds | Depends on source device |
+| **Bluetooth** | ❌ Often N/A | ❌ Often N/A | - | Commonly reports `curpos=0`/`totlen=0` even while playing (depends on phone/app/firmware) |
 | **DLNA** | ✅ Usually | ✅ Usually | milliseconds | Depends on server |
 | **Web Radio/WiFi** | ❌ Often N/A | ❌ `None` | - | Live streams |
 | **Line In/Optical** | ❌ N/A | ❌ N/A | - | Real-time input |
+
+**Bluetooth metadata note**: Track metadata on Bluetooth is often available via the HTTP `getMetaInfo` endpoint (AVRCP), but can be intermittent. It's normal to see `getMetaInfo` return sentinel values like `"unknow"`/`"un_known"` until the source device/app provides metadata (often after a track change). Some devices also report `"Unknown"` in `getPlayerStatus` title fields even when `getMetaInfo` has correct title/artist/album.
 
 ##### 8. Best Practices for Integrations
 

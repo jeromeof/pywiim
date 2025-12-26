@@ -561,3 +561,31 @@ class TestStateManager:
         # Should convert to int 0-100
         upnp_state = mock_player._upnp_health_tracker._last_upnp_state
         assert upnp_state["volume"] == 50
+
+    def test_update_from_upnp_slave_ignores_playback_and_metadata(self, state_manager, mock_player):
+        """Slave mode must never accept slave-local playback/metadata from UPnP.
+
+        Slaves only contribute volume/mute; playback + metadata come exclusively
+        from the master via propagation (or remain empty if master has none).
+        """
+        type(mock_player).is_slave = PropertyMock(return_value=True)
+        mock_player._state_synchronizer.update_from_upnp = MagicMock()
+        mock_player._state_synchronizer.get_merged_state = MagicMock(return_value={})
+
+        state_manager.update_from_upnp(
+            {
+                "title": "Slave Track",
+                "artist": "Slave Artist",
+                "album": "Slave Album",
+                "image_url": "http://example/art.jpg",
+                "play_state": "play",
+                "position": 12,
+                "duration": 180,
+                "source": "bluetooth",
+                "volume": 0.5,
+                "muted": True,
+            }
+        )
+
+        called_payload = mock_player._state_synchronizer.update_from_upnp.call_args[0][0]
+        assert called_payload == {"volume": 0.5, "muted": True}

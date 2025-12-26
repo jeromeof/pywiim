@@ -562,7 +562,7 @@ class TestStateSynchronizerWithProfile:
         assert merged["title"] == "UPnP Title"
 
     def test_metadata_prefers_primary_when_both_have_values(self):
-        """Test metadata uses preferred source when both have values."""
+        """Test metadata prefers UPnP when both have sane values (HTTP supplements)."""
         from pywiim.profiles import PROFILES
 
         profile = PROFILES["wiim"]  # HTTP preferred
@@ -588,8 +588,44 @@ class TestStateSynchronizerWithProfile:
 
         merged = sync.get_merged_state()
 
-        # WiiM profile prefers HTTP for metadata
+        # Policy: UPnP wins for metadata when it has a sane value; HTTP supplements
+        assert merged["title"] == "UPnP Title"
+
+    def test_metadata_falls_back_to_http_when_upnp_is_invalid(self):
+        """If UPnP metadata is placeholder/invalid, fall back to HTTP when it has a sane value."""
+        from pywiim.profiles import PROFILES
+
+        profile = PROFILES["wiim"]
+        sync = StateSynchronizer(profile=profile)
+
+        now = time.time()
+        sync.update_from_http({"play_state": "play", "title": "HTTP Title"}, timestamp=now)
+        sync.update_from_upnp({"play_state": "play", "title": "Unknown"}, timestamp=now)
+
+        merged = sync.get_merged_state()
         assert merged["title"] == "HTTP Title"
+
+    def test_image_url_rejects_un_known_and_non_http_urls(self):
+        """image_url should ignore known sentinels and non-http(s) values."""
+        sync = StateSynchronizer()
+        now = time.time()
+
+        # Establish playing so metadata isn't cleared
+        sync.update_from_http({"play_state": "play"}, timestamp=now)
+
+        # HTTP has a valid URL
+        sync.update_from_http({"image_url": "https://example.com/cover.jpg"}, timestamp=now)
+        assert sync.get_merged_state()["image_url"] == "https://example.com/cover.jpg"
+
+        # UPnP tries to overwrite with sentinel/invalid values: should be ignored by merge
+        sync.update_from_upnp({"image_url": "un_known"}, timestamp=now)
+        assert sync.get_merged_state()["image_url"] == "https://example.com/cover.jpg"
+
+        sync.update_from_upnp({"image_url": "http://192.168.1.2:49152/un_known"}, timestamp=now)
+        assert sync.get_merged_state()["image_url"] == "https://example.com/cover.jpg"
+
+        sync.update_from_upnp({"image_url": "file:///tmp/cover.jpg"}, timestamp=now)
+        assert sync.get_merged_state()["image_url"] == "https://example.com/cover.jpg"
 
     def test_metadata_preservation_from_merged_state(self):
         """Test metadata is preserved from merged state when both sources empty."""

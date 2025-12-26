@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from ..device_capabilities import filter_plm_inputs, get_device_inputs
+from ..metadata import is_valid_image_url, is_valid_metadata_value
 from .source_capabilities import SourceCapability, get_source_capabilities
 
 if TYPE_CHECKING:
@@ -223,7 +224,27 @@ class PlayerProperties:
         for n in names:
             val = merged.get(n)
             if val is not None:
-                if isinstance(val, str) and val.strip().lower() in {"unknown", "unknow", "none"}:
+                # Field-aware filtering: artwork fields must be valid URLs,
+                # other metadata must be non-placeholder values.
+                if n in {"image_url", "entity_picture", "cover_url"}:
+                    if not is_valid_image_url(val):
+                        continue
+                else:
+                    if not is_valid_metadata_value(val):
+                        continue
+                # (Keep the explicit placeholder set for backwards-compat readability.)
+                if isinstance(val, str) and val.strip().lower() in {
+                    "unknown",
+                    "unknow",
+                    "un_known",
+                    "none",
+                    "null",
+                    "(null)",
+                    "n/a",
+                    "na",
+                    "-",
+                    "--",
+                }:
                     continue
                 if val not in (None, ""):
                     return str(val) if val is not None else None
@@ -235,7 +256,24 @@ class PlayerProperties:
         for n in names:
             if hasattr(self.player._status_model, n):
                 val = getattr(self.player._status_model, n)
-                if isinstance(val, str) and val.strip().lower() in {"unknown", "unknow", "none"}:
+                if n in {"image_url", "entity_picture", "cover_url"}:
+                    if not is_valid_image_url(val):
+                        continue
+                else:
+                    if not is_valid_metadata_value(val):
+                        continue
+                if isinstance(val, str) and val.strip().lower() in {
+                    "unknown",
+                    "unknow",
+                    "un_known",
+                    "none",
+                    "null",
+                    "(null)",
+                    "n/a",
+                    "na",
+                    "-",
+                    "--",
+                }:
                     continue
                 if val not in (None, ""):
                     return str(val) if val is not None else None

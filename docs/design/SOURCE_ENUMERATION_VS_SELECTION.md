@@ -15,10 +15,11 @@ Historically, we relied on the device's `input_list` or `plm_support` bitmask, b
 - **Bluetooth** - Bluetooth audio input  
 - **Line In** - Analog audio input
 - **Optical In** - Digital optical input
-- **Coaxial** - Digital coaxial input
+- **Coaxial** - Digital coaxial input (Stable name)
 - **USB** - USB audio input (WiiM Ultra/Amp only)
 - **HDMI** - HDMI audio input (WiiM Ultra/Amp only)
 - **Phono** - Turntable input (WiiM Ultra only)
+- **Aux In** - Friendly name for Line In on specific models (WiiM Sound, etc.)
 
 **Model-Specific Exclusions:**
 - **WiiM Pro / Pro Plus**: Automatically excludes `USB` and `Coaxial` (Pro Plus hardware has Coaxial, but it is excluded from the standard integration source list per user preference).
@@ -57,10 +58,10 @@ These are **selectable** - you can switch to them using `switchmode:`, but they 
 ### User-Selectable Sources (For Home Assistant UI)
 These are the sources to show in Home Assistant's `source_list` dropdown. **`pywiim` provides a "UI-Ready" list** via the `Player.available_sources` property.
 
-- **Standardized Naming**: All sources follow a consistent naming convention:
+- **Standardized Naming (ADR 001)**: All sources follow a consistent and STABLE naming convention to prevent automation breakage:
   - **"Network"**: Replaces all variations of `wifi`, `ethernet`, and `wi-fi`.
-  - **"Aux In"**: Friendly name for `line_in` on specific models.
-  - **"Line In", "Optical In", "Coaxial"**: Standard Title Case.
+  - **"Line In", "Optical In", "Aux In"**: Standard Title Case with "In" suffix.
+  - **"Coaxial", "HDMI", "Phono", "USB"**: Stable names WITHOUT "In" suffix.
   - **Acronyms**: Proper capitalization for `USB`, `HDMI`, `SPDIF`, `RCA`, `DLNA`.
 - **Essential Source Injection**: The **"Network"** source is always injected, ensuring users on a physical input (like Optical) always have a way to switch back to streaming mode.
 - **Match Requirement**: The current `player.source` string is guaranteed to exactly match one of the items in `player.available_sources`, ensuring the Home Assistant UI can correctly highlight the active selection.
@@ -70,21 +71,22 @@ These are the sources to show in Home Assistant's `source_list` dropdown. **`pyw
 By moving this logic into `pywiim`, we follow a "Thin Integration" pattern where the library takes full responsibility for:
 1. **Filtering**: Knowing what hardware exists on each model.
 2. **Formatting**: Providing strings ready for display.
-3. **Normalization**: Mapping various UI strings (like "line-in", "Line In", "line_in") back to the correct API command (`switchmode:line-in`).
+3. **Smart Normalization**: Automatically mapping various UI strings back to the correct API command using alphanumeric matching and device-reported input lists.
 
 ### Correct Pattern (Current)
 
 ```python
 # Get UI-ready list
 available_sources = player.available_sources
-# Result: ["Network", "Bluetooth", "Line In", "Optical In"]
+# Result: ["Network", "Bluetooth", "Line In", "Optical In", "Coaxial"]
 
 # Get current source (guaranteed match)
 current = player.source
 # Result: "Network" or "Line In" or "Spotify"
 
-# Selection is highly resilient
-await player.set_source("Line In")   # OK
-await player.set_source("line_in")   # OK
-await player.set_source("linein")    # OK
+# Selection is highly resilient (Smart Normalization)
+await player.set_source("Line In")     # OK -> "line-in"
+await player.set_source("line_in")     # OK -> "line-in"
+await player.set_source("Optical In")  # OK -> "optical"
+await player.set_source("Coaxial")     # OK -> "coaxial"
 ```

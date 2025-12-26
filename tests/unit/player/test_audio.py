@@ -638,8 +638,13 @@ class TestSourceNormalization:
             ("usb", "usb"),
             ("HDMI", "hdmi"),
             ("hdmi", "hdmi"),
+            ("HDMI In", "hdmi"),  # Resilience
+            ("HDMI ARC", "hdmi"),
             ("Phono", "phono"),
             ("phono", "phono"),
+            ("Phono In", "phono"),  # Resilience
+            ("Optical In", "optical"),  # UI standardization (stable since 2.1.58)
+            ("Coaxial In", "coaxial"),  # Resilience
             ("Aux", "line-in"),
             ("Aux In", "line-in"),
         ],
@@ -648,6 +653,19 @@ class TestSourceNormalization:
         """Test single-word source normalization."""
         result = audio_config._normalize_source_for_api(input_source)
         assert result == expected
+
+    def test_normalize_source_device_specific(self, audio_config):
+        """Test normalization respecting device-reported input names (smart fallback)."""
+        # Mock device info with custom names in InputList
+        from pywiim.models import DeviceInfo
+
+        audio_config.player._device_info = DeviceInfo(project="test", DeviceName="Test")
+        audio_config.player._device_info.input_list = ["custom_in", "SuperSource", "bluetooth"]
+
+        # Should match custom sources from input_list
+        assert audio_config._normalize_source_for_api("Custom In") == "custom_in"
+        assert audio_config._normalize_source_for_api("Super Source") == "SuperSource"
+        assert audio_config._normalize_source_for_api("super-source") == "SuperSource"
 
     # Streaming services (pass through as-is, lowercase)
     @pytest.mark.parametrize(

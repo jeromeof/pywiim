@@ -21,6 +21,8 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from .metadata import is_valid_image_url, is_valid_metadata_value
+
 if TYPE_CHECKING:
     from .models import GroupState
     from .profiles import DeviceProfile
@@ -54,11 +56,12 @@ SOURCE_PRIORITY: dict[str, list[str]] = {
     # During playback: position is estimated locally using a timer, with periodic HTTP polling to correct drift
     "position": ["upnp", "http"],  # UPnP on track start, local timer estimates, HTTP polls periodically to correct
     "duration": ["upnp", "http"],  # UPnP on track start, HTTP polls periodically
-    # Metadata: HTTP preferred (more complete, less likely to be cleared)
-    "title": ["http", "upnp"],  # HTTP metadata is more reliable
-    "artist": ["http", "upnp"],
-    "album": ["http", "upnp"],
-    "image_url": ["http", "upnp"],
+    # Metadata: UPnP preferred when it has a sane value (fast for track changes; required for Spotify),
+    # HTTP supplements/fills gaps (e.g., Bluetooth AVRCP via getMetaInfo, missing artwork fields).
+    "title": ["upnp", "http"],
+    "artist": ["upnp", "http"],
+    "album": ["upnp", "http"],
+    "image_url": ["upnp", "http"],
     # Source: HTTP preferred (more accurate)
     "source": ["http", "upnp"],
 }
@@ -618,13 +621,35 @@ class StateSynchronizer:
         # For metadata fields, apply special handling
         # Prefer "propagated" source over others for metadata (master is authoritative)
         if field_name in ["title", "artist", "album", "image_url"]:
-            # If http_field is propagated and has a value, prefer it over upnp for metadata
-            if http_field.source == "propagated" and http_field.value and upnp_field:
+            # If http_field is propagated and has a value, prefer it over UPnP for metadata
+            if (
+                http_field.source == "propagated"
+                and self._is_valid_metadata_value(http_field.value, field_name)
+                and upnp_field
+            ):
                 _LOGGER.debug(
                     "State merge [profile]: field=%s, chose=propagated (master metadata authoritative)",
                     field_name,
                 )
                 return http_field
+
+            # Policy: UPnP wins for metadata when it has a sane value and is available/fresh.
+            # HTTP is a supplement/fallback for gaps/unsupported metadata paths.
+            if upnp_available and upnp_fresh and self._is_valid_metadata_value(upnp_field.value, field_name):
+                _LOGGER.debug(
+                    "State merge [profile]: field=%s, chose=upnp (metadata, has value)",
+                    field_name,
+                )
+                return upnp_field
+
+            # If UPnP doesn't have a sane value, prefer HTTP if it does (and is fresh).
+            if http_fresh and self._is_valid_metadata_value(http_field.value, field_name):
+                _LOGGER.debug(
+                    "State merge [profile]: field=%s, chose=http (metadata, upnp empty/invalid)",
+                    field_name,
+                )
+                return http_field
+
             return self._resolve_metadata_with_profile(
                 primary,
                 fallback,
@@ -684,8 +709,8 @@ class StateSynchronizer:
         Returns:
             Resolved metadata field
         """
-        # If primary has value, use it
-        if primary.value:
+        # If primary has a sane value, use it
+        if self._is_valid_metadata_value(primary.value, field_name):
             _LOGGER.debug(
                 "State merge [profile]: field=%s, chose=%s (metadata, has value)",
                 field_name,
@@ -693,8 +718,8 @@ class StateSynchronizer:
             )
             return primary
 
-        # Primary empty - if fallback has value and is fresh, use it
-        if fallback.value and fallback_fresh:
+        # Primary empty/invalid - if fallback has a sane value and is fresh, use it
+        if self._is_valid_metadata_value(fallback.value, field_name) and fallback_fresh:
             _LOGGER.debug(
                 "State merge [profile]: field=%s, chose=%s (metadata, primary empty, fallback has value)",
                 field_name,
@@ -704,7 +729,7 @@ class StateSynchronizer:
 
         # Both empty or fallback stale - preserve existing if we have it
         existing_merged: TimestampedField | None = getattr(self._merged_state, field_name, None)
-        if existing_merged is not None and existing_merged.value:
+        if existing_merged is not None and self._is_valid_metadata_value(existing_merged.value, field_name):
             _LOGGER.debug(
                 "State merge [profile]: field=%s, preserving existing (both sources empty)",
                 field_name,
@@ -776,19 +801,19 @@ class StateSynchronizer:
         if field_name in ["title", "artist", "album", "image_url"]:
             # Prefer propagated source for metadata (master is authoritative for slaves)
             # But only if propagated has a value (don't prefer None over existing values)
-            if http_field.source == "propagated" and http_field.value:
+            if http_field.source == "propagated" and self._is_valid_metadata_value(http_field.value, field_name):
                 _LOGGER.debug(
                     "State merge [legacy]: field=%s, chose=propagated (master metadata authoritative)",
                     field_name,
                 )
                 return http_field
-            if upnp_field.value:
+            if self._is_valid_metadata_value(upnp_field.value, field_name):
                 _LOGGER.debug(
                     "State merge [legacy]: field=%s, chose=upnp (metadata, has value, both fresh)",
                     field_name,
                 )
                 return upnp_field
-            elif http_field.value:
+            elif self._is_valid_metadata_value(http_field.value, field_name):
                 _LOGGER.debug(
                     "State merge [legacy]: field=%s, chose=http (metadata, UPnP empty, HTTP has value)",
                     field_name,
@@ -797,7 +822,7 @@ class StateSynchronizer:
             else:
                 # Both empty - preserve existing
                 existing_merged: TimestampedField | None = getattr(self._merged_state, field_name, None)
-                if existing_merged is not None and existing_merged.value:
+                if existing_merged is not None and self._is_valid_metadata_value(existing_merged.value, field_name):
                     _LOGGER.debug(
                         "State merge [legacy]: field=%s, preserving existing (both sources empty)",
                         field_name,
@@ -897,6 +922,13 @@ class StateSynchronizer:
             self._merged_state.upnp_available = (now - self._merged_state.upnp_last_update) < upnp_timeout
         else:
             self._merged_state.upnp_available = False
+
+    @staticmethod
+    def _is_valid_metadata_value(val: Any, field_name: str | None = None) -> bool:
+        """Field-aware metadata validity check (centralized in pywiim.metadata)."""
+        if field_name == "image_url":
+            return is_valid_image_url(val)
+        return is_valid_metadata_value(val)
 
     def get_merged_state(self) -> dict[str, Any]:
         """Get current merged state as dictionary.

@@ -14,6 +14,8 @@ import logging
 import time
 from typing import Any
 
+from ..metadata import is_valid_metadata_value
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -239,10 +241,7 @@ class UpnpHealthTracker:
 
     def _is_invalid_metadata(self, val: Any) -> bool:
         """Check if metadata value is invalid/unknown."""
-        if not val:
-            return True
-        val_lower = str(val).strip().lower()
-        return val_lower in ("unknow", "unknown", "un_known", "", "none")
+        return not is_valid_metadata_value(val)
 
     def _upnp_saw_change(self, field: str, new_value: Any) -> bool:
         """Check if UPnP event captured this change within grace period.

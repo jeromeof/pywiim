@@ -1077,7 +1077,7 @@ The `Player` class uses `StateSynchronizer` to intelligently merge HTTP polling 
 
 - **Real-time fields** (play_state, volume): UPnP preferred (more timely)
 - **Position/Duration**: UPnP provides initial values when track starts, then local timer estimates position during playback with periodic HTTP polling to correct drift
-- **Metadata fields** (title, artist, album): HTTP preferred (more complete), **except Spotify** - Spotify requires UPnP events for metadata as HTTP API does not provide it
+- **Metadata fields** (title, artist, album): UPnP preferred **when it has a sane value** (fast on track changes; required for Spotify). HTTP supplements/fills gaps when UPnP metadata is empty/placeholder (e.g., Bluetooth AVRCP via `getMetaInfo`).
 - **Artwork URL**: Automatically retrieved from `getMetaInfo` endpoint when missing from `getPlayerStatusEx` - no manual fetching needed
 - **Cover Art Images**: pywiim can fetch and cache cover art images directly - use `player.fetch_cover_art()` or `player.get_cover_art_bytes()` for reliable image serving
 - **Source field**: HTTP preferred (more accurate)
