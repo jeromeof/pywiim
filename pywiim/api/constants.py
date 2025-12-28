@@ -237,6 +237,7 @@ EMBEDDED_LOGO_BASE64 = (
 # EQ preset numeric mapping
 # Maps numeric EQ preset values to preset names
 # EQ Preset names
+EQ_PRESET_OFF = "off"  # Special value: EQ is disabled (not a preset, but used in sound_mode)
 EQ_PRESET_FLAT = "flat"
 EQ_PRESET_ACOUSTIC = "acoustic"
 EQ_PRESET_BASS = "bass"
@@ -256,6 +257,8 @@ EQ_PRESET_VOCAL = "vocal"
 EQ_PRESET_CUSTOM = "custom"
 
 # EQ Preset mapping (preset name -> display name)
+# Note: EQ_PRESET_OFF is intentionally NOT in this map - it's handled separately
+# as it represents "EQ disabled" rather than an actual EQ preset
 EQ_PRESET_MAP: dict[str, str] = {
     EQ_PRESET_FLAT: "Flat",
     EQ_PRESET_ACOUSTIC: "Acoustic",

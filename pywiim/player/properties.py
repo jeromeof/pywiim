@@ -812,12 +812,22 @@ class PlayerProperties:
 
     @property
     def eq_preset(self) -> str | None:
-        """Current EQ preset from cached status.
+        """Current EQ preset from cached status, or "Off" if EQ is disabled.
+
+        Returns:
+            - "Off" if EQ is disabled (bypassed)
+            - The preset name (Title Case) if EQ is enabled
+            - None if status is not available
 
         Normalized to Title Case to match the format returned by get_eq_presets().
         The device may return lowercase in status but capitalized in preset list,
         so we normalize for consistency.
         """
+        # Check if EQ is disabled - return "Off" if so
+        # Note: _eq_enabled is None if we haven't fetched status yet, so default to showing preset
+        if self.player._eq_enabled is False:
+            return "Off"
+
         if self.player._status_model is None:
             return None
         preset = self.player._status_model.eq_preset

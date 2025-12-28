@@ -69,6 +69,11 @@ class PlayerBase:
         self._eq_presets: list[str] | None = None
         self._last_eq_presets_check: float = 0  # Track when EQ presets were last fetched
 
+        # Cached EQ enabled status (updated via refresh())
+        # True = EQ processing active, False = EQ bypassed (off)
+        self._eq_enabled: bool | None = None
+        self._last_eq_status_check: float = 0  # Track when EQ status was last fetched
+
         # Track when EQ preset was set (for preserving optimistic updates during refresh)
         # Device status endpoint returns stale EQ data; we preserve the optimistic update for a few seconds
         self._last_eq_preset_set_time: float = 0

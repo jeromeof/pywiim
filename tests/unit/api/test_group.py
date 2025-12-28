@@ -383,8 +383,8 @@ class TestGroupAPIDeviceGroupInfo:
         mock_status = {
             "multiroom": {
                 "slaves": [
-                    {"ip": "192.168.1.101"},
-                    {"ip": "192.168.1.102"},
+                    {"ip": "192.168.1.101", "uuid": "uuid:slave-uuid-1"},
+                    {"ip": "192.168.1.102", "uuid": "uuid:slave-uuid-2"},
                 ],
                 "slave_count": 2,
             }
@@ -406,6 +406,10 @@ class TestGroupAPIDeviceGroupInfo:
         assert result.master_host == "192.168.1.100"
         assert len(result.slave_hosts) == 2
         assert result.slave_count == 2
+        # Verify slave UUIDs are extracted (for WiFi Direct matching)
+        assert len(result.slave_uuids) == 2
+        assert "slave-uuid-1" in result.slave_uuids
+        assert "slave-uuid-2" in result.slave_uuids
 
     @pytest.mark.asyncio
     async def test_get_device_group_info_slave(self, mock_client):

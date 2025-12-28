@@ -710,3 +710,146 @@ class TestSourceNormalization:
 
         # API should receive "line-in" (hyphenated format)
         mock_client.set_source.assert_called_once_with("line-in")
+
+
+class TestEQOffBehavior:
+    """Test EQ Off behavior (GitHub issue #165).
+
+    When EQ is disabled, sound_mode should show "Off" instead of the last preset.
+    Selecting "Off" should disable EQ, selecting any other preset should enable EQ.
+    """
+
+    @pytest.fixture
+    def mock_player(self, mock_client):
+        """Create a mock Player instance for EQ Off tests."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        player._status_model = PlayerStatus()
+        player._eq_enabled = None  # Not yet fetched
+        player._eq_presets = None
+        player._on_state_changed = None
+        return player
+
+    @pytest.fixture
+    def audio_config(self, mock_player):
+        """Create an AudioConfiguration instance."""
+        from pywiim.player.audio import AudioConfiguration
+
+        return AudioConfiguration(mock_player)
+
+    @pytest.mark.asyncio
+    async def test_set_eq_preset_off_disables_eq(self, audio_config, mock_player):
+        """Test that setting preset to 'Off' disables EQ instead of setting a preset."""
+        mock_player.client.set_eq_enabled = AsyncMock()
+        mock_player._on_state_changed = MagicMock()
+
+        await audio_config.set_eq_preset("Off")
+
+        # Should call set_eq_enabled(False), not set_eq_preset
+        mock_player.client.set_eq_enabled.assert_called_once_with(False)
+        # _eq_enabled should be updated
+        assert mock_player._eq_enabled is False
+
+    @pytest.mark.asyncio
+    async def test_set_eq_preset_off_case_insensitive(self, audio_config, mock_player):
+        """Test that 'off', 'OFF', 'Off' all disable EQ."""
+        mock_player.client.set_eq_enabled = AsyncMock()
+        mock_player._on_state_changed = MagicMock()
+
+        for off_value in ["off", "OFF", "Off", "oFf"]:
+            mock_player.client.set_eq_enabled.reset_mock()
+            await audio_config.set_eq_preset(off_value)
+            mock_player.client.set_eq_enabled.assert_called_once_with(False)
+
+    @pytest.mark.asyncio
+    async def test_set_eq_preset_enables_eq_when_off(self, audio_config, mock_player):
+        """Test that setting a preset when EQ is off enables EQ first."""
+        mock_player.client.set_eq_enabled = AsyncMock()
+        mock_player.client.set_eq_preset = AsyncMock()
+        mock_player.client.get_eq = AsyncMock(return_value={"Name": "rock"})
+        mock_player._eq_enabled = False  # EQ is currently off
+        mock_player._on_state_changed = MagicMock()
+
+        await audio_config.set_eq_preset("rock")
+
+        # Should enable EQ first, then set preset
+        mock_player.client.set_eq_enabled.assert_called_once_with(True)
+        mock_player.client.set_eq_preset.assert_called_once_with("rock")
+        assert mock_player._eq_enabled is True
+
+    @pytest.mark.asyncio
+    async def test_set_eq_preset_does_not_enable_when_already_on(self, audio_config, mock_player):
+        """Test that setting a preset when EQ is on doesn't re-enable EQ."""
+        mock_player.client.set_eq_enabled = AsyncMock()
+        mock_player.client.set_eq_preset = AsyncMock()
+        mock_player.client.get_eq = AsyncMock(return_value={"Name": "rock"})
+        mock_player._eq_enabled = True  # EQ is already on
+        mock_player._on_state_changed = MagicMock()
+
+        await audio_config.set_eq_preset("rock")
+
+        # Should NOT call set_eq_enabled since EQ is already on
+        mock_player.client.set_eq_enabled.assert_not_called()
+        mock_player.client.set_eq_preset.assert_called_once_with("rock")
+
+    @pytest.mark.asyncio
+    async def test_set_eq_enabled_updates_cached_state(self, audio_config, mock_player):
+        """Test that set_eq_enabled updates _eq_enabled immediately."""
+        mock_player.client.set_eq_enabled = AsyncMock()
+        mock_player._on_state_changed = MagicMock()
+
+        # Enable EQ
+        await audio_config.set_eq_enabled(True)
+        assert mock_player._eq_enabled is True
+
+        # Disable EQ
+        await audio_config.set_eq_enabled(False)
+        assert mock_player._eq_enabled is False
+
+    def test_eq_preset_property_returns_off_when_eq_disabled(self, mock_player):
+        """Test that eq_preset property returns 'Off' when EQ is disabled."""
+        mock_player._eq_enabled = False
+        mock_player._status_model = PlayerStatus(eq_preset="flat")
+
+        # Even though there's a preset in status, should return "Off"
+        assert mock_player.eq_preset == "Off"
+
+    def test_eq_preset_property_returns_preset_when_eq_enabled(self, mock_player):
+        """Test that eq_preset property returns the preset when EQ is enabled."""
+        mock_player._eq_enabled = True
+        mock_player._status_model = PlayerStatus(eq_preset="rock")
+
+        assert mock_player.eq_preset == "Rock"  # Title Case
+
+    def test_eq_preset_property_returns_preset_when_eq_status_unknown(self, mock_player):
+        """Test that eq_preset returns preset when EQ status hasn't been fetched yet."""
+        mock_player._eq_enabled = None  # Not yet fetched
+        mock_player._status_model = PlayerStatus(eq_preset="jazz")
+
+        # Should return the preset (not "Off") when EQ status is unknown
+        assert mock_player.eq_preset == "Jazz"
+
+    def test_eq_presets_includes_off_option(self, mock_player):
+        """Test that eq_presets list includes 'Off' as first option."""
+        mock_player._eq_presets = ["Flat", "Rock", "Jazz"]
+
+        presets = mock_player.eq_presets
+
+        assert presets[0] == "Off"
+        assert "Flat" in presets
+        assert "Rock" in presets
+        assert "Jazz" in presets
+
+    def test_eq_presets_empty_when_no_presets(self, mock_player):
+        """Test that eq_presets returns empty list when no presets available."""
+        mock_player._eq_presets = None
+
+        assert mock_player.eq_presets == []
+
+    def test_eq_presets_empty_when_empty_list(self, mock_player):
+        """Test that eq_presets returns empty list when presets list is empty."""
+        mock_player._eq_presets = []
+
+        # Empty list means no EQ support, so no "Off" option either
+        assert mock_player.eq_presets == []

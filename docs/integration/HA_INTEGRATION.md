@@ -755,9 +755,9 @@ async def _async_update_data(self):
 
 - **`presets`**: List of playback presets (radio stations, saved favorites) from cached state. Each preset is a dictionary with `number`, `name`, `url`, and `picurl` fields. Automatically fetched by `player.refresh()` on track change or periodically (every 60s). Returns `None` if presets not supported or not available. See [Using Playback Presets](#using-playback-presets) section below for details.
 
-- **`eq_presets`**: List of available EQ preset names from `get_eq_presets()` (e.g., `["Flat", "Rock", "Jazz", ...]`). Fetched every 60 seconds when EQ is supported.
+- **`eq_presets`**: List of available EQ preset names with "Off" as the first option (e.g., `["Off", "Flat", "Rock", "Jazz", ...]`). The "Off" option indicates EQ is disabled (audio bypass). Fetched every 60 seconds when EQ is supported.
   
-- **`eq_preset`**: Current EQ preset name, normalized to Title Case to match the format from `get_eq_presets()`. This ensures consistency - if `get_eq_presets()` returns `["Flat", "Acoustic", ...]`, then `eq_preset` will return `"Flat"` (not `"flat"`), making comparisons straightforward.
+- **`eq_preset`**: Current EQ preset name, or "Off" if EQ is disabled. Normalized to Title Case to match the format from `eq_presets`. When EQ is off (disabled/bypassed), this returns "Off" instead of the last-used preset, ensuring accurate UI representation. This ensures consistency - if `eq_presets` returns `["Off", "Flat", "Acoustic", ...]`, then `eq_preset` will return `"Off"` or `"Flat"` etc., making comparisons straightforward.
 
 ## Advanced Patterns
 
@@ -1593,13 +1593,38 @@ class WiiMMediaPlayer(MediaPlayerEntity):
 
     @property
     def sound_mode(self) -> str | None:
-        """Current sound mode (EQ preset) of the media player."""
+        """Current sound mode (EQ preset) of the media player.
+        
+        Returns "Off" when EQ is disabled (audio bypass), otherwise returns
+        the current EQ preset name in Title Case (e.g., "Flat", "Rock").
+        """
         return self.coordinator.data.get("eq_preset")
 
     @property
     def sound_mode_list(self) -> list[str] | None:
-        """List of available sound modes (EQ presets)."""
+        """List of available sound modes (EQ presets).
+        
+        Returns a list with "Off" as the first option, followed by available
+        EQ presets (e.g., ["Off", "Flat", "Rock", "Jazz", ...]).
+        Selecting "Off" disables EQ entirely (audio bypass).
+        """
         return self.coordinator.data.get("eq_presets")
+
+    async def async_select_sound_mode(self, sound_mode: str) -> None:
+        """Select sound mode (EQ preset).
+        
+        Args:
+            sound_mode: Sound mode to select. Can be "Off" to disable EQ,
+                       or any preset name (e.g., "Flat", "Rock", "Jazz").
+        
+        Note: The pywiim library handles "Off" automatically:
+              - Selecting "Off" disables EQ (audio bypass)
+              - Selecting any preset enables EQ if disabled, then applies preset
+        """
+        player = self.coordinator.data.get("player")
+        if player:
+            await player.set_eq_preset(sound_mode)
+            # State is automatically updated via on_state_changed callback
 
     @property
     def source_list(self) -> list[str] | None:

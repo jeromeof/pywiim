@@ -501,13 +501,18 @@ class GroupAPI:
                     master_host=master_ip,
                     master_uuid=master_uuid,
                     slave_hosts=[],
+                    slave_uuids=[],
                     slave_count=0,
                 )
             # else: master info points to self, continue to check if we have slaves
 
         # Step 2: Not a slave - check getSlaveList to determine master vs solo
+        # Extract both IPs and UUIDs for WiFi Direct multiroom support
+        # (WiFi Direct slaves use internal 10.10.10.x IPs, need UUID for matching)
+        slave_ips: list[str] = []
+        slave_uuids: list[str] = []
+
         # First try to get slaves from multiroom status (if available) as optimization
-        slaves_from_api: list[str] = []
         if multiroom:
             # Extract slaves from multiroom status - try slave_list first, then slaves
             slaves_list = multiroom.get("slave_list", multiroom.get("slaves", []))
@@ -515,40 +520,54 @@ class GroupAPI:
                 for item in slaves_list:
                     if isinstance(item, dict):
                         ip = item.get("ip", "")
+                        uuid = item.get("uuid", "")
                         if ip:
-                            slaves_from_api.append(ip)
+                            slave_ips.append(ip)
+                            # Normalize UUID (remove "uuid:" prefix if present)
+                            slave_uuids.append(uuid.replace("uuid:", "") if uuid else "")
                     elif item:
-                        slaves_from_api.append(str(item))
+                        slave_ips.append(str(item))
+                        slave_uuids.append("")
 
-        # If no slaves from status, try get_slaves() API call
-        if not slaves_from_api:
+        # If no slaves from status, try get_slaves_info() API call to get IPs and UUIDs
+        if not slave_ips:
             try:
-                slaves_from_api = await self.get_slaves()
+                slaves_info = await self.get_slaves_info()
+                for slave in slaves_info:
+                    ip = slave.get("ip", "")
+                    uuid = slave.get("uuid", "")
+                    if ip:
+                        slave_ips.append(ip)
+                        # Normalize UUID (remove "uuid:" prefix if present)
+                        slave_uuids.append(uuid.replace("uuid:", "") if uuid else "")
             except Exception as e:
-                _logger.debug("get_device_group_info: get_slaves() failed: %s", e)
+                _logger.debug("get_device_group_info: get_slaves_info() failed: %s", e)
 
-        if slaves_from_api and len(slaves_from_api) > 0:
+        if slave_ips and len(slave_ips) > 0:
             # Has slaves - we're a master
             _logger.debug(
-                "get_device_group_info: Detected MASTER via get_slaves() - %d slaves: %s",
-                len(slaves_from_api),
-                slaves_from_api,
+                "get_device_group_info: Detected MASTER via get_slaves_info() - %d slaves: %s (uuids: %s)",
+                len(slave_ips),
+                slave_ips,
+                slave_uuids,
             )
             return DeviceGroupInfo(
                 role="master",
                 master_host=self.host,  # type: ignore[attr-defined]
                 master_uuid=None,
-                slave_hosts=slaves_from_api,
-                slave_count=len(slaves_from_api),
+                slave_hosts=slave_ips,
+                slave_uuids=slave_uuids,
+                slave_count=len(slave_ips),
             )
         else:
             # No slaves - we're solo
-            _logger.debug("get_device_group_info: Detected SOLO (get_slaves() returned empty)")
+            _logger.debug("get_device_group_info: Detected SOLO (get_slaves_info() returned empty)")
             return DeviceGroupInfo(
                 role="solo",
                 master_host=None,
                 master_uuid=None,
                 slave_hosts=[],
+                slave_uuids=[],
                 slave_count=0,
             )
 

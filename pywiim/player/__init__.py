@@ -871,15 +871,19 @@ class Player(PlayerBase):
 
     @property
     def eq_presets(self) -> list[str]:
-        """Available EQ presets from cached state.
+        """Available EQ presets from cached state, with "Off" option first.
 
         Returns:
-            List of EQ preset names, or empty list if not available.
+            List of EQ preset names with "Off" first, or empty list if not available.
+            "Off" represents EQ disabled (audio passes through without EQ processing).
 
         Example:
-            ["flat", "acoustic", "bass", "rock", "jazz", "custom"]
+            ["Off", "Flat", "Acoustic", "Bass", "Rock", "Jazz", "Custom"]
         """
-        return self._eq_presets if self._eq_presets is not None else []
+        presets = self._eq_presets if self._eq_presets is not None else []
+        if presets:
+            return ["Off"] + presets
+        return []
 
     @property
     def presets(self) -> list[dict[str, Any]] | None:

@@ -3320,13 +3320,14 @@ class TestPlayerMediaMetadata:
 
     @pytest.mark.asyncio
     async def test_eq_presets_returns_list_when_available(self, mock_client):
-        """Test eq_presets returns the preset list when available."""
+        """Test eq_presets returns 'Off' followed by the preset list when available."""
         from pywiim.player import Player
 
         player = Player(mock_client)
         player._eq_presets = ["flat", "acoustic", "bass", "rock"]
 
-        assert player.eq_presets == ["flat", "acoustic", "bass", "rock"]
+        # "Off" should be prepended to indicate EQ disabled option
+        assert player.eq_presets == ["Off", "flat", "acoustic", "bass", "rock"]
 
     @pytest.mark.asyncio
     async def test_is_muted_various_formats(self, mock_client):

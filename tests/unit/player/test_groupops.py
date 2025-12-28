@@ -217,3 +217,55 @@ class TestGroupOperations:
 
         # Should not raise
         group_ops.propagate_metadata_to_slaves()
+
+    def test_find_slave_player_by_host(self, group_ops, mock_player):
+        """Test finding slave player by host/IP."""
+        slave = MagicMock()
+        slave.host = "192.168.1.101"
+        mock_player._player_finder = MagicMock(return_value=slave)
+
+        result = group_ops._find_slave_player("192.168.1.101", None)
+
+        assert result == slave
+        mock_player._player_finder.assert_called_with("192.168.1.101")
+
+    def test_find_slave_player_by_uuid_fallback(self, group_ops, mock_player):
+        """Test finding slave player by UUID when IP doesn't match.
+
+        This handles WiFi Direct multiroom where slaves use internal 10.10.10.x IPs
+        but HA knows them by their LAN IPs. UUID provides the fallback match.
+        """
+        slave = MagicMock()
+        slave.host = "192.168.1.101"
+        slave.uuid = "FF31F008-25D7-2F58-1507-DE05FF31F008"
+
+        # First call with IP returns None (internal IP not known)
+        # Second call with UUID returns the player
+        mock_player._player_finder = MagicMock(side_effect=[None, slave])
+
+        result = group_ops._find_slave_player(
+            "10.10.10.92",  # Internal WiFi Direct IP
+            "FF31F008-25D7-2F58-1507-DE05FF31F008",  # UUID for fallback
+        )
+
+        assert result == slave
+        assert mock_player._player_finder.call_count == 2
+        mock_player._player_finder.assert_any_call("10.10.10.92")
+        mock_player._player_finder.assert_any_call("FF31F008-25D7-2F58-1507-DE05FF31F008")
+
+    def test_find_slave_player_no_finder(self, group_ops, mock_player):
+        """Test finding slave player when no player_finder is set."""
+        mock_player._player_finder = None
+
+        result = group_ops._find_slave_player("192.168.1.101", "some-uuid")
+
+        assert result is None
+
+    def test_find_slave_player_not_found(self, group_ops, mock_player):
+        """Test finding slave player when not found by host or UUID."""
+        mock_player._player_finder = MagicMock(return_value=None)
+
+        result = group_ops._find_slave_player("10.10.10.92", "unknown-uuid")
+
+        assert result is None
+        assert mock_player._player_finder.call_count == 2

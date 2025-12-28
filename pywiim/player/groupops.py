@@ -35,6 +35,42 @@ class GroupOperations:
         """
         self.player = player
 
+    def _find_slave_player(self, slave_host: str, slave_uuid: str | None) -> Any:
+        """Find a slave Player by host or UUID.
+
+        For WiFi Direct multiroom (older LinkPlay devices), slaves join the
+        master's internal network (10.10.10.x) and are no longer reachable
+        from the main LAN. In this case, IP-based matching fails and we need
+        to fall back to UUID-based matching.
+
+        Args:
+            slave_host: Slave IP address (may be internal 10.10.10.x for WiFi Direct)
+            slave_uuid: Slave UUID for fallback matching (may be None)
+
+        Returns:
+            Player instance if found, None otherwise.
+        """
+        if not self.player._player_finder:
+            return None
+
+        # Try by host/IP first (works for normal router-based multiroom)
+        slave_player = self.player._player_finder(slave_host)
+        if slave_player:
+            return slave_player
+
+        # Fallback: Try by UUID (for WiFi Direct devices with 10.10.10.x IPs)
+        if slave_uuid:
+            slave_player = self.player._player_finder(slave_uuid)
+            if slave_player:
+                _LOGGER.debug(
+                    "Found slave by UUID fallback: host=%s, uuid=%s",
+                    slave_host,
+                    slave_uuid,
+                )
+                return slave_player
+
+        return None
+
     def _notify_all_group_members(self, group: Group | None) -> None:
         """Notify all players in a group of state changes.
 
@@ -114,6 +150,7 @@ class GroupOperations:
                 group_info = await self.player.client.get_device_group_info()
                 detected_role = group_info.role
                 slave_hosts = group_info.slave_hosts
+                slave_uuids = group_info.slave_uuids
 
                 # Trust get_device_group_info() result - it checks group field and master info
                 # No override needed - the group field is always correct
@@ -129,6 +166,7 @@ class GroupOperations:
             # Skip expensive call - device is definitely solo
             detected_role = "solo"
             slave_hosts = []
+            slave_uuids = []
 
         # Detect role change (especially solo->slave, which triggers master detection)
         became_slave = old_role == "solo" and detected_role == "slave"
@@ -187,10 +225,12 @@ class GroupOperations:
             self.player._group = group
 
             # Automatically link slave Player objects if player_finder is available
+            # Use UUID fallback for WiFi Direct devices with internal 10.10.10.x IPs
             if slave_hosts and self.player._player_finder:
-                for slave_host in slave_hosts:
+                for i, slave_host in enumerate(slave_hosts):
+                    slave_uuid = slave_uuids[i] if i < len(slave_uuids) else None
                     try:
-                        slave_player = self.player._player_finder(slave_host)
+                        slave_player = self._find_slave_player(slave_host, slave_uuid)
                         if slave_player:
                             # If slave is already in another group, remove it first
                             if slave_player._group and slave_player._group != group:
@@ -226,20 +266,33 @@ class GroupOperations:
             if slave_hosts:
                 device_slave_hosts = set(slave_hosts)
                 linked_slave_hosts = {slave.host for slave in self.player._group.slaves}
+                # Also track linked slaves by UUID for WiFi Direct matching
+                linked_slave_uuids = {slave.uuid for slave in self.player._group.slaves if slave.uuid}
 
                 # Remove slaves that are no longer in device state
+                # Check both host and UUID to handle WiFi Direct slaves
+                device_slave_uuids = set(slave_uuids) if slave_uuids else set()
                 for slave in list(self.player._group.slaves):
-                    if slave.host not in device_slave_hosts:
+                    slave_still_in_group = slave.host in device_slave_hosts or (
+                        slave.uuid and slave.uuid in device_slave_uuids
+                    )
+                    if not slave_still_in_group:
                         _LOGGER.debug("Removing slave %s from group (no longer in device state)", slave.host)
                         self.player._group.remove_slave(slave)
                         slaves_changed = True
 
                 # Automatically link new slave Player objects if player_finder is available
+                # Use UUID fallback for WiFi Direct devices with internal 10.10.10.x IPs
                 if self.player._player_finder:
-                    for slave_host in device_slave_hosts:
-                        if slave_host not in linked_slave_hosts:
+                    for i, slave_host in enumerate(slave_hosts):
+                        slave_uuid = slave_uuids[i] if i < len(slave_uuids) else None
+                        # Check if already linked by host or UUID
+                        already_linked = slave_host in linked_slave_hosts or (
+                            slave_uuid and slave_uuid in linked_slave_uuids
+                        )
+                        if not already_linked:
                             try:
-                                slave_player = self.player._player_finder(slave_host)
+                                slave_player = self._find_slave_player(slave_host, slave_uuid)
                                 if slave_player:
                                     # If slave is already in another group, remove it first
                                     if slave_player._group and slave_player._group != self.player._group:

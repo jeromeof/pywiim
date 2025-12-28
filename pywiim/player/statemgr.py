@@ -738,6 +738,27 @@ class StateManager:
                 _LOGGER.debug("Failed to fetch EQ presets for %s: %s", self.player.host, err)
                 self.player._eq_presets = None
 
+        # EQ Enabled Status - Fetch on full refresh, track change, or periodically (every 60s)
+        # This determines whether to show "Off" or the actual preset in sound_mode
+        should_fetch_eq_status = (
+            full
+            or track_changed
+            or (
+                self._polling_strategy
+                and self._polling_strategy.should_fetch_eq_info(
+                    self.player._last_eq_status_check, eq_supported, now=now
+                )
+            )
+        )
+        if should_fetch_eq_status and eq_supported:
+            try:
+                eq_enabled = await self.player.client.get_eq_status()
+                self.player._eq_enabled = eq_enabled
+                self.player._last_eq_status_check = now
+            except Exception as err:
+                _LOGGER.debug("Failed to fetch EQ status for %s: %s", self.player.host, err)
+                # Don't clear - keep previous value if fetch fails
+
         # Preset Stations (playback presets) - Fetch on full refresh, track change, or periodically (every 60s)
         # Track changes may indicate preset changes (user switched to different preset/station)
         # Periodic fetch ensures preset names stay current even without activity (fixes issue #118)

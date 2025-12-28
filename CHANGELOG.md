@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.60] - 2025-12-28
+
+### Added
+- **EQ "Off" sound mode option** (Issue [mjcumming/wiim#165](https://github.com/mjcumming/wiim/issues/165)) - Added ability to disable EQ entirely via sound mode selection:
+  - `eq_preset` property now returns `"Off"` when EQ is disabled (bypassed), instead of showing the last-used preset
+  - `eq_presets` list now includes `"Off"` as the first option (e.g., `["Off", "Flat", "Rock", ...]`)
+  - `set_eq_preset("Off")` disables EQ entirely (audio bypass mode)
+  - Selecting any other preset when EQ is off automatically enables EQ first
+  - EQ enabled/disabled status is now cached and refreshed periodically (every 60s)
+  - Home Assistant integration now correctly reflects EQ off state in `sound_mode` attribute
+- **UUID-based slave matching for WiFi Direct multiroom** (Issue [mjcumming/wiim#164](https://github.com/mjcumming/wiim/issues/164)) - Added support for older LinkPlay devices (e.g., Xoro HCN_BWD03) that use WiFi Direct multiroom:
+  - Added `slave_uuids` field to `DeviceGroupInfo` model for UUID-based slave identification
+  - `get_device_group_info()` now populates both `slave_hosts` (IPs) and `slave_uuids` (UUIDs)
+  - Group operations now use UUID fallback when IP-based player matching fails
+  - Enables linking slaves that use internal 10.10.10.x IPs (WiFi Direct) by matching their UUID
+  - **HA Integration required change**: `player_finder` callback should also accept UUID lookups (see docs)
+
+### Documentation
+- Updated HA_INTEGRATION.md with `async_select_sound_mode()` example and "Off" option documentation
+
 ## [2.1.59] - 2025-12-26
 
 ### Fixed

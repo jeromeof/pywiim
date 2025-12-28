@@ -343,10 +343,17 @@ class DeviceGroupInfo(BaseModel):
           for slaves. Use the Player.group object to access the master's
           IP when working with grouped players.
         - For **solo** devices: master_* fields are None, slave_* are empty.
+
+    Note on WiFi Direct multiroom (older LinkPlay devices):
+        - Slaves join master's internal network (10.10.10.x) and become
+          unreachable from the main LAN.
+        - Use `slave_uuids` for matching slaves by UUID when IP-based
+          matching fails (slave_hosts contains internal 10.10.10.x IPs).
     """
 
     role: Literal["solo", "master", "slave"]
     master_host: str | None = None  # Master IP (always set for master, often None for slave - API limitation)
     master_uuid: str | None = None  # Master UUID (if slave or master)
-    slave_hosts: list[str] = []  # Slave IPs (if master)
+    slave_hosts: list[str] = []  # Slave IPs (if master) - may be internal 10.10.10.x for WiFi Direct
+    slave_uuids: list[str] = []  # Slave UUIDs (if master) - for UUID-based matching
     slave_count: int = 0  # Number of slaves (if master)

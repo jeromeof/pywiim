@@ -284,18 +284,30 @@ class AudioConfiguration:
         await self.player.client.set_channel_balance(balance)
 
     async def set_eq_preset(self, preset: str) -> None:
-        """Set equalizer preset.
+        """Set equalizer preset or disable EQ.
 
         Args:
             preset: Preset name. Can be any case (e.g., "jazz", "Jazz", "JAZZ")
                    or display name from get_eq_presets() (e.g., "Jazz").
+                   Special value "Off" disables EQ entirely.
                    The method normalizes the preset name internally.
         """
         import asyncio
         import time
 
+        # Handle "Off" - disable EQ instead of setting a preset
+        if preset.lower() == "off":
+            await self.set_eq_enabled(False)
+            return
+
         # Normalize preset name using client's normalization (handles any case)
         normalized_preset = self.player.client._normalize_eq_preset_name(preset)
+
+        # Ensure EQ is enabled before setting a preset
+        # (user may be switching from "Off" to a preset)
+        if self.player._eq_enabled is False:
+            await self.player.client.set_eq_enabled(True)
+            self.player._eq_enabled = True
 
         # Call API (raises on failure)
         await self.player.client.set_eq_preset(preset)
@@ -346,6 +358,9 @@ class AudioConfiguration:
         """
         # Call API (raises on failure)
         await self.player.client.set_eq_enabled(enabled)
+
+        # Update cached state immediately (optimistic)
+        self.player._eq_enabled = enabled
 
         # Call callback to notify state change (EQ enabled/disabled)
         if self.player._on_state_changed:
