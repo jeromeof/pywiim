@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.64] - 2026-01-28
+
+### Added
+- **Cross-coordinator role inference for WiFi Direct multiroom** (Issue [mjcumming/wiim#164](https://github.com/mjcumming/wiim/issues/164)): Added `all_players_finder` callback to fix WiFi Direct slave role detection:
+  - WiFi Direct slaves report `group="0"` (solo) when queried directly because they don't know they're in a group
+  - Only the master knows the group membership via `getSlaveList`
+  - New `all_players_finder` callback enables pywiim to check if any known master lists this device as a slave
+  - When a device reports "solo" but is found in a master's slave list (by UUID), pywiim correctly infers "slave" role
+  - **HA Integration required change**: Add `all_players_finder=lambda: list(player_registry.values())` when creating Player objects
+  - This completes the WiFi Direct multiroom fix started in v2.1.60 (UUID-based slave matching)
+
 ## [2.1.63] - 2026-01-28
 
 ### Added

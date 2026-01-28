@@ -95,6 +95,40 @@ player = Player(client)
 await player.refresh()  # Only needed for one-off scripts, not in integrations
 ```
 
+#### Optional Callbacks
+
+```python
+# Full initialization with all callbacks (for integrations like Home Assistant)
+player = Player(
+    client,
+    upnp_client=upnp_client,              # UPnP client for queue/events
+    on_state_changed=callback_fn,         # Called on state changes
+    player_finder=find_player_by_host,    # For automatic group linking
+    all_players_finder=get_all_players,   # For WiFi Direct role inference
+)
+```
+
+| Parameter | Type | Purpose |
+|-----------|------|---------|
+| `client` | `WiiMClient` | Required - HTTP API client |
+| `upnp_client` | `UpnpClient \| None` | Optional - UPnP for queue management and events |
+| `on_state_changed` | `Callable[[], None] \| None` | Optional - Callback when state changes |
+| `player_finder` | `Callable[[str], Player \| None] \| None` | Optional - Find Player by host/UUID for group linking |
+| `all_players_finder` | `Callable[[], list[Player]] \| None` | Optional - Get all Players for WiFi Direct role inference |
+
+**WiFi Direct Role Inference:**
+
+WiFi Direct multiroom slaves report `group="0"` (solo) when queried directly because they don't know they're in a group. Only the master knows the slave list. The `all_players_finder` callback enables pywiim to check if any known master lists this device as a slave, enabling correct role detection.
+
+```python
+# Example for Home Assistant integration
+player = Player(
+    client,
+    player_finder=lambda host: player_registry.get(host),
+    all_players_finder=lambda: list(player_registry.values()),
+)
+```
+
 ### Properties
 
 #### Device Identity & Connection

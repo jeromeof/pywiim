@@ -65,6 +65,10 @@ class Player(PlayerBase):
         player_finder: Optional callback to find Player objects by host/IP.
             Called as `player_finder(host)` and should return Player | None.
             Used to automatically link Player objects when groups are detected on refresh.
+        all_players_finder: Optional callback to get all known Player objects.
+            Called as `all_players_finder()` and should return list[Player].
+            Used for cross-coordinator role inference in WiFi Direct multiroom,
+            where slaves report as "solo" but can be identified via master's slave list.
     """
 
     def __init__(
@@ -73,9 +77,10 @@ class Player(PlayerBase):
         upnp_client: UpnpClient | None = None,
         on_state_changed: Callable[[], None] | None = None,
         player_finder: Callable[[str], Any] | None = None,
+        all_players_finder: Callable[[], list[Any]] | None = None,
     ) -> None:
         """Initialize a Player instance."""
-        super().__init__(client, upnp_client, on_state_changed, player_finder)
+        super().__init__(client, upnp_client, on_state_changed, player_finder, all_players_finder)
 
         # Initialize component managers
         self._state_mgr = StateManager(self)

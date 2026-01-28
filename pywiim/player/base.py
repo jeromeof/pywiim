@@ -31,6 +31,7 @@ class PlayerBase:
         upnp_client: UpnpClient | None = None,
         on_state_changed: Callable[[], None] | None = None,
         player_finder: Callable[[str], Any] | None = None,
+        all_players_finder: Callable[[], list[Any]] | None = None,
     ) -> None:
         """Initialize a Player instance.
 
@@ -41,6 +42,10 @@ class PlayerBase:
             player_finder: Optional callback to find Player objects by host/IP.
                 Called as `player_finder(host)` and should return Player | None.
                 Used to automatically link Player objects when groups are detected.
+            all_players_finder: Optional callback to get all known Player objects.
+                Called as `all_players_finder()` and should return list[Player].
+                Used for cross-coordinator role inference in WiFi Direct multiroom,
+                where slaves report as "solo" but can be identified via master's slave list.
         """
         self.client = client
         self._upnp_client = upnp_client
@@ -50,6 +55,7 @@ class PlayerBase:
         self._state_synchronizer = StateSynchronizer()
         self._on_state_changed = on_state_changed
         self._player_finder = player_finder
+        self._all_players_finder = all_players_finder
 
         # Cached state (updated via refresh())
         self._status_model: PlayerStatus | None = None

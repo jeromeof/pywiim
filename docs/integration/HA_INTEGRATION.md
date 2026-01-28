@@ -533,9 +533,11 @@ class WiiMCoordinator(DataUpdateCoordinator):
         # Create Player (wraps client with state management)
         # Provide player_finder callback for automatic group linking
         # pywiim will automatically link Player objects when groups are detected
+        # Provide all_players_finder for WiFi Direct multiroom role inference
         self.player = Player(
             client,
             player_finder=self._find_player_by_host,  # Enables automatic linking
+            all_players_finder=self._get_all_players,  # Enables WiFi Direct role inference
         )
 
         # Detect capabilities and create polling strategy
@@ -2467,8 +2469,15 @@ player.group.slaves  # [slave1, slave2, ...] (automatically linked by pywiim)
 # To enable automatic linking, provide player_finder when creating Player:
 player = Player(
     client,
-    player_finder=lambda host: player_registry.get(host)  # Returns Player | None
+    player_finder=lambda host: player_registry.get(host),  # Returns Player | None
+    all_players_finder=lambda: list(player_registry.values()),  # Returns list[Player]
 )
+
+# all_players_finder is CRITICAL for WiFi Direct multiroom:
+# - WiFi Direct slaves report "solo" when queried directly (they don't know they're in a group)
+# - Only the master knows the slave list
+# - pywiim uses all_players_finder to check if any master lists this device as a slave
+# - This enables correct role detection even when slave refreshes before master
 ```
 
 ## Virtual Group Entity Implementation

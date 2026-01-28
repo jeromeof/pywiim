@@ -168,6 +168,19 @@ class GroupOperations:
             slave_hosts = []
             slave_uuids = []
 
+        # Cross-coordinator role inference for WiFi Direct multiroom
+        # WiFi Direct slaves report group="0" (solo) because they don't know they're in a group.
+        # Only the master knows the slave list. Check if any known master lists us as a slave.
+        if detected_role == "solo" and self.player.uuid and self.player._all_players_finder:
+            inferred_role = await self._check_if_slave_of_any_master()
+            if inferred_role == "slave":
+                _LOGGER.info(
+                    "Cross-coordinator inference: %s (%s) is SLAVE (found in a master's slave list)",
+                    self.player.host,
+                    self.player.uuid,
+                )
+                detected_role = "slave"
+
         # Detect role change (especially solo->slave, which triggers master detection)
         became_slave = old_role == "solo" and detected_role == "slave"
 
@@ -584,6 +597,114 @@ class GroupOperations:
     def _normalize_uuid(uuid: str) -> str:
         """Normalize UUID for comparison."""
         return uuid.lower().replace("uuid:", "").replace("-", "")
+
+    async def _check_if_slave_of_any_master(self) -> str | None:
+        """Check if this player is a slave in any known master's slave list.
+
+        Used for WiFi Direct multiroom where slaves report group="0" (solo)
+        because they don't know they're in a group. Only the master knows.
+
+        This method:
+        1. Gets all known players via the all_players_finder callback
+        2. For each known master, checks if their slave list contains our UUID
+        3. For potential masters (not solo), queries their slave list directly
+
+        Returns:
+            "slave" if found in a master's slave list, None otherwise.
+        """
+        if not self.player._all_players_finder or not self.player.uuid:
+            return None
+
+        try:
+            all_players = self.player._all_players_finder()
+        except Exception as err:
+            _LOGGER.debug("all_players_finder callback failed: %s", err)
+            return None
+
+        if not all_players:
+            return None
+
+        my_uuid_normalized = self._normalize_uuid(self.player.uuid)
+
+        # Phase 1: Check already-linked group structures (fast, no API calls)
+        for other_player in all_players:
+            # Skip self
+            if other_player is self.player:
+                continue
+
+            # Check if this player's group contains us (linked via Player objects)
+            group = getattr(other_player, "_group", None)
+            if group is None:
+                continue
+
+            for slave in getattr(group, "slaves", []):
+                slave_uuid = getattr(slave, "uuid", None)
+                if slave_uuid and self._normalize_uuid(slave_uuid) == my_uuid_normalized:
+                    _LOGGER.debug(
+                        "Found self in master %s's linked slave list (uuid: %s)",
+                        other_player.host,
+                        slave_uuid,
+                    )
+                    # Ensure we're linked to the master's group
+                    if self.player._group != group:
+                        group.add_slave(self.player)
+                    return "slave"
+
+        # Phase 2: Query potential masters' slave lists (slower, requires API calls)
+        # This handles the case where slave refreshes before master has linked it
+        for other_player in all_players:
+            # Skip self
+            if other_player is self.player:
+                continue
+
+            # Skip players we've already checked via group.slaves
+            # Only query players that might be masters but haven't linked us yet
+            detected_role = getattr(other_player, "_detected_role", "solo")
+
+            # Only query players that are known masters or could potentially be masters
+            # A master might not have detected their role yet if they haven't refreshed
+            if detected_role not in ("master", "solo"):
+                continue
+
+            # For known masters or potential masters, query their slave list
+            client = getattr(other_player, "client", None)
+            if client is None:
+                continue
+
+            try:
+                # Query the device's slave list directly
+                slaves_info = await client.get_slaves_info()
+                for slave_info in slaves_info:
+                    slave_uuid = slave_info.get("uuid", "")
+                    if slave_uuid and self._normalize_uuid(slave_uuid) == my_uuid_normalized:
+                        _LOGGER.info(
+                            "Cross-coordinator: Found self in %s's slave list via API query (uuid: %s)",
+                            other_player.host,
+                            slave_uuid,
+                        )
+                        # Link ourselves to this master's group
+                        group = getattr(other_player, "_group", None)
+                        if group is None:
+                            # Create group on master if it doesn't exist
+                            from ..group import Group as GroupClass
+
+                            group = GroupClass(other_player)
+                            other_player._group = group
+                            other_player._detected_role = "master"
+
+                        if self.player not in getattr(group, "slaves", []):
+                            group.add_slave(self.player)
+
+                        return "slave"
+            except Exception as err:
+                _LOGGER.debug(
+                    "Failed to query slave list from %s: %s",
+                    other_player.host,
+                    err,
+                )
+                continue
+
+        return None
 
     async def leave_group(self) -> None:
         """Leave the current group.
