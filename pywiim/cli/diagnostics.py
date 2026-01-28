@@ -425,13 +425,22 @@ class DeviceDiagnostics:
             bluetooth_source = status.get("source")
 
             # Model-based available modes (simplified - matches Player logic)
+            # IMPORTANT: Order matters - check more specific models first
             model_lower = model.lower()
-            if "wiim amp" in model_lower:
-                available_modes = ["Line Out"]
+            if "amp ultra" in model_lower or ("ultra" in model_lower and "amp" in model_lower):
+                # WiiM Amp Ultra: Has USB Out, HDMI Out (ARC)
+                available_modes = ["Line Out", "USB Out", "HDMI Out"]
+            elif "ultra" in model_lower:
+                # WiiM Ultra (non-Amp): Has USB Out, Headphone Out, multiple digital outputs
+                available_modes = ["Line Out", "Optical Out", "Coax Out", "USB Out", "Headphone Out", "HDMI Out"]
+            elif "amp pro" in model_lower or ("pro" in model_lower and "amp" in model_lower):
+                # WiiM Amp Pro: Has USB Out
+                available_modes = ["Line Out", "USB Out"]
+            elif "wiim amp" in model_lower or ("amp" in model_lower and "wiim" in model_lower):
+                # WiiM Amp (standard): Has USB Out
+                available_modes = ["Line Out", "USB Out"]
             elif "wiim mini" in model_lower:
                 available_modes = ["Line Out", "Optical Out"]
-            elif "wiim ultra" in model_lower:
-                available_modes = ["Line Out", "Optical Out", "Coax Out", "Headphone Out", "HDMI Out"]
             elif "wiim pro" in model_lower or "wiim" in model_lower:
                 available_modes = ["Line Out", "Optical Out", "Coax Out"]
             else:

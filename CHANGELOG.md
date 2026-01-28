@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.68] - 2026-01-28
+
+### Fixed
+- **USB Out support for WiiM Amp devices** - Fixed model detection order so WiiM Amp, Amp Pro, and Amp Ultra now properly show USB Out in available output modes
+  - Previously, "WiiM Amp Ultra" and "WiiM Amp Pro" were incorrectly matched as "WiiM Amp" (only Line Out)
+  - Now all Amp variants correctly support USB Out for external USB DAC output
+  - WiiM Amp Ultra also gets HDMI Out
+  - Fixed diagnostics CLI to match Player logic
+
 ## [2.1.67] - 2026-01-28
 
 ### Changed

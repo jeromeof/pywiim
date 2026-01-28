@@ -1262,13 +1262,21 @@ class PlayerProperties:
         model_lower = model.lower()
 
         # Check for specific models (order matters - check more specific first)
-        if "wiim amp" in model_lower or ("amp" in model_lower and "wiim" in model_lower):
-            return ["Line Out"]
+        # IMPORTANT: Check "amp ultra"/"amp pro" BEFORE "amp" to avoid false matches
+        if "amp ultra" in model_lower or ("ultra" in model_lower and "amp" in model_lower):
+            # WiiM Amp Ultra: Has USB Out, HDMI Out (ARC), but no Headphone Out
+            return ["Line Out", "USB Out", "HDMI Out"]
+        elif "ultra" in model_lower:
+            # WiiM Ultra (non-Amp): Has USB Out, Headphone Out, multiple digital outputs
+            return ["Line Out", "Optical Out", "Coax Out", "USB Out", "Headphone Out", "HDMI Out"]
+        elif "amp pro" in model_lower or ("pro" in model_lower and "amp" in model_lower):
+            # WiiM Amp Pro: Has USB Out
+            return ["Line Out", "USB Out"]
+        elif "wiim amp" in model_lower or ("amp" in model_lower and "wiim" in model_lower):
+            # WiiM Amp (standard): Has USB Out
+            return ["Line Out", "USB Out"]
         elif "wiim mini" in model_lower or ("mini" in model_lower and "wiim" in model_lower):
             return ["Line Out", "Optical Out"]
-        elif "wiim ultra" in model_lower or "ultra" in model_lower:
-            # Ultra has headphone output and USB out - check for "ultra" in model name (more lenient)
-            return ["Line Out", "Optical Out", "Coax Out", "USB Out", "Headphone Out", "HDMI Out"]
         elif "wiim pro" in model_lower or ("pro" in model_lower and "wiim" in model_lower):
             return ["Line Out", "Optical Out", "Coax Out"]
         elif "wiim" in model_lower:

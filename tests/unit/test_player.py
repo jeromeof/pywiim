@@ -3469,7 +3469,8 @@ class TestPlayerMediaMetadata:
 
         modes = player.available_output_modes
 
-        assert modes == ["Line Out"]  # Only Line Out for Amp
+        # WiiM Amp has Line Out and USB Out (for external USB DAC)
+        assert modes == ["Line Out", "USB Out"]
 
     @pytest.mark.asyncio
     async def test_available_output_modes_wiim_ultra(self, mock_client):

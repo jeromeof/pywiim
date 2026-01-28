@@ -40,13 +40,39 @@ class TestUSBOutput:
         assert "HDMI Out" in outputs
 
     def test_available_output_modes_excludes_usb_out_for_pro(self, mock_player):
-        """Test that available_output_modes excludes USB Out for WiiM Pro."""
+        """Test that available_output_modes excludes USB Out for WiiM Pro (non-Amp)."""
         mock_player._device_info = DeviceInfo(model="WiiM Pro", project="WiiM Pro")
         outputs = mock_player.available_output_modes
         assert "USB Out" not in outputs
         assert "Line Out" in outputs
         assert "Optical Out" in outputs
         assert "Coax Out" in outputs
+
+    def test_available_output_modes_includes_usb_out_for_amp(self, mock_player):
+        """Test that available_output_modes includes USB Out for WiiM Amp."""
+        mock_player._device_info = DeviceInfo(model="WiiM Amp", project="WiiM Amp")
+        outputs = mock_player.available_output_modes
+        assert "USB Out" in outputs
+        assert "Line Out" in outputs
+        # Amp doesn't have digital outputs
+        assert "Optical Out" not in outputs
+
+    def test_available_output_modes_includes_usb_out_for_amp_pro(self, mock_player):
+        """Test that available_output_modes includes USB Out for WiiM Amp Pro."""
+        mock_player._device_info = DeviceInfo(model="WiiM Amp Pro", project="WiiM Amp Pro")
+        outputs = mock_player.available_output_modes
+        assert "USB Out" in outputs
+        assert "Line Out" in outputs
+
+    def test_available_output_modes_includes_usb_out_for_amp_ultra(self, mock_player):
+        """Test that available_output_modes includes USB Out for WiiM Amp Ultra."""
+        mock_player._device_info = DeviceInfo(model="WiiM Amp Ultra", project="WiiM Amp Ultra")
+        outputs = mock_player.available_output_modes
+        assert "USB Out" in outputs
+        assert "Line Out" in outputs
+        assert "HDMI Out" in outputs
+        # Amp Ultra doesn't have Headphone Out (that's only on WiiM Ultra)
+        assert "Headphone Out" not in outputs
 
     @pytest.mark.asyncio
     async def test_select_output_usb_out(self, mock_player):
