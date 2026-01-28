@@ -30,7 +30,16 @@ from .api.constants import (
     ALARM_TRIGGER_ONCE,
     ALARM_TRIGGER_WEEKLY,
     ALARM_TRIGGER_WEEKLY_BITMASK,
+    SUBWOOFER_CROSSOVER_MAX,
+    SUBWOOFER_CROSSOVER_MIN,
+    SUBWOOFER_DELAY_MAX,
+    SUBWOOFER_DELAY_MIN,
+    SUBWOOFER_LEVEL_MAX,
+    SUBWOOFER_LEVEL_MIN,
+    SUBWOOFER_PHASE_0,
+    SUBWOOFER_PHASE_180,
 )
+from .api.subwoofer import SubwooferStatus
 from .backoff import BackoffController
 from .client import WiiMClient
 from .discovery import (
@@ -117,6 +126,16 @@ __all__ = [
     "ALARM_OP_SHELL",
     "ALARM_OP_PLAYBACK",
     "ALARM_OP_STOP",
+    # Subwoofer (WiiM Ultra)
+    "SubwooferStatus",
+    "SUBWOOFER_CROSSOVER_MIN",
+    "SUBWOOFER_CROSSOVER_MAX",
+    "SUBWOOFER_LEVEL_MIN",
+    "SUBWOOFER_LEVEL_MAX",
+    "SUBWOOFER_DELAY_MIN",
+    "SUBWOOFER_DELAY_MAX",
+    "SUBWOOFER_PHASE_0",
+    "SUBWOOFER_PHASE_180",
     # Version
     "__version__",
 ]

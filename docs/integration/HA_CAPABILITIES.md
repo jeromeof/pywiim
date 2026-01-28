@@ -22,7 +22,7 @@ These capabilities are detected via endpoint probing during device initializatio
 | `player.supports_alarms` | Alarm clock feature | WiiM only |
 | `player.supports_sleep_timer` | Sleep timer feature | WiiM only |
 | `player.supports_led_control` | LED control | Varies |
-| `player.supports_enhanced_grouping` | Enhanced multiroom features | WiiM only |
+| `player.supports_subwoofer` | Subwoofer configuration | WiiM only (not Arylic) |
 
 ### UPnP Capabilities
 

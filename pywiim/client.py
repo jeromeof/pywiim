@@ -24,6 +24,7 @@ from .api.lms import LMSAPI
 from .api.misc import MiscAPI
 from .api.playback import PlaybackAPI
 from .api.preset import PresetAPI
+from .api.subwoofer import SubwooferAPI
 from .api.timer import TimerAPI
 from .capabilities import WiiMCapabilities, detect_device_capabilities
 from .exceptions import (
@@ -42,6 +43,7 @@ _LOGGER = logging.getLogger(__name__)
 class WiiMClient(
     BluetoothAPI,
     AudioSettingsAPI,
+    SubwooferAPI,
     LMSAPI,
     MiscAPI,
     DeviceAPI,

@@ -596,7 +596,6 @@ player.supports_metadata          # bool - True if metadata retrieval (getMetaIn
 player.supports_alarms            # bool - True if alarms are supported (WiiM only)
 player.supports_sleep_timer       # bool - True if sleep timer is supported (WiiM only)
 player.supports_led_control       # bool - True if LED control is supported
-player.supports_enhanced_grouping # bool - True if enhanced multiroom features are supported (WiiM only)
 ```
 
 **UPnP Capabilities** (depend on UPnP client initialization):
@@ -1454,4 +1453,100 @@ class WiiMOutputSelectEntity(SelectEntity):
         await self.coordinator.data.audio.select_output(option)
         # State updates automatically via callback - no manual refresh needed
 ```
+
+## Subwoofer Control (WiiM Devices)
+
+WiiM devices support external subwoofer configuration via undocumented API endpoints. Confirmed working on WiiM Pro and WiiM Ultra. Not supported on Arylic/LinkPlay devices.
+
+### Check Subwoofer Support
+
+```python
+# Check if device supports subwoofer control
+supported = await client.is_subwoofer_supported()
+
+# Check if subwoofer is physically connected
+connected = await client.is_subwoofer_connected()
+```
+
+### Get Subwoofer Status
+
+```python
+from pywiim import SubwooferStatus
+
+# Get status as SubwooferStatus dataclass
+status = await client.get_subwoofer_status()
+if status:
+    print(f"Enabled: {status.enabled}")
+    print(f"Connected: {status.plugged}")
+    print(f"Crossover: {status.crossover} Hz")
+    print(f"Phase: {status.phase}°")
+    print(f"Level: {status.level} dB")
+    print(f"Delay: {status.sub_delay} ms")
+
+# Get raw API response
+raw = await client.get_subwoofer_status_raw()
+```
+
+### Control Subwoofer
+
+```python
+# Enable/disable subwoofer output
+await client.set_subwoofer_enabled(True)
+await client.set_subwoofer_enabled(False)
+
+# Set crossover frequency (30-250 Hz)
+await client.set_subwoofer_crossover(80)
+
+# Set phase (0 or 180 degrees)
+await client.set_subwoofer_phase(0)
+await client.set_subwoofer_phase(180)
+
+# Set level adjustment (-15 to +15 dB)
+await client.set_subwoofer_level(0)
+await client.set_subwoofer_level(-5)  # Reduce bass
+await client.set_subwoofer_level(5)   # Boost bass
+
+# Set delay adjustment (-200 to +200 ms)
+# Positive: delay subwoofer (sub closer than mains)
+# Negative: delay mains (sub further than mains)
+await client.set_subwoofer_delay(0)
+await client.set_subwoofer_delay(50)
+
+# Control bass to main speakers
+await client.set_main_speaker_bass(True)   # Bass sent to mains
+await client.set_main_speaker_bass(False)  # Bass filtered from mains
+
+# Control subwoofer low-pass filter
+await client.set_subwoofer_filter(True)   # Filter active (normal mode)
+await client.set_subwoofer_filter(False)  # Bypass mode (full range)
+```
+
+### Constants
+
+```python
+from pywiim import (
+    SUBWOOFER_CROSSOVER_MIN,  # 30
+    SUBWOOFER_CROSSOVER_MAX,  # 250
+    SUBWOOFER_LEVEL_MIN,      # -15
+    SUBWOOFER_LEVEL_MAX,      # 15
+    SUBWOOFER_DELAY_MIN,      # -200
+    SUBWOOFER_DELAY_MAX,      # 200
+    SUBWOOFER_PHASE_0,        # 0
+    SUBWOOFER_PHASE_180,      # 180
+)
+```
+
+### Device Compatibility
+
+| Device | Support | Notes |
+|--------|---------|-------|
+| WiiM Ultra | ✅ Full | Original discovery (firmware 5.2+) |
+| WiiM Pro | ✅ Full | Tested working (firmware 4.8+) |
+| WiiM Pro Plus | ✅ Likely | Untested, same platform as Pro |
+| WiiM Amp | ❓ Unknown | May work, needs testing |
+| WiiM Mini | ❓ Unknown | May work, needs testing |
+| Arylic | ❌ None | Returns "unknown command" |
+| Other LinkPlay | ❌ None | Not supported |
+
+**Note**: These endpoints are undocumented and were discovered through reverse engineering. The library auto-detects support on first poll. Always check `player.supports_subwoofer` before using these features.
 

@@ -98,6 +98,11 @@ class PlayerBase:
         self._bluetooth_history: list[dict[str, Any]] = []
         self._last_bt_history_check: float = 0
 
+        # Cached subwoofer status (updated via refresh() every 60 seconds)
+        # Only available on WiiM Ultra with firmware 5.2+
+        self._subwoofer_status: dict[str, Any] | None = None
+        self._last_subwoofer_check: float = 0
+
         # UPnP health tracking (only if UPnP client is provided)
         self._upnp_health_tracker: UpnpHealthTracker | None = None
         if upnp_client is not None:

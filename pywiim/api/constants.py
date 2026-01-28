@@ -410,6 +410,21 @@ API_ENDPOINT_TIME_SYNC = "/httpapi.asp?command=timeSync:"
 API_ENDPOINT_SET_SHUTDOWN = "/httpapi.asp?command=setShutdown:"
 API_ENDPOINT_GET_SHUTDOWN = "/httpapi.asp?command=getShutdown"
 
+# Subwoofer control endpoints (WiiM Ultra, firmware 5.2+)
+# Undocumented API - discovered via reverse engineering (Issue #2)
+API_ENDPOINT_SUBWOOFER_STATUS = "/httpapi.asp?command=getSubLPF"
+API_ENDPOINT_SUBWOOFER_SET = "/httpapi.asp?command=setSubLPF:"
+
+# Subwoofer setting constants
+SUBWOOFER_CROSSOVER_MIN = 30
+SUBWOOFER_CROSSOVER_MAX = 250
+SUBWOOFER_LEVEL_MIN = -15
+SUBWOOFER_LEVEL_MAX = 15
+SUBWOOFER_DELAY_MIN = -200
+SUBWOOFER_DELAY_MAX = 200
+SUBWOOFER_PHASE_0 = 0
+SUBWOOFER_PHASE_180 = 180
+
 # Audio output mode constants
 # Based on official WiiM API documentation (Section 2.10 Audio Output Control):
 # hardware field values: 1=SPDIF, 2=AUX, 3=COAX, 4=varies by device, 7=HDMI (WiiM Amp Ultra)
@@ -569,4 +584,15 @@ __all__ = [
     "PLAY_MODE_REPEAT_ONE",
     "PLAY_MODE_SHUFFLE",
     "PLAY_MODE_SHUFFLE_REPEAT_ALL",
+    # Subwoofer endpoints and constants
+    "API_ENDPOINT_SUBWOOFER_STATUS",
+    "API_ENDPOINT_SUBWOOFER_SET",
+    "SUBWOOFER_CROSSOVER_MIN",
+    "SUBWOOFER_CROSSOVER_MAX",
+    "SUBWOOFER_LEVEL_MIN",
+    "SUBWOOFER_LEVEL_MAX",
+    "SUBWOOFER_DELAY_MIN",
+    "SUBWOOFER_DELAY_MAX",
+    "SUBWOOFER_PHASE_0",
+    "SUBWOOFER_PHASE_180",
 ]

@@ -300,6 +300,40 @@ class PollingStrategy:
         # Fetch every 60s
         return (now - last_fetch_time) >= self.CONFIGURATION_INTERVAL
 
+    def should_fetch_subwoofer(
+        self,
+        last_fetch_time: float,
+        subwoofer_supported: bool | None,
+        now: float | None = None,
+    ) -> bool:
+        """Check if subwoofer status should be fetched.
+
+        Fetch logic:
+        1. On Startup (last_fetch_time == 0)
+        2. Every 60s (Background consistency)
+        3. Only if device supports subwoofer (WiiM Ultra with firmware 5.2+)
+
+        Args:
+            last_fetch_time: Timestamp of last subwoofer status fetch
+            subwoofer_supported: Whether device supports subwoofer endpoint
+            now: Current time (defaults to time.time())
+
+        Returns:
+            True if subwoofer status should be fetched
+        """
+        if subwoofer_supported is False:
+            return False  # Endpoint not supported
+
+        if now is None:
+            now = time.time()
+
+        # Always fetch on first check (None or 0 means never fetched)
+        if last_fetch_time is None or last_fetch_time == 0:
+            return True
+
+        # Fetch every 60s
+        return (now - last_fetch_time) >= self.CONFIGURATION_INTERVAL
+
     def should_fetch_device_info(
         self,
         last_fetch_time: float,

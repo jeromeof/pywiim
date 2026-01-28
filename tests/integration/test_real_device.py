@@ -351,3 +351,105 @@ class TestRealDeviceCore:
         except Exception as e:
             # If we get here, there's an actual error (not just unsupported)
             pytest.fail(f"Error testing presets: {e}")
+
+    async def test_player_subwoofer_read(self, real_device_player, integration_test_marker):
+        """Test reading subwoofer status (WiiM devices only)."""
+        player = real_device_player
+        # Do full refresh to ensure capabilities are detected
+        await player.refresh(full=True)
+
+        # Try to get subwoofer status
+        try:
+            status = await player.get_subwoofer_status()
+
+            if status is None:
+                pytest.skip("Subwoofer not supported on this device")
+
+            # Validate status fields
+            assert hasattr(status, "enabled")
+            assert hasattr(status, "crossover")
+            assert hasattr(status, "phase")
+            assert hasattr(status, "level")
+            assert hasattr(status, "sub_delay")
+
+            # Validate value ranges
+            assert isinstance(status.enabled, bool)
+            assert 30 <= status.crossover <= 250
+            assert status.phase in (0, 180)
+            assert -15 <= status.level <= 15
+            assert -200 <= status.sub_delay <= 200
+
+            print("\nSubwoofer Status:")
+            print(f"  Enabled: {status.enabled}")
+            print(f"  Crossover: {status.crossover} Hz")
+            print(f"  Phase: {status.phase}°")
+            print(f"  Level: {status.level} dB")
+            print(f"  Delay: {status.sub_delay} ms")
+            # Note: main_filter_enabled=True means bass is NOT sent to main speakers
+            # sub_filter_enabled=True means filtering is active (not bypassed)
+            print(f"  Bass to Mains: {not status.main_filter_enabled}")
+            print(f"  Filter Bypassed: {not status.sub_filter_enabled}")
+
+            # Test player-level properties
+            assert player.supports_subwoofer is True
+            assert player.subwoofer_enabled == status.enabled
+            assert player.subwoofer_level == status.level
+            assert player.subwoofer_crossover == status.crossover
+
+        except Exception as e:
+            error_str = str(e).lower()
+            if "unknown command" in error_str:
+                pytest.skip("Subwoofer not supported (WiiM devices only)")
+            pytest.fail(f"Error testing subwoofer: {e}")
+
+    async def test_player_subwoofer_controls_safe(self, real_device_player, integration_test_marker):
+        """Test subwoofer controls with safe limits and state restoration."""
+        player = real_device_player
+        await player.refresh(full=True)
+
+        # Try to get initial subwoofer status
+        try:
+            initial_status = await player.get_subwoofer_status()
+
+            if initial_status is None:
+                pytest.skip("Subwoofer not supported on this device")
+
+            # Save initial values
+            initial_crossover = initial_status.crossover
+            initial_level = initial_status.level
+
+            try:
+                # Test setting crossover (safe - just change and restore)
+                test_crossover = 85 if initial_crossover != 85 else 90
+                await player.set_subwoofer_crossover(test_crossover)
+                await asyncio.sleep(0.5)
+
+                # Verify change
+                verify_status = await player.get_subwoofer_status()
+                assert verify_status is not None
+                assert verify_status.crossover == test_crossover
+                print(f"\n✓ set_subwoofer_crossover({test_crossover}) - verified")
+
+                # Test setting level (safe - just change and restore)
+                test_level = 2 if initial_level != 2 else 0
+                await player.set_subwoofer_level(test_level)
+                await asyncio.sleep(0.5)
+
+                # Verify change
+                verify_status = await player.get_subwoofer_status()
+                assert verify_status is not None
+                assert verify_status.level == test_level
+                print(f"✓ set_subwoofer_level({test_level}) - verified")
+
+            finally:
+                # Restore initial state
+                await player.set_subwoofer_crossover(initial_crossover)
+                await player.set_subwoofer_level(initial_level)
+                await asyncio.sleep(0.5)
+                print(f"✓ Restored crossover to {initial_crossover}Hz, level to {initial_level}dB")
+
+        except Exception as e:
+            error_str = str(e).lower()
+            if "unknown command" in error_str:
+                pytest.skip("Subwoofer not supported (WiiM devices only)")
+            pytest.fail(f"Error testing subwoofer controls: {e}")

@@ -397,6 +397,82 @@ class Player(PlayerBase):
         """Get detailed metadata information about current track."""
         return await self._audio_config.get_meta_info()
 
+    # === Subwoofer Control (WiiM Ultra with firmware 5.2+) ===
+
+    async def get_subwoofer_status(self) -> dict[str, Any] | None:
+        """Get current subwoofer configuration.
+
+        Returns:
+            Dict with subwoofer settings, or None if not supported.
+            Keys: enabled, plugged, crossover, phase, level, sub_delay, etc.
+        """
+        status = await self.client.get_subwoofer_status_raw()
+        if status:
+            self._subwoofer_status = status
+        return status
+
+    async def set_subwoofer_enabled(self, enabled: bool) -> None:
+        """Enable or disable subwoofer output.
+
+        Args:
+            enabled: True to enable subwoofer, False to disable.
+        """
+        await self.client.set_subwoofer_enabled(enabled)
+        # Update cache optimistically
+        if self._subwoofer_status:
+            self._subwoofer_status["status"] = 1 if enabled else 0
+        if self._on_state_changed:
+            self._on_state_changed()
+
+    async def set_subwoofer_level(self, level: int) -> None:
+        """Set subwoofer level adjustment (-15 to +15 dB).
+
+        Args:
+            level: Level adjustment in dB.
+        """
+        await self.client.set_subwoofer_level(level)
+        # Update cache optimistically
+        if self._subwoofer_status:
+            self._subwoofer_status["level"] = level
+        if self._on_state_changed:
+            self._on_state_changed()
+
+    async def set_subwoofer_crossover(self, frequency: int) -> None:
+        """Set subwoofer crossover frequency (30-250 Hz).
+
+        Args:
+            frequency: Crossover frequency in Hz.
+        """
+        await self.client.set_subwoofer_crossover(frequency)
+        if self._subwoofer_status:
+            self._subwoofer_status["cross"] = frequency
+        if self._on_state_changed:
+            self._on_state_changed()
+
+    async def set_subwoofer_phase(self, phase: int) -> None:
+        """Set subwoofer phase (0 or 180 degrees).
+
+        Args:
+            phase: Phase in degrees (0 or 180).
+        """
+        await self.client.set_subwoofer_phase(phase)
+        if self._subwoofer_status:
+            self._subwoofer_status["phase"] = phase
+        if self._on_state_changed:
+            self._on_state_changed()
+
+    async def set_subwoofer_delay(self, delay_ms: int) -> None:
+        """Set subwoofer delay adjustment (-200 to +200 ms).
+
+        Args:
+            delay_ms: Delay in milliseconds.
+        """
+        await self.client.set_subwoofer_delay(delay_ms)
+        if self._subwoofer_status:
+            self._subwoofer_status["sub_delay"] = delay_ms
+        if self._on_state_changed:
+            self._on_state_changed()
+
     async def reboot(self) -> None:
         """Reboot the device."""
         await self._diagnostics.reboot()
@@ -929,6 +1005,59 @@ class Player(PlayerBase):
             Dict with audio output info, or None if not available.
         """
         return self._audio_output_status
+
+    @property
+    def subwoofer_status(self) -> dict[str, Any] | None:
+        """Subwoofer configuration from cached state.
+
+        Only available on WiiM Ultra with firmware 5.2+.
+        Updated every 60 seconds during polling.
+
+        Returns:
+            Dict with subwoofer settings, or None if not supported.
+            Keys: status, plugged, cross, phase, level, sub_delay, main_filter, sub_filter, etc.
+        """
+        return self._subwoofer_status
+
+    @property
+    def subwoofer_enabled(self) -> bool | None:
+        """Whether subwoofer output is enabled.
+
+        Returns:
+            True if enabled, False if disabled, None if not supported.
+        """
+        if self._subwoofer_status is None:
+            return None
+        return bool(self._subwoofer_status.get("status", 0) == 1)
+
+    @property
+    def subwoofer_level(self) -> int | None:
+        """Subwoofer level adjustment in dB (-15 to +15).
+
+        Returns:
+            Level in dB, or None if not supported.
+        """
+        if self._subwoofer_status is None:
+            return None
+        return int(self._subwoofer_status.get("level", 0))
+
+    @property
+    def subwoofer_crossover(self) -> int | None:
+        """Subwoofer crossover frequency in Hz (30-250).
+
+        Returns:
+            Crossover frequency in Hz, or None if not supported.
+        """
+        if self._subwoofer_status is None:
+            return None
+        return int(self._subwoofer_status.get("cross", 80))
+
+    @property
+    def supports_subwoofer(self) -> bool:
+        """Whether subwoofer control is supported (WiiM Ultra with firmware 5.2+)."""
+        if not self.client:
+            return False
+        return bool(self.client.capabilities.get("supports_subwoofer", False))
 
     @property
     def upnp_health_status(self) -> dict[str, Any] | None:

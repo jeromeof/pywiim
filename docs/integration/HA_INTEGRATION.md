@@ -884,6 +884,7 @@ for coordinator in coordinators:
 | **Multiroom**     | 15 seconds      | + Activity triggers                       |
 | **EQ Info**       | 60 seconds      | If supported                              |
 | **Audio Output**  | 15 seconds      | If supported                              |
+| **Subwoofer**     | 60 seconds      | If supported (WiiM only)                  |
 | **Metadata**      | On track change | Only if supported                         |
 
 ## Error Handling
@@ -1990,6 +1991,96 @@ If the select entity shows "Audio Output Mode" instead of the actual selected va
    - Ensure `player.refresh()` is called in coordinator
    - Check that `player._audio_output_status` is not `None` after coordinator update
    - Audio output status is fetched every 15 seconds when supported (see polling strategy)
+
+## Subwoofer Control (WiiM Devices)
+
+WiiM devices (Pro, Ultra, etc.) support external subwoofer configuration. Not supported on Arylic/LinkPlay devices. The library auto-detects support and fetches status every 60 seconds.
+
+### Available Properties
+
+```python
+# Check if subwoofer control is supported
+player.supports_subwoofer  # bool
+
+# Cached subwoofer status (updated every 60s)
+player.subwoofer_status    # dict | None - Full status dict
+player.subwoofer_enabled   # bool | None - Subwoofer on/off
+player.subwoofer_level     # int | None - Level adjustment (-15 to +15 dB)
+player.subwoofer_crossover # int | None - Crossover frequency (30-250 Hz)
+```
+
+### Control Methods
+
+```python
+# Enable/disable subwoofer (most useful for automations)
+await player.set_subwoofer_enabled(True)
+await player.set_subwoofer_enabled(False)
+
+# Adjust level (-15 to +15 dB)
+await player.set_subwoofer_level(0)
+
+# Other settings (typically set once during setup)
+await player.set_subwoofer_crossover(80)  # 30-250 Hz
+await player.set_subwoofer_phase(0)        # 0 or 180 degrees
+await player.set_subwoofer_delay(0)        # -200 to +200 ms
+```
+
+### Recommended Entity: Switch for Enable/Disable
+
+The most useful automation is "late-night mode" (disable subwoofer after hours). Create a simple switch:
+
+```python
+class WiiMSubwooferSwitch(SwitchEntity):
+    """Switch to enable/disable subwoofer."""
+    
+    @property
+    def is_on(self) -> bool | None:
+        """Return true if subwoofer is enabled."""
+        return self.coordinator.data.get("player").subwoofer_enabled
+    
+    @property
+    def available(self) -> bool:
+        """Return true if subwoofer is supported."""
+        return self.coordinator.data.get("player").supports_subwoofer
+    
+    async def async_turn_on(self, **kwargs) -> None:
+        """Enable subwoofer."""
+        await self.coordinator.data.get("player").set_subwoofer_enabled(True)
+    
+    async def async_turn_off(self, **kwargs) -> None:
+        """Disable subwoofer."""
+        await self.coordinator.data.get("player").set_subwoofer_enabled(False)
+```
+
+### Optional: Number Entity for Level
+
+If users want scene-based bass levels:
+
+```python
+class WiiMSubwooferLevel(NumberEntity):
+    """Number entity for subwoofer level adjustment."""
+    
+    _attr_native_min_value = -15
+    _attr_native_max_value = 15
+    _attr_native_step = 1
+    _attr_native_unit_of_measurement = "dB"
+    
+    @property
+    def native_value(self) -> int | None:
+        """Return current level."""
+        return self.coordinator.data.get("player").subwoofer_level
+    
+    async def async_set_native_value(self, value: float) -> None:
+        """Set subwoofer level."""
+        await self.coordinator.data.get("player").set_subwoofer_level(int(value))
+```
+
+### Notes
+
+- **Polling**: Subwoofer status is automatically fetched every 60 seconds by `player.refresh()`
+- **First fetch**: On first poll, the library probes for support and caches the result
+- **No manual fetching needed**: Just access the properties - state is always current
+- **Optimistic updates**: Methods update cached state immediately after API success
 
 ## Group Join/Unjoin Operations
 

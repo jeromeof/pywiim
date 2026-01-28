@@ -951,6 +951,110 @@ class FeatureTester:
                 self.results["failed"].append(f"lms: Error - {str(e)}")
                 print(f"   ✗ Error: {e}")
 
+    async def test_subwoofer_controls(self) -> None:
+        """Test subwoofer controls (WiiM devices only)."""
+        print("\n🔊 Testing Subwoofer Controls...")
+
+        try:
+            # Test getting subwoofer status
+            status = await self.client.get_subwoofer_status()
+
+            if status is None:
+                self.results["not_supported"].append("subwoofer: get_subwoofer_status")
+                print("   ⊘ Subwoofer not supported (no response)")
+                return
+
+            self.results["passed"].append("subwoofer: get_subwoofer_status")
+            print("   ✓ get_subwoofer_status")
+
+            # Display current settings
+            # Note: main_filter_enabled=True means bass is NOT sent to main speakers
+            # sub_filter_enabled=True means filtering is active (not bypassed)
+            self._print_data("Subwoofer Status", {
+                "enabled": status.enabled,
+                "crossover_hz": status.crossover,
+                "phase_degrees": status.phase,
+                "level_db": status.level,
+                "delay_ms": status.sub_delay,
+                "bass_to_mains": not status.main_filter_enabled,  # Inverted logic
+                "filter_bypassed": not status.sub_filter_enabled,  # Inverted logic
+            }, show_always=True)
+
+            # Test setting crossover (safe - just reads and writes back)
+            original_crossover = status.crossover
+            try:
+                # Change crossover slightly, then restore
+                test_crossover = 85 if original_crossover != 85 else 80
+                await self.client.set_subwoofer_crossover(test_crossover)
+                await asyncio.sleep(0.5)
+
+                # Verify change
+                verify_status = await self.client.get_subwoofer_status()
+                if verify_status and verify_status.crossover == test_crossover:
+                    self.results["passed"].append("subwoofer: set_subwoofer_crossover")
+                    print(f"   ✓ set_subwoofer_crossover({test_crossover})")
+                else:
+                    self.results["warnings"].append("subwoofer: set_subwoofer_crossover - value not verified")
+                    print(f"   ⚠️  set_subwoofer_crossover({test_crossover}) - value not verified")
+
+                # Restore original
+                await self.client.set_subwoofer_crossover(original_crossover)
+                await asyncio.sleep(0.3)
+                print(f"   ✓ Restored crossover to {original_crossover}Hz")
+
+            except Exception as e:
+                self.results["warnings"].append(f"subwoofer: set_subwoofer_crossover - {str(e)}")
+                print(f"   ⚠️  set_subwoofer_crossover: {e}")
+
+            # Test setting level (safe - just reads and writes back)
+            original_level = status.level
+            try:
+                # Change level slightly, then restore
+                test_level = 1 if original_level != 1 else 0
+                await self.client.set_subwoofer_level(test_level)
+                await asyncio.sleep(0.5)
+
+                # Verify change
+                verify_status = await self.client.get_subwoofer_status()
+                if verify_status and verify_status.level == test_level:
+                    self.results["passed"].append("subwoofer: set_subwoofer_level")
+                    print(f"   ✓ set_subwoofer_level({test_level})")
+                else:
+                    self.results["warnings"].append("subwoofer: set_subwoofer_level - value not verified")
+                    print(f"   ⚠️  set_subwoofer_level({test_level}) - value not verified")
+
+                # Restore original
+                await self.client.set_subwoofer_level(original_level)
+                await asyncio.sleep(0.3)
+                print(f"   ✓ Restored level to {original_level}dB")
+
+            except Exception as e:
+                self.results["warnings"].append(f"subwoofer: set_subwoofer_level - {str(e)}")
+                print(f"   ⚠️  set_subwoofer_level: {e}")
+
+            # Test is_subwoofer_supported
+            try:
+                is_supported = await self.client.is_subwoofer_supported()
+                self.results["passed"].append("subwoofer: is_subwoofer_supported")
+                print(f"   ✓ is_subwoofer_supported: {is_supported}")
+            except Exception as e:
+                self.results["warnings"].append(f"subwoofer: is_subwoofer_supported - {str(e)}")
+                print(f"   ⚠️  is_subwoofer_supported: {e}")
+
+        except Exception as e:
+            error_str = str(e).lower()
+            if (
+                "not supported" in error_str
+                or "404" in error_str
+                or "unknown command" in error_str
+                or ("invalid json response" in error_str and "expecting value" in error_str)
+            ):
+                self.results["not_supported"].append("subwoofer: get_subwoofer_status")
+                print("   ⊘ Subwoofer not supported (WiiM devices only)")
+            else:
+                self.results["failed"].append(f"subwoofer: Error - {str(e)}")
+                print(f"   ✗ Error: {e}")
+
     async def run_all_tests(self) -> dict[str, Any]:
         """Run all feature tests."""
         print("=" * 60)
@@ -990,6 +1094,7 @@ class FeatureTester:
         await self.test_bluetooth_controls()
         await self.test_audio_settings()
         await self.test_lms_controls()
+        await self.test_subwoofer_controls()
 
         # Restore original state
         await self.restore_state()

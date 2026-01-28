@@ -200,6 +200,7 @@ class DeviceDiagnostics:
             ("LMS Integration", self._test_lms),
             ("Source Selection", self._test_sources),
             ("Audio Output Modes", self._test_audio_output),
+            ("Subwoofer", self._test_subwoofer),
         ]
 
         self.report["features"] = {}
@@ -303,6 +304,16 @@ class DeviceDiagnostics:
                             print(f"         (preset names not available - can play by number 1-{max_slots})")
                     if max_slots > 0 and preset_count < max_slots:
                         print(f"      Available slots: {max_slots - preset_count}")
+
+                # Special handling for Subwoofer to show settings
+                if name == "Subwoofer" and result.get("supported"):
+                    print(f"      Enabled: {result.get('enabled', 'Unknown')}")
+                    print(f"      Crossover: {result.get('crossover_hz', 'Unknown')} Hz")
+                    print(f"      Phase: {result.get('phase_degrees', 'Unknown')}°")
+                    print(f"      Level: {result.get('level_db', 'Unknown')} dB")
+                    print(f"      Delay: {result.get('delay_ms', 'Unknown')} ms")
+                    print(f"      Bass to Mains: {result.get('bass_to_mains', 'Unknown')}")
+                    print(f"      Filter Bypassed: {result.get('filter_bypassed', 'Unknown')}")
             except Exception as err:
                 self.report["features"][name] = {
                     "supported": False,
@@ -524,6 +535,33 @@ class DeviceDiagnostics:
                 "error": str(err),
             }
 
+    async def _test_subwoofer(self) -> dict[str, Any]:
+        """Test subwoofer control capabilities (WiiM devices only)."""
+        try:
+            status = await self.client.get_subwoofer_status()
+            if status is None:
+                return {"supported": False, "reason": "No response from device"}
+
+            # Note: main_filter_enabled=True means bass is NOT sent to main speakers
+            # sub_filter_enabled=True means filtering is active (not bypassed)
+            return {
+                "supported": True,
+                "enabled": status.enabled,
+                "crossover_hz": status.crossover,
+                "phase_degrees": status.phase,
+                "level_db": status.level,
+                "delay_ms": status.sub_delay,
+                "bass_to_mains": not status.main_filter_enabled,  # Inverted logic
+                "filter_bypassed": not status.sub_filter_enabled,  # Inverted logic
+            }
+        except WiiMError:
+            return {"supported": False, "reason": "WiiM devices only"}
+        except Exception as err:
+            error_str = str(err).lower()
+            if "unknown command" in error_str:
+                return {"supported": False, "reason": "WiiM devices only (Arylic/LinkPlay not supported)"}
+            return {"supported": False, "error": str(err)}
+
     def _generate_summary(self) -> dict[str, Any]:
         """Generate diagnostic summary."""
         device = self.report.get("device", {})
@@ -652,6 +690,27 @@ class DeviceDiagnostics:
                 self.report["audio_output"] = None
         except Exception:
             self.report["audio_output"] = None
+
+        # Add subwoofer status (WiiM devices only)
+        try:
+            subwoofer_status = await self.client.get_subwoofer_status()
+            if subwoofer_status:
+                # Note: main_filter_enabled=True means bass is NOT sent to main speakers
+                # sub_filter_enabled=True means filtering is active (not bypassed)
+                self.report["subwoofer"] = {
+                    "supported": True,
+                    "enabled": subwoofer_status.enabled,
+                    "crossover_hz": subwoofer_status.crossover,
+                    "phase_degrees": subwoofer_status.phase,
+                    "level_db": subwoofer_status.level,
+                    "delay_ms": subwoofer_status.sub_delay,
+                    "bass_to_mains": not subwoofer_status.main_filter_enabled,
+                    "filter_bypassed": not subwoofer_status.sub_filter_enabled,
+                }
+            else:
+                self.report["subwoofer"] = {"supported": False}
+        except Exception:
+            self.report["subwoofer"] = {"supported": False}
 
         # Generate summary
         self.report["summary"] = self._generate_summary()

@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.63] - 2026-01-28
+
+### Added
+- **Subwoofer Control API** ([Issue #2](https://github.com/mjcumming/pywiim/issues/2)): Added undocumented API endpoints for subwoofer configuration (WiiM devices only - tested on Pro and Ultra, not supported on Arylic).
+  - `get_subwoofer_status()` - Get current subwoofer configuration as `SubwooferStatus` dataclass
+  - `set_subwoofer_enabled(enabled)` - Enable/disable subwoofer output
+  - `set_subwoofer_crossover(frequency)` - Set crossover frequency (30-250 Hz)
+  - `set_subwoofer_phase(phase)` - Set phase (0 or 180 degrees)
+  - `set_subwoofer_level(level)` - Set level adjustment (-15 to +15 dB)
+  - `set_main_speaker_bass(enabled)` - Enable/disable bass to main speakers
+  - `set_subwoofer_filter(enabled)` - Enable/disable subwoofer low-pass filter (bypass mode)
+  - `set_subwoofer_delay(delay_ms)` - Set delay adjustment (-200 to +200 ms)
+  - `is_subwoofer_supported()` - Check if device supports subwoofer control
+  - `is_subwoofer_connected()` - Check if subwoofer is physically connected
+  - New constants: `SUBWOOFER_CROSSOVER_MIN/MAX`, `SUBWOOFER_LEVEL_MIN/MAX`, `SUBWOOFER_DELAY_MIN/MAX`, `SUBWOOFER_PHASE_0/180`
+- **CLI Subwoofer Testing**: Added subwoofer tests to `wiim-verify` and `wiim-diagnostics` CLI tools
+- **Integration Tests**: Added subwoofer integration tests in `tests/integration/test_real_device.py`
+
 ## [2.1.62] - 2026-01-28
 
 ### Fixed

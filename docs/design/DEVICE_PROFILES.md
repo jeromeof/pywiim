@@ -59,7 +59,6 @@ class EndpointConfig:
 class GroupingConfig:
     """Multiroom grouping settings."""
     uses_wifi_direct: bool = False
-    supports_enhanced_grouping: bool = True
 
 @dataclass(frozen=True)
 class DeviceProfile:
