@@ -970,15 +970,19 @@ class FeatureTester:
             # Display current settings
             # Note: main_filter_enabled=True means bass is NOT sent to main speakers
             # sub_filter_enabled=True means filtering is active (not bypassed)
-            self._print_data("Subwoofer Status", {
-                "enabled": status.enabled,
-                "crossover_hz": status.crossover,
-                "phase_degrees": status.phase,
-                "level_db": status.level,
-                "delay_ms": status.sub_delay,
-                "bass_to_mains": not status.main_filter_enabled,  # Inverted logic
-                "filter_bypassed": not status.sub_filter_enabled,  # Inverted logic
-            }, show_always=True)
+            self._print_data(
+                "Subwoofer Status",
+                {
+                    "enabled": status.enabled,
+                    "crossover_hz": status.crossover,
+                    "phase_degrees": status.phase,
+                    "level_db": status.level,
+                    "delay_ms": status.sub_delay,
+                    "bass_to_mains": not status.main_filter_enabled,  # Inverted logic
+                    "filter_bypassed": not status.sub_filter_enabled,  # Inverted logic
+                },
+                show_always=True,
+            )
 
             # Test setting crossover (safe - just reads and writes back)
             original_crossover = status.crossover

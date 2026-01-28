@@ -360,9 +360,7 @@ class TestCrossCoordinatorRoleInference:
         # But the master's API returns our UUID in slave list
         master.client = MagicMock()
         master.client.get_slaves_info = AsyncMock(
-            return_value=[
-                {"uuid": "SLAVE-UUID-1234", "ip": "10.10.10.92", "name": "TestSlave"}
-            ]
+            return_value=[{"uuid": "SLAVE-UUID-1234", "ip": "10.10.10.92", "name": "TestSlave"}]
         )
 
         mock_player._all_players_finder = MagicMock(return_value=[mock_player, master])
@@ -385,11 +383,7 @@ class TestCrossCoordinatorRoleInference:
         master._group.slaves = []
         master.client = MagicMock()
         # API returns UUID with prefix and uppercase
-        master.client.get_slaves_info = AsyncMock(
-            return_value=[
-                {"uuid": "uuid:SLAVE-UUID-1234", "ip": "10.10.10.92"}
-            ]
-        )
+        master.client.get_slaves_info = AsyncMock(return_value=[{"uuid": "uuid:SLAVE-UUID-1234", "ip": "10.10.10.92"}])
 
         mock_player._all_players_finder = MagicMock(return_value=[mock_player, master])
 
@@ -442,13 +436,9 @@ class TestCrossCoordinatorRoleInference:
         master2._group = MagicMock()
         master2._group.slaves = []
         master2.client = MagicMock()
-        master2.client.get_slaves_info = AsyncMock(
-            return_value=[{"uuid": "SLAVE-UUID-1234", "ip": "10.10.10.92"}]
-        )
+        master2.client.get_slaves_info = AsyncMock(return_value=[{"uuid": "SLAVE-UUID-1234", "ip": "10.10.10.92"}])
 
-        mock_player._all_players_finder = MagicMock(
-            return_value=[mock_player, master1, master2]
-        )
+        mock_player._all_players_finder = MagicMock(return_value=[mock_player, master1, master2])
 
         result = await group_ops._check_if_slave_of_any_master()
 
@@ -457,9 +447,7 @@ class TestCrossCoordinatorRoleInference:
     @pytest.mark.asyncio
     async def test_check_if_slave_callback_error(self, group_ops, mock_player):
         """Test cross-coordinator check handles all_players_finder callback error."""
-        mock_player._all_players_finder = MagicMock(
-            side_effect=Exception("Registry error")
-        )
+        mock_player._all_players_finder = MagicMock(side_effect=Exception("Registry error"))
 
         result = await group_ops._check_if_slave_of_any_master()
 
@@ -474,9 +462,7 @@ class TestCrossCoordinatorRoleInference:
         master.host = "192.168.1.100"
         master._group = None  # No group yet
         master.client = MagicMock()
-        master.client.get_slaves_info = AsyncMock(
-            return_value=[{"uuid": "SLAVE-UUID-1234", "ip": "10.10.10.92"}]
-        )
+        master.client.get_slaves_info = AsyncMock(return_value=[{"uuid": "SLAVE-UUID-1234", "ip": "10.10.10.92"}])
 
         mock_player._all_players_finder = MagicMock(return_value=[mock_player, master])
 
