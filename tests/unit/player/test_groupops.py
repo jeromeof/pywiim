@@ -271,6 +271,62 @@ class TestGroupOperations:
         assert mock_player._player_finder.call_count == 2
 
 
+class TestSynchronizeGroupStateIntegration:
+    """Tests for _synchronize_group_state cross-coordinator integration."""
+
+    @pytest.fixture
+    def mock_player(self, mock_client):
+        """Create a mock Player instance with UUID."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        player._status_model = PlayerStatus(group="0")  # Reports as solo
+        player._device_info = DeviceInfo(uuid="SLAVE-UUID-1234")
+        player._group = None
+        player._detected_role = "solo"
+        player._state_synchronizer = MagicMock()
+        player._state_synchronizer.update_from_http = MagicMock()
+        return player
+
+    @pytest.fixture
+    def group_ops(self, mock_player):
+        """Create a GroupOperations instance."""
+        from pywiim.player.groupops import GroupOperations
+
+        return GroupOperations(mock_player)
+
+    @pytest.mark.asyncio
+    async def test_synchronize_triggers_cross_coordinator_check(self, group_ops, mock_player):
+        """Test _synchronize_group_state calls cross-coordinator check when solo."""
+        # Create a master that has us in their slave list
+        master = MagicMock()
+        master._detected_role = "master"
+        master.host = "192.168.1.100"
+        master._group = MagicMock()
+        master._group.slaves = []
+        master.client = MagicMock()
+        master.client.get_slaves_info = AsyncMock(return_value=[{"uuid": "SLAVE-UUID-1234", "ip": "10.10.10.92"}])
+
+        # Set up all_players_finder to return the master
+        mock_player._all_players_finder = MagicMock(return_value=[mock_player, master])
+
+        # Run synchronize - should detect we're a slave via cross-coordinator check
+        await group_ops._synchronize_group_state()
+
+        # Should have updated role to slave
+        assert mock_player._detected_role == "slave"
+
+    @pytest.mark.asyncio
+    async def test_synchronize_no_cross_check_without_callback(self, group_ops, mock_player):
+        """Test _synchronize_group_state skips cross-coordinator check without callback."""
+        mock_player._all_players_finder = None
+
+        await group_ops._synchronize_group_state()
+
+        # Should remain solo (no cross-coordinator check)
+        assert mock_player._detected_role == "solo"
+
+
 class TestCrossCoordinatorRoleInference:
     """Tests for cross-coordinator role inference in WiFi Direct multiroom."""
 
