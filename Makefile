@@ -6,7 +6,7 @@ help:
 	@echo "  make lint        - Lint code with Ruff"
 	@echo "  make typecheck   - Type check with mypy"
 	@echo "  make test        - Run tests with pytest"
-	@echo "  make check       - Run all CI checks (format check + lint + test)"
+	@echo "  make check       - Run all CI checks (format + lint + test + coverage >= 55%)"
 	@echo "  make release     - Run checks, update version in pyproject.toml, commit, tag, and push"
 	@echo "                    Usage: make release VERSION=2.1.53"
 	@echo "                    ⚠️  Version in pyproject.toml will be auto-updated to match VERSION"
@@ -29,18 +29,21 @@ typecheck:
 
 check:
 	@echo "Running all CI checks..."
-	@echo "1. Checking import sorting..."
+	@echo "1. Checking code formatting with Black..."
+	black pywiim tests --check --diff || (echo "❌ Code formatting failed! Run 'make format' to fix." && exit 1)
+	@echo "✅ Code formatting OK"
+	@echo "2. Checking import sorting..."
 	isort pywiim tests --check-only --diff || (echo "❌ Import sorting failed! Run 'make format' to fix." && exit 1)
 	@echo "✅ Import sorting OK"
-	@echo "2. Linting with Ruff..."
+	@echo "3. Linting with Ruff..."
 	ruff check pywiim tests || (echo "❌ Linting failed!" && exit 1)
 	@echo "✅ Linting OK"
-	@echo "3. Type checking with mypy..."
+	@echo "4. Type checking with mypy..."
 	mypy pywiim || (echo "❌ Type check failed!" && exit 1)
 	@echo "✅ Type check OK"
-	@echo "4. Running unit tests..."
-	@python -c "import xdist" 2>/dev/null && pytest tests/unit/ -x --tb=short -q -n auto || pytest tests/unit/ -x --tb=short -q
-	@echo "✅ All checks passed!"
+	@echo "5. Running unit tests with coverage..."
+	@python -c "import xdist" 2>/dev/null && pytest tests/unit/ -x --tb=short -q -n auto --cov=pywiim --cov-report=term --cov-fail-under=55 || pytest tests/unit/ -x --tb=short -q --cov=pywiim --cov-report=term --cov-fail-under=55
+	@echo "✅ All checks passed (including coverage >= 55%)!"
 
 test:
 	@echo "Running tests with pytest..."

@@ -53,7 +53,15 @@ jobs:
         file: ./coverage.xml
         flags: unittests
         name: codecov-umbrella
-        fail_ci_if_error: false
+        fail_ci_if_error: true
         verbose: true
         token: ${{ secrets.CODECOV_TOKEN }}
+    
+    - name: Check coverage threshold locally
+      run: |
+        # Extract coverage percentage and verify it meets threshold
+        COVERAGE=$(python -c "import xml.etree.ElementTree as ET; tree = ET.parse('coverage.xml'); print(f\"{float(tree.getroot().get('line-rate')) * 100:.2f}\")")
+        echo "Coverage: ${COVERAGE}%"
+        # Fail if below 55% (matches codecov.yml target)
+        python -c "import sys; sys.exit(0 if float('${COVERAGE}') >= 55.0 else 1)" || (echo "❌ Coverage ${COVERAGE}% is below 55% threshold!" && exit 1)
 
