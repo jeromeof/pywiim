@@ -1020,11 +1020,6 @@ class Player(PlayerBase):
         """Whether LED control is supported."""
         return self._properties.supports_led_control
 
-    @property
-    def supports_enhanced_grouping(self) -> bool:
-        """Whether enhanced multiroom grouping features are supported."""
-        return self._properties.supports_enhanced_grouping
-
     # === UPnP Capabilities ===
 
     @property

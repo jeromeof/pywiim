@@ -684,6 +684,22 @@ class TestSourceNormalization:
         result = audio_config._normalize_source_for_api(input_source)
         assert result == expected
 
+    # RCA variations (Audio Pro specific)
+    @pytest.mark.parametrize(
+        "input_source,expected",
+        [
+            ("RCA", "RCA"),
+            ("rca", "RCA"),
+            ("Rca", "RCA"),
+            ("RCA In", "RCA"),
+            ("rca-in", "RCA"),
+        ],
+    )
+    def test_normalize_source_rca(self, audio_config, input_source, expected):
+        """Test RCA normalization to uppercase RCA."""
+        result = audio_config._normalize_source_for_api(input_source)
+        assert result == expected
+
     # Edge cases
     def test_normalize_source_empty(self, audio_config):
         """Test empty source returns as-is."""

@@ -184,7 +184,6 @@ class TestDeviceCapabilitiesDetection:
 
         assert capabilities["is_wiim_device"] is True
         assert capabilities["is_legacy_device"] is False
-        assert capabilities["supports_enhanced_grouping"] is True
         assert capabilities["supports_audio_output"] is True
         assert capabilities["response_timeout"] == 2.0
         assert capabilities["retry_count"] == 2
@@ -211,7 +210,6 @@ class TestDeviceCapabilitiesDetection:
 
         assert capabilities["is_legacy_device"] is True
         assert capabilities["audio_pro_generation"] == "w_generation"
-        assert capabilities["supports_enhanced_grouping"] is True
         assert capabilities["response_timeout"] == 4.0
 
     def test_detect_device_capabilities_audio_pro_original(self):

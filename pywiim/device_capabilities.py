@@ -96,7 +96,7 @@ DEVICE_CAPABILITIES: dict[str, DeviceInputs] = {
     ),
     # Generic LinkPlay device (augment with common inputs)
     "linkplay_generic": DeviceInputs(
-        inputs=["bluetooth", "line_in", "optical"],
+        inputs=["bluetooth", "line_in", "optical", "rca"],
         notes="Generic LinkPlay-based devices: augment plm_support with common inputs",
     ),
 }

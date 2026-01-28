@@ -2875,6 +2875,22 @@ class TestPlayerMediaMetadata:
         assert player.available_sources == []
 
     @pytest.mark.asyncio
+    async def test_available_sources_rca(self, mock_client):
+        """Test that RCA is correctly identified and normalized in available_sources."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        # Device reports RCA in input_list (Audio Pro C10 MkII behavior)
+        device_info = DeviceInfo(uuid="test", input_list=["RCA", "bluetooth", "wifi"])
+        player._device_info = device_info
+
+        # RCA should be included and capitalized correctly
+        result = player.available_sources
+        assert "RCA" in result
+        assert "Bluetooth" in result
+        assert "Network" in result
+
+    @pytest.mark.asyncio
     async def test_available_sources_filters_streaming_services(self, mock_client):
         """Test that unconfigured streaming services are filtered out."""
         from pywiim.player import Player
@@ -4846,7 +4862,6 @@ class TestPlayerCapabilities:
             "supports_alarms": True,
             "supports_sleep_timer": True,
             "supports_led_control": True,
-            "supports_enhanced_grouping": True,
         }
         return client
 
@@ -4937,16 +4952,6 @@ class TestPlayerCapabilities:
         mock_client._capabilities["supports_led_control"] = False
         assert player.supports_led_control is False
 
-    def test_supports_enhanced_grouping(self, mock_client):
-        """Test supports_enhanced_grouping property."""
-        from pywiim.player import Player
-
-        player = Player(mock_client)
-        assert player.supports_enhanced_grouping is True
-
-        mock_client._capabilities["supports_enhanced_grouping"] = False
-        assert player.supports_enhanced_grouping is False
-
     def test_supports_queue_count(self, mock_client):
         """Test supports_queue_count property (always True)."""
         from pywiim.player import Player
@@ -5017,7 +5022,6 @@ class TestPlayerCapabilities:
         assert player.supports_alarms is False
         assert player.supports_sleep_timer is False
         assert player.supports_led_control is False
-        assert player.supports_enhanced_grouping is False
 
         # UPnP capabilities (no UPnP client)
         assert player.supports_upnp is False

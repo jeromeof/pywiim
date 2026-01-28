@@ -122,6 +122,10 @@ class EndpointConfig:
     # Status endpoint path (some devices need getStatusEx instead of getPlayerStatusEx)
     status_endpoint: str = "/httpapi.asp?command=getPlayerStatusEx"
 
+    # Reboot command (Audio Pro devices use StartRebootTime:0 instead of reboot)
+    # See: https://github.com/mjcumming/wiim/issues/177
+    reboot_command: str = "reboot"
+
 
 @dataclass(frozen=True)
 class GroupingConfig:
@@ -129,9 +133,6 @@ class GroupingConfig:
 
     # Gen1 devices use WiFi Direct, Gen2+ use router-based
     uses_wifi_direct: bool = False
-
-    # Whether device supports enhanced grouping features
-    supports_enhanced_grouping: bool = True
 
 
 @dataclass(frozen=True)
@@ -187,7 +188,6 @@ PROFILE_WIIM = DeviceProfile(
     ),
     grouping=GroupingConfig(
         uses_wifi_direct=False,
-        supports_enhanced_grouping=True,
     ),
 )
 
@@ -208,7 +208,6 @@ PROFILE_ARYLIC = DeviceProfile(
     ),
     grouping=GroupingConfig(
         uses_wifi_direct=False,
-        supports_enhanced_grouping=True,
     ),
 )
 
@@ -247,10 +246,10 @@ PROFILE_AUDIO_PRO_MKII = DeviceProfile(
         supports_eq=False,
         supports_eq_set=False,
         status_endpoint="/httpapi.asp?command=getStatusEx",
+        reboot_command="StartRebootTime:0",  # Audio Pro uses different reboot command
     ),
     grouping=GroupingConfig(
         uses_wifi_direct=False,
-        supports_enhanced_grouping=True,
     ),
 )
 
@@ -270,10 +269,10 @@ PROFILE_AUDIO_PRO_W_GENERATION = DeviceProfile(
         supports_getPlayerStatusEx=True,
         supports_getPresetInfo=True,
         supports_eq=True,
+        reboot_command="StartRebootTime:0",  # Audio Pro uses different reboot command
     ),
     grouping=GroupingConfig(
         uses_wifi_direct=False,
-        supports_enhanced_grouping=True,
     ),
 )
 
@@ -291,10 +290,10 @@ PROFILE_AUDIO_PRO_ORIGINAL = DeviceProfile(
     ),
     endpoints=EndpointConfig(
         supports_getPlayerStatusEx=True,
+        reboot_command="StartRebootTime:0",  # Audio Pro uses different reboot command
     ),
     grouping=GroupingConfig(
         uses_wifi_direct=True,  # Gen1 requires WiFi Direct
-        supports_enhanced_grouping=False,
     ),
 )
 
@@ -317,7 +316,6 @@ PROFILE_LINKPLAY_GENERIC = DeviceProfile(
     ),
     grouping=GroupingConfig(
         uses_wifi_direct=False,
-        supports_enhanced_grouping=True,
     ),
 )
 
@@ -500,7 +498,6 @@ def get_device_profile(device_info: DeviceInfo) -> DeviceProfile:
                 endpoints=profile.endpoints,
                 grouping=GroupingConfig(
                     uses_wifi_direct=True,
-                    supports_enhanced_grouping=profile.grouping.supports_enhanced_grouping,
                 ),
             )
 
@@ -527,7 +524,6 @@ def get_device_profile(device_info: DeviceInfo) -> DeviceProfile:
             endpoints=profile.endpoints,
             grouping=GroupingConfig(
                 uses_wifi_direct=True,
-                supports_enhanced_grouping=profile.grouping.supports_enhanced_grouping,
             ),
         )
 

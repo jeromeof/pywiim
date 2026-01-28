@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.62] - 2026-01-28
+
+### Fixed
+- **Audio Pro Reboot Command (Issue [mjcumming/wiim#177](https://github.com/mjcumming/wiim/issues/177))**: Fixed reboot not working on Audio Pro speakers.
+  - Audio Pro devices require `StartRebootTime:0` instead of standard `Reboot` command.
+  - Added `reboot_command` to device profiles with device-specific commands.
+  - Reboot command is now read from capabilities, following the established Strategy Pattern.
+
+### Removed
+- **Removed unused `supports_enhanced_grouping` capability**: This flag was never used in any logic - multiroom grouping relies on `wmrm_version` instead. Cleaned up from profiles, capabilities, and player properties.
+
+## [2.1.61] - 2026-01-02
+
+### Fixed
+- **Audio Pro C10 MkII Source Selection (Issue [mjcumming/wiim#167](https://github.com/mjcumming/wiim/issues/167))**: Fixed RCA input not being selectable or working.
+  - Added `rca` to known physical inputs to prevent it being filtered out of the source list.
+  - Implemented specific `RCA` (uppercase) normalization for API commands as required by Audio Pro firmware.
+  - Strengthened smart fallback to respect device-reported input names when standard mappings fail.
+
 ## [2.1.60] - 2025-12-28
 
 ### Added

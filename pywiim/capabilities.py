@@ -36,6 +36,7 @@ from .api.constants import (
 from .exceptions import WiiMError
 from .models import DeviceInfo
 from .normalize import normalize_vendor
+from .profiles import get_device_profile
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -252,6 +253,18 @@ class WiiMCapabilities:
                 client.host,
             )
 
+        # Get device profile for profile-specific settings (like reboot command)
+        # Profile provides device-specific command variations
+        # See: https://github.com/mjcumming/wiim/issues/177
+        profile = get_device_profile(device_info)
+        capabilities["reboot_command"] = profile.endpoints.reboot_command
+        _LOGGER.debug(
+            "Device %s reboot command: %s (from profile %s)",
+            client.host,
+            capabilities["reboot_command"],
+            profile.display_name,
+        )
+
         self._capabilities[device_id] = capabilities
         # Log capabilities at DEBUG level to reduce verbosity
         # Only log key info - detailed features available via debug logging
@@ -305,7 +318,6 @@ def detect_device_capabilities(device_info: DeviceInfo) -> dict[str, Any]:
         - is_wiim_device: Whether device is a WiiM device
         - is_legacy_device: Whether device is a legacy device
         - audio_pro_generation: Audio Pro generation (mkii, w_generation, original, unknown)
-        - supports_enhanced_grouping: Whether device supports enhanced multiroom features
         - supports_audio_output: Whether device supports audio output control
         - supports_alarms: Whether device supports alarm clocks (WiiM only)
         - supports_sleep_timer: Whether device supports sleep timer (WiiM only)
@@ -333,7 +345,6 @@ def detect_device_capabilities(device_info: DeviceInfo) -> dict[str, Any]:
         "is_wiim_device": is_wiim_device(device_info),
         "is_legacy_device": is_legacy_device(device_info),
         "audio_pro_generation": detect_audio_pro_generation(device_info),
-        "supports_enhanced_grouping": False,
         "supports_audio_output": False,  # Default to False, enable for WiiM devices
         "supports_alarms": False,  # Default to False, enable for WiiM devices
         "supports_sleep_timer": False,  # Default to False, enable for WiiM devices
@@ -344,7 +355,6 @@ def detect_device_capabilities(device_info: DeviceInfo) -> dict[str, Any]:
     }
 
     if capabilities["is_wiim_device"]:
-        capabilities["supports_enhanced_grouping"] = True
         capabilities["supports_audio_output"] = True  # All WiiM devices support audio output control
         capabilities["response_timeout"] = 2.0
         capabilities["retry_count"] = 2
@@ -379,7 +389,6 @@ def detect_device_capabilities(device_info: DeviceInfo) -> dict[str, Any]:
                 capabilities["supports_metadata"] = True
                 capabilities["status_endpoint"] = "/httpapi.asp?command=getStatusEx"
             elif generation == "w_generation":
-                capabilities["supports_enhanced_grouping"] = True
                 capabilities["response_timeout"] = 4.0
                 capabilities["retry_count"] = 2
                 capabilities["protocol_priority"] = ["https", "http"]

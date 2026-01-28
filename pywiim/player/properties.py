@@ -1045,6 +1045,7 @@ class PlayerProperties:
                     "line_in_2",
                     "linein_2",
                     "phono",  # Phono input (WiiM Ultra specific, but safe to include for all devices)
+                    "rca",  # RCA input (Audio Pro C10 MkII specific)
                 }
 
                 # If it's a known physical input and not already in our list, add it
@@ -1475,13 +1476,6 @@ class PlayerProperties:
         if not self.player.client:
             return False
         return bool(self.player.client.capabilities.get("supports_led_control", False))
-
-    @property
-    def supports_enhanced_grouping(self) -> bool:
-        """Whether enhanced multiroom grouping features are supported."""
-        if not self.player.client:
-            return False
-        return bool(self.player.client.capabilities.get("supports_enhanced_grouping", False))
 
     # === UPnP Capabilities ===
     # These are determined at runtime based on UPnP client initialization

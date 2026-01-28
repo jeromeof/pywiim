@@ -8,6 +8,32 @@
 - Testing procedures (how to test)
 - Design patterns (how to implement)
 
+## MANDATORY: Before Implementing ANY Fix or Feature
+
+**STOP. Do NOT propose solutions until you complete this checklist:**
+
+1. ☐ **Read design docs FIRST** - Before suggesting ANY implementation approach:
+   - `docs/design/API_DESIGN_PATTERNS.md` - How we handle device variations
+   - `docs/design/DESIGN_PRINCIPLES.md` - Our architectural patterns
+   - `docs/design/ARCHITECTURE.md` - System structure and data flow
+
+2. ☐ **Find similar patterns** - Search the codebase:
+   - How does existing code handle similar device variations?
+   - Is there a capability/profile pattern already handling this type of problem?
+   - What existing pattern should this follow?
+
+3. ☐ **Propose approach** - Discuss with user BEFORE coding:
+   - Explain which existing pattern applies
+   - Show how the fix follows established architecture
+   - Get user approval before implementation
+
+4. ☐ **Implement** - Only after steps 1-3 are complete
+
+**WHY THIS MATTERS:** Proposing solutions without reading design docs leads to:
+- Suggesting patterns that violate our architecture
+- Creating inconsistencies that need to be refactored later
+- Wasting time discussing approaches that don't fit
+
 ## Core Principles
 
 1. **Check the rules file first** - Read this file before implementing, testing, or creating anything.

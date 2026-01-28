@@ -290,6 +290,57 @@ class TestProfileForVendor:
         assert profile.vendor == "linkplay_generic"
 
 
+class TestRebootCommand:
+    """Test reboot command configuration in profiles.
+
+    Audio Pro devices use StartRebootTime:0 instead of the standard 'reboot' command.
+    See: https://github.com/mjcumming/wiim/issues/177
+    """
+
+    def test_wiim_uses_standard_reboot_command(self):
+        """WiiM devices use standard 'reboot' command."""
+        profile = PROFILES["wiim"]
+        assert profile.endpoints.reboot_command == "reboot"
+
+    def test_arylic_uses_standard_reboot_command(self):
+        """Arylic devices use standard 'reboot' command."""
+        profile = PROFILES["arylic"]
+        assert profile.endpoints.reboot_command == "reboot"
+
+    def test_linkplay_generic_uses_standard_reboot_command(self):
+        """Generic LinkPlay devices use standard 'reboot' command."""
+        profile = PROFILES["linkplay_generic"]
+        assert profile.endpoints.reboot_command == "reboot"
+
+    def test_audio_pro_mkii_uses_start_reboot_time(self):
+        """Audio Pro MkII uses StartRebootTime:0 command."""
+        profile = PROFILES["audio_pro_mkii"]
+        assert profile.endpoints.reboot_command == "StartRebootTime:0"
+
+    def test_audio_pro_w_generation_uses_start_reboot_time(self):
+        """Audio Pro W-Generation uses StartRebootTime:0 command."""
+        profile = PROFILES["audio_pro_w_generation"]
+        assert profile.endpoints.reboot_command == "StartRebootTime:0"
+
+    def test_audio_pro_original_uses_start_reboot_time(self):
+        """Audio Pro Original uses StartRebootTime:0 command."""
+        profile = PROFILES["audio_pro_original"]
+        assert profile.endpoints.reboot_command == "StartRebootTime:0"
+
+    def test_all_audio_pro_profiles_use_start_reboot_time(self):
+        """All Audio Pro profiles use StartRebootTime:0 command."""
+        audio_pro_profiles = [
+            "audio_pro_mkii",
+            "audio_pro_w_generation",
+            "audio_pro_original",
+        ]
+        for profile_name in audio_pro_profiles:
+            profile = PROFILES[profile_name]
+            assert (
+                profile.endpoints.reboot_command == "StartRebootTime:0"
+            ), f"{profile_name} should use StartRebootTime:0"
+
+
 class TestProfileIntegration:
     """Integration tests for profile usage patterns."""
 

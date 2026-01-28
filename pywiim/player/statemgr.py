@@ -510,6 +510,35 @@ class StateManager:
 
         self.player._status_model = status
 
+        # Update state synchronizer with preserved optimistic values
+        # This ensures the synchronizer (which properties read from) has the correct optimistic state
+        # even if the HTTP poll returned stale data
+        optimistic_updates = {}
+        if (
+            status
+            and self.player._status_model
+            and self.player._status_model.source
+            and self.player._last_source_set_time > 0
+            and (time.time() - self.player._last_source_set_time) < source_preservation_window
+        ):
+            # Update synchronizer with preserved optimistic source
+            optimistic_updates["source"] = self.player._status_model.source
+
+        if (
+            status
+            and self.player._status_model
+            and self.player._status_model.eq_preset
+            and self.player._last_eq_preset_set_time > 0
+            and (time.time() - self.player._last_eq_preset_set_time) < eq_preservation_window
+        ):
+            # Update synchronizer with preserved optimistic EQ preset
+            optimistic_updates["eq_preset"] = self.player._status_model.eq_preset
+
+        if optimistic_updates:
+            # Update state synchronizer with preserved optimistic values
+            # Use source="optimistic" to distinguish from HTTP polling data
+            self.player._state_synchronizer.update_from_http(optimistic_updates, source="optimistic")
+
         # Enrich metadata if playing a stream
         await self._stream_enricher.enrich_if_needed(status)
 

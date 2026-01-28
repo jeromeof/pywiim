@@ -17,7 +17,34 @@ class TestDiagnosticsAPI:
 
     @pytest.mark.asyncio
     async def test_reboot_success(self, mock_client):
-        """Test reboot command success."""
+        """Test reboot command success with default command."""
+        mock_client._request_reboot = AsyncMock(return_value=None)
+
+        await mock_client.reboot()
+
+        mock_client._request_reboot.assert_called_once()
+        assert "/httpapi.asp?command=reboot" in mock_client._request_reboot.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_reboot_uses_capability_command(self, mock_client):
+        """Test reboot uses command from capabilities (Audio Pro devices).
+
+        Audio Pro devices use StartRebootTime:0 instead of reboot.
+        See: https://github.com/mjcumming/wiim/issues/177
+        """
+        mock_client._capabilities["reboot_command"] = "StartRebootTime:0"
+        mock_client._request_reboot = AsyncMock(return_value=None)
+
+        await mock_client.reboot()
+
+        mock_client._request_reboot.assert_called_once()
+        assert "/httpapi.asp?command=StartRebootTime:0" in mock_client._request_reboot.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_reboot_default_command_when_capability_missing(self, mock_client):
+        """Test reboot uses default 'reboot' when capability not set."""
+        # Ensure reboot_command is not in capabilities
+        mock_client._capabilities.pop("reboot_command", None)
         mock_client._request_reboot = AsyncMock(return_value=None)
 
         await mock_client.reboot()

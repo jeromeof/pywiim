@@ -126,6 +126,9 @@ class AudioConfiguration:
             "bluetooth": "bluetooth",
             "aux": "line-in",  # Map "Aux" to "line-in" (standard LinkPlay)
             "aux-in": "line-in",
+            # RCA variations (Audio Pro specific)
+            "rca": "RCA",
+            "rca-in": "RCA",
             # Streaming services (pass through as-is)
             "airplay": "airplay",
             "dlna": "dlna",

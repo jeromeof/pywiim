@@ -24,13 +24,27 @@ class DiagnosticsAPI:
         The method handles this gracefully and considers the command successful
         even if the device stops responding.
 
+        The reboot command varies by device:
+        - WiiM devices: "reboot"
+        - Audio Pro devices: "StartRebootTime:0"
+
+        The correct command is determined from device capabilities/profile.
+        See: https://github.com/mjcumming/wiim/issues/177
+
         Raises:
             WiiMError: If the request fails before the device reboots.
         """
         try:
+            # Get reboot command from capabilities (set from device profile)
+            # Default to "reboot" for WiiM and most LinkPlay devices
+            reboot_command = self._capabilities.get("reboot_command", "reboot")  # type: ignore[attr-defined]
+            endpoint = f"/httpapi.asp?command={reboot_command}"
+
+            _LOGGER.debug("Sending reboot command: %s", reboot_command)
+
             # Send reboot command - device may not respond after this
             # Use a custom request method that handles empty responses gracefully
-            await self._request_reboot("/httpapi.asp?command=reboot")
+            await self._request_reboot(endpoint)
         except Exception as err:
             # Reboot commands often don't return proper responses
             # Log the attempt but don't fail the service call
