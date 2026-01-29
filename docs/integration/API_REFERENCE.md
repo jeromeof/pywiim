@@ -113,19 +113,31 @@ player = Player(
 | `client` | `WiiMClient` | Required - HTTP API client |
 | `upnp_client` | `UpnpClient \| None` | Optional - UPnP for queue management and events |
 | `on_state_changed` | `Callable[[], None] \| None` | Optional - Callback when state changes |
-| `player_finder` | `Callable[[str], Player \| None] \| None` | Optional - Find Player by host/UUID for group linking |
-| `all_players_finder` | `Callable[[], list[Player]] \| None` | Optional - Get all Players for WiFi Direct role inference |
+| `player_finder` | `Callable[[str], Player \| None] \| None` | Optional - Find Player by host/IP for group linking |
+| `all_players_finder` | `Callable[[], list[Player]] \| None` | Optional - Get all Players for WiFi Direct multiroom support |
 
-**WiFi Direct Role Inference:**
+**WiFi Direct Multiroom Support:**
 
-WiFi Direct multiroom slaves report `group="0"` (solo) when queried directly because they don't know they're in a group. Only the master knows the slave list. The `all_players_finder` callback enables pywiim to check if any known master lists this device as a slave, enabling correct role detection.
+Legacy LinkPlay devices (firmware < 4.2.8020) use WiFi Direct multiroom where slaves:
+- Join the master's internal WiFi Direct network and get 10.10.10.x IP addresses
+- Are no longer reachable from the main LAN at their original IPs
+- Report `group="0"` (solo) when queried because they don't know they're in a group
+
+pywiim handles this automatically when `all_players_finder` is provided:
+
+1. **Master linking slaves**: When the master's `getSlaveList` returns 10.10.10.x IPs, pywiim:
+   - First tries `player_finder(ip)` (fails for internal IPs)
+   - Then searches `all_players_finder()` results by UUID to find the matching Player
+
+2. **Slave role detection**: pywiim uses `all_players_finder` to check if any known master lists this device as a slave, enabling correct role detection.
 
 ```python
 # Example for Home Assistant integration
+# Only IP lookup is required - pywiim handles UUID matching internally
 player = Player(
     client,
-    player_finder=lambda host: player_registry.get(host),
-    all_players_finder=lambda: list(player_registry.values()),
+    player_finder=lambda host: player_registry.get(host),  # IP lookup only
+    all_players_finder=lambda: list(player_registry.values()),  # Required for WiFi Direct
 )
 ```
 

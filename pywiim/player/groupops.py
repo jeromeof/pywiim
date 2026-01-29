@@ -43,6 +43,12 @@ class GroupOperations:
         from the main LAN. In this case, IP-based matching fails and we need
         to fall back to UUID-based matching.
 
+        Lookup order:
+        1. By IP via player_finder (works for router-based multiroom)
+        2. By UUID via player_finder (if integration supports UUID lookups)
+        3. By UUID via all_players_finder search (handles WiFi Direct without
+           requiring integration to implement UUID lookups)
+
         Args:
             slave_host: Slave IP address (may be internal 10.10.10.x for WiFi Direct)
             slave_uuid: Slave UUID for fallback matching (may be None)
@@ -50,24 +56,43 @@ class GroupOperations:
         Returns:
             Player instance if found, None otherwise.
         """
-        if not self.player._player_finder:
-            return None
-
         # Try by host/IP first (works for normal router-based multiroom)
-        slave_player = self.player._player_finder(slave_host)
-        if slave_player:
-            return slave_player
-
-        # Fallback: Try by UUID (for WiFi Direct devices with 10.10.10.x IPs)
-        if slave_uuid:
-            slave_player = self.player._player_finder(slave_uuid)
+        if self.player._player_finder:
+            slave_player = self.player._player_finder(slave_host)
             if slave_player:
-                _LOGGER.debug(
-                    "Found slave by UUID fallback: host=%s, uuid=%s",
-                    slave_host,
-                    slave_uuid,
-                )
                 return slave_player
+
+            # Fallback 1: Try by UUID via player_finder (for integrations that support it)
+            if slave_uuid:
+                slave_player = self.player._player_finder(slave_uuid)
+                if slave_player:
+                    _LOGGER.debug(
+                        "Found slave by UUID via player_finder: host=%s, uuid=%s",
+                        slave_host,
+                        slave_uuid,
+                    )
+                    return slave_player
+
+        # Fallback 2: Search all_players by UUID (handles WiFi Direct multiroom
+        # without requiring integration to implement UUID lookups in player_finder)
+        if slave_uuid and self.player._all_players_finder:
+            try:
+                all_players = self.player._all_players_finder()
+                normalized_target = self._normalize_uuid(slave_uuid)
+                for player in all_players:
+                    if player is self.player:
+                        continue  # Skip self
+                    player_uuid = getattr(player, "uuid", None)
+                    if player_uuid and self._normalize_uuid(player_uuid) == normalized_target:
+                        _LOGGER.debug(
+                            "Found slave by UUID via all_players search: host=%s, uuid=%s, matched_player=%s",
+                            slave_host,
+                            slave_uuid,
+                            player.host,
+                        )
+                        return player
+            except Exception as err:
+                _LOGGER.debug("all_players_finder search failed: %s", err)
 
         return None
 

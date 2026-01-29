@@ -264,11 +264,95 @@ class TestGroupOperations:
     def test_find_slave_player_not_found(self, group_ops, mock_player):
         """Test finding slave player when not found by host or UUID."""
         mock_player._player_finder = MagicMock(return_value=None)
+        mock_player._all_players_finder = None
 
         result = group_ops._find_slave_player("10.10.10.92", "unknown-uuid")
 
         assert result is None
         assert mock_player._player_finder.call_count == 2
+
+    def test_find_slave_player_by_all_players_uuid_search(self, group_ops, mock_player):
+        """Test finding slave via all_players_finder UUID search.
+
+        This is the fallback for WiFi Direct multiroom when:
+        1. IP lookup fails (10.10.10.x internal IP not known to integration)
+        2. player_finder UUID lookup fails (integration doesn't support UUID lookups)
+        3. all_players_finder is provided - pywiim searches all players by UUID
+
+        This enables WiFi Direct multiroom without requiring integrations to
+        implement UUID lookups in player_finder.
+        """
+        slave = MagicMock()
+        slave.host = "192.168.1.101"  # LAN IP known to integration
+        slave.uuid = "FF31F008-25D7-2F58-1507-DE05FF31F008"
+
+        other_player = MagicMock()
+        other_player.host = "192.168.1.102"
+        other_player.uuid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
+
+        # player_finder doesn't support UUID lookups - returns None for both
+        mock_player._player_finder = MagicMock(return_value=None)
+
+        # all_players_finder returns all known players
+        mock_player._all_players_finder = MagicMock(return_value=[mock_player, slave, other_player])
+
+        result = group_ops._find_slave_player(
+            "10.10.10.92",  # Internal WiFi Direct IP (unknown to integration)
+            "FF31F008-25D7-2F58-1507-DE05FF31F008",  # UUID matches slave
+        )
+
+        assert result == slave
+        mock_player._all_players_finder.assert_called_once()
+
+    def test_find_slave_player_uuid_search_with_prefix(self, group_ops, mock_player):
+        """Test UUID search handles 'uuid:' prefix from getSlaveList."""
+        slave = MagicMock()
+        slave.host = "192.168.1.101"
+        # Player stores UUID without prefix
+        slave.uuid = "FF31F008-25D7-2F58-1507-DE05FF31F008"
+
+        mock_player._player_finder = MagicMock(return_value=None)
+        mock_player._all_players_finder = MagicMock(return_value=[mock_player, slave])
+
+        # getSlaveList returns UUID with 'uuid:' prefix
+        result = group_ops._find_slave_player(
+            "10.10.10.92",
+            "uuid:FF31F008-25D7-2F58-1507-DE05FF31F008",
+        )
+
+        assert result == slave
+
+    def test_find_slave_player_uuid_search_skips_self(self, group_ops, mock_player):
+        """Test UUID search skips the calling player (master)."""
+        # Create a mock that looks like the master player with matching UUID
+        master_mock = MagicMock()
+        master_mock.uuid = "FF31F008-25D7-2F58-1507-DE05FF31F008"
+
+        # Make _all_players_finder return only the master mock
+        mock_player._player_finder = MagicMock(return_value=None)
+        mock_player._all_players_finder = MagicMock(return_value=[mock_player])
+
+        # Patch the player's uuid via _device_info (how Player.uuid property works)
+        mock_player._device_info = MagicMock()
+        mock_player._device_info.uuid = "FF31F008-25D7-2F58-1507-DE05FF31F008"
+
+        result = group_ops._find_slave_player(
+            "10.10.10.92",
+            "FF31F008-25D7-2F58-1507-DE05FF31F008",
+        )
+
+        # Should not match self
+        assert result is None
+
+    def test_find_slave_player_uuid_search_handles_error(self, group_ops, mock_player):
+        """Test UUID search handles all_players_finder errors gracefully."""
+        mock_player._player_finder = MagicMock(return_value=None)
+        mock_player._all_players_finder = MagicMock(side_effect=Exception("callback error"))
+
+        result = group_ops._find_slave_player("10.10.10.92", "some-uuid")
+
+        # Should return None, not raise
+        assert result is None
 
 
 class TestSynchronizeGroupStateIntegration:

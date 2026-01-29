@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.69] - 2026-01-29
+
+### Fixed
+- **WiFi Direct multiroom slave linking** (Issue [mjcumming/wiim#178](https://github.com/mjcumming/wiim/issues/178)) - Fixed slave linking for legacy LinkPlay devices (e.g., Xoro XVS 100) that use WiFi Direct multiroom:
+  - Slaves join master's internal WiFi Direct network and get 10.10.10.x IPs
+  - Master's `getSlaveList` returns these internal IPs (unknown to HA) but includes UUIDs
+  - Added third fallback in `_find_slave_player()`: searches `all_players_finder()` results by UUID
+  - **No integration changes required** - pywiim now handles UUID matching internally when `all_players_finder` is provided
+  - This fixes `group_members` showing incomplete data for WiFi Direct groups
+
+### Documentation
+- Updated `HA_INTEGRATION.md` with complete `_get_all_players()` implementation example
+- Clarified that `all_players_finder` is **required** for WiFi Direct multiroom support
+- Updated `API_REFERENCE.md` to explain the UUID search fallback mechanism
+
 ## [2.1.68] - 2026-01-28
 
 ### Fixed

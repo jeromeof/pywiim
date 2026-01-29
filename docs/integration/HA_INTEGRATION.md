@@ -547,14 +547,18 @@ class WiiMCoordinator(DataUpdateCoordinator):
         self._strategy_initialized = False
     
     def _find_player_by_host(self, host: str):
-        """Find Player object by host (for automatic group linking).
+        """Find Player object by host/IP (for automatic group linking).
         
         This callback is used by pywiim to automatically link Player objects
         when groups are detected during refresh(). Returns None if player
         not found (e.g., device not configured in HA).
         
+        Note: For WiFi Direct multiroom (legacy LinkPlay devices with 10.10.10.x
+        internal IPs), pywiim automatically handles UUID-based matching using
+        all_players_finder - you only need to implement IP lookup here.
+        
         Args:
-            host: Hostname or IP address of the player to find.
+            host: IP address of the player to find.
             
         Returns:
             Player object if found, None otherwise.
@@ -564,6 +568,27 @@ class WiiMCoordinator(DataUpdateCoordinator):
         # that maps host -> coordinator -> player
         # return player_registry.get(host)
         return None  # Implement based on your coordinator registry
+    
+    def _get_all_players(self):
+        """Return all Player objects (REQUIRED for WiFi Direct multiroom).
+        
+        This callback is CRITICAL for legacy LinkPlay devices that use WiFi Direct
+        multiroom (firmware < 4.2.8020). These devices:
+        - Slaves join master's internal WiFi Direct network and get 10.10.10.x IPs
+        - Are no longer reachable from LAN at their original IPs
+        - Slaves report "solo" when queried (they don't know they're in a group)
+        
+        pywiim uses this callback to:
+        1. Link slaves by UUID when IP matching fails (master's getSlaveList returns
+           10.10.10.x IPs that HA doesn't know, but includes UUIDs for matching)
+        2. Check if any known master lists this device as a slave (correct role detection)
+        
+        Returns:
+            List of all Player objects known to the integration.
+        """
+        # Example: Return all players from coordinator registry
+        # return [coord.player for coord in coordinator_registry.values()]
+        return []  # Implement based on your coordinator registry
 ```
 
 ### 2. Initialize Polling Strategy (Async)
@@ -2473,11 +2498,14 @@ player = Player(
     all_players_finder=lambda: list(player_registry.values()),  # Returns list[Player]
 )
 
-# all_players_finder is CRITICAL for WiFi Direct multiroom:
-# - WiFi Direct slaves report "solo" when queried directly (they don't know they're in a group)
-# - Only the master knows the slave list
-# - pywiim uses all_players_finder to check if any master lists this device as a slave
-# - This enables correct role detection even when slave refreshes before master
+# all_players_finder is CRITICAL for WiFi Direct multiroom (legacy LinkPlay devices):
+# - WiFi Direct slaves join master's internal network and get 10.10.10.x IPs
+# - Slaves report "solo" when queried directly (they don't know they're in a group)
+# - Only the master knows the slave list (via getSlaveList API)
+# - pywiim uses all_players_finder to:
+#   1. Link slaves by UUID when IP matching fails (10.10.10.x IPs not known to HA)
+#   2. Check if any master lists this device as a slave (correct role detection)
+# - No UUID lookup implementation needed in player_finder - pywiim handles it internally
 ```
 
 ## Virtual Group Entity Implementation
