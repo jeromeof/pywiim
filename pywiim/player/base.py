@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
+import weakref
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from ..client import WiiMClient
 from ..models import DeviceInfo, PlayerStatus
@@ -24,6 +25,11 @@ _LOGGER = logging.getLogger(__name__)
 
 class PlayerBase:
     """Base player with core state and initialization."""
+
+    # Class-level registry of all Player instances (weak references)
+    # Used for automatic cross-player lookups (e.g., WiFi Direct multiroom by UUID)
+    # WeakSet ensures players are automatically removed when garbage collected
+    _all_instances: ClassVar[weakref.WeakSet[PlayerBase]] = weakref.WeakSet()
 
     def __init__(
         self,
@@ -46,8 +52,12 @@ class PlayerBase:
                 Called as `all_players_finder()` and should return list[Player].
                 Used for cross-coordinator role inference in WiFi Direct multiroom,
                 where slaves report as "solo" but can be identified via master's slave list.
+                NOTE: If not provided, pywiim uses its internal player registry instead.
         """
         self.client = client
+
+        # Register this player in the class-level registry
+        PlayerBase._all_instances.add(self)
         self._upnp_client = upnp_client
         self._group: Group | None = None
 

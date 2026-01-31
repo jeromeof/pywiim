@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.70] - 2026-01-30
+
+### Added
+- **Automatic WiFi Direct multiroom linking** - pywiim now handles WiFi Direct multiroom **automatically without any integration changes**:
+  - Added internal player registry (`PlayerBase._all_instances`) that tracks all Player objects
+  - `_find_slave_player()` and `_check_if_slave_of_any_master()` now automatically search this registry by UUID
+  - **No `all_players_finder` callback needed** - pywiim handles everything internally
+  - This fixes Issue [mjcumming/wiim#178](https://github.com/mjcumming/wiim/issues/178) without requiring HA integration changes
+
+- **Multiroom diagnostics method** - Added `player.get_multiroom_diagnostics()` to help debug WiFi Direct multiroom linking issues:
+  - Returns comprehensive information about device identity, callbacks, linked players, and raw API state
+  - Automatically analyzes potential linking issues (missing UUIDs, WiFi Direct detection)
+  - Provides actionable recommendations for fixing linking problems
+
+### Changed
+- **Enhanced multiroom linking logging** - Added detailed debug logging to `_find_slave_player()` and `_check_if_slave_of_any_master()`:
+  - Logs all lookup attempts (IP, UUID via player_finder, UUID via internal registry)
+  - Shows UUID comparison details when matches fail (normalized values for both)
+  - Identifies when players don't have UUIDs populated (need full refresh)
+  - Makes it clear when WiFi Direct multiroom linking fails and why
+
 ## [2.1.69] - 2026-01-29
 
 ### Fixed

@@ -56,11 +56,28 @@ class GroupOperations:
         Returns:
             Player instance if found, None otherwise.
         """
+        _LOGGER.debug(
+            "Searching for slave player: host=%s, uuid=%s, player_finder=%s, all_players_finder=%s",
+            slave_host,
+            slave_uuid,
+            self.player._player_finder is not None,
+            self.player._all_players_finder is not None,
+        )
+
         # Try by host/IP first (works for normal router-based multiroom)
         if self.player._player_finder:
             slave_player = self.player._player_finder(slave_host)
             if slave_player:
+                _LOGGER.debug(
+                    "Found slave by IP via player_finder: host=%s",
+                    slave_host,
+                )
                 return slave_player
+
+            _LOGGER.debug(
+                "IP lookup failed (expected for WiFi Direct): host=%s",
+                slave_host,
+            )
 
             # Fallback 1: Try by UUID via player_finder (for integrations that support it)
             if slave_uuid:
@@ -73,26 +90,80 @@ class GroupOperations:
                     )
                     return slave_player
 
-        # Fallback 2: Search all_players by UUID (handles WiFi Direct multiroom
-        # without requiring integration to implement UUID lookups in player_finder)
-        if slave_uuid and self.player._all_players_finder:
-            try:
-                all_players = self.player._all_players_finder()
-                normalized_target = self._normalize_uuid(slave_uuid)
-                for player in all_players:
-                    if player is self.player:
-                        continue  # Skip self
-                    player_uuid = getattr(player, "uuid", None)
-                    if player_uuid and self._normalize_uuid(player_uuid) == normalized_target:
+                _LOGGER.debug(
+                    "UUID lookup via player_finder failed: uuid=%s",
+                    slave_uuid,
+                )
+
+        # Fallback 2: Search by UUID using internal player registry
+        # This handles WiFi Direct multiroom AUTOMATICALLY - no integration changes needed!
+        # pywiim maintains a class-level registry of all Player instances
+        if slave_uuid:
+            from .base import PlayerBase
+
+            # Use provided callback if available, otherwise use internal registry
+            if self.player._all_players_finder:
+                try:
+                    all_players = self.player._all_players_finder()
+                except Exception as err:
+                    _LOGGER.debug("all_players_finder callback failed: %s, using internal registry", err)
+                    all_players = list(PlayerBase._all_instances)
+            else:
+                # Use internal registry - this is automatic, no callback needed!
+                all_players = list(PlayerBase._all_instances)
+
+            normalized_target = self._normalize_uuid(slave_uuid)
+
+            _LOGGER.debug(
+                "Searching %d players for UUID match: target=%s (normalized=%s)",
+                len(all_players) if all_players else 0,
+                slave_uuid,
+                normalized_target,
+            )
+
+            for player in all_players:
+                if player is self.player:
+                    continue  # Skip self
+
+                player_uuid = getattr(player, "uuid", None)
+                player_host = getattr(player, "host", "unknown")
+
+                if player_uuid:
+                    normalized_player = self._normalize_uuid(player_uuid)
+                    if normalized_player == normalized_target:
                         _LOGGER.debug(
-                            "Found slave by UUID via all_players search: host=%s, uuid=%s, matched_player=%s",
+                            "Found slave by UUID via registry search: host=%s, uuid=%s, matched_player=%s",
                             slave_host,
                             slave_uuid,
-                            player.host,
+                            player_host,
                         )
                         return player
-            except Exception as err:
-                _LOGGER.debug("all_players_finder search failed: %s", err)
+                    else:
+                        _LOGGER.debug(
+                            "UUID mismatch: player %s has uuid=%s (normalized=%s), target=%s (normalized=%s)",
+                            player_host,
+                            player_uuid,
+                            normalized_player,
+                            slave_uuid,
+                            normalized_target,
+                        )
+                else:
+                    _LOGGER.debug(
+                        "Player %s has no UUID (device_info not populated yet?)",
+                        player_host,
+                    )
+
+            _LOGGER.warning(
+                "Could not find slave player for UUID %s - "
+                "checked %d players, none matched (WiFi Direct multiroom linking failed)",
+                slave_uuid,
+                len(all_players) if all_players else 0,
+            )
+        elif not slave_uuid:
+            _LOGGER.debug(
+                "No UUID available for slave at %s - cannot perform UUID-based lookup",
+                slave_host,
+            )
 
         return None
 
@@ -630,24 +701,49 @@ class GroupOperations:
         because they don't know they're in a group. Only the master knows.
 
         This method:
-        1. Gets all known players via the all_players_finder callback
+        1. Gets all known players via internal registry (automatic, no callback needed)
         2. For each known master, checks if their slave list contains our UUID
         3. For potential masters (not solo), queries their slave list directly
 
         Returns:
             "slave" if found in a master's slave list, None otherwise.
         """
-        if not self.player._all_players_finder or not self.player.uuid:
+        from .base import PlayerBase
+
+        _LOGGER.debug(
+            "Cross-coordinator slave check for %s: uuid=%s, internal_registry_size=%d",
+            self.player.host,
+            self.player.uuid,
+            len(PlayerBase._all_instances),
+        )
+
+        if not self.player.uuid:
+            _LOGGER.debug(
+                "Cannot perform cross-coordinator check - no UUID for %s (device_info not populated yet?)",
+                self.player.host,
+            )
             return None
 
-        try:
-            all_players = self.player._all_players_finder()
-        except Exception as err:
-            _LOGGER.debug("all_players_finder callback failed: %s", err)
-            return None
+        # Use provided callback if available, otherwise use internal registry
+        if self.player._all_players_finder:
+            try:
+                all_players = self.player._all_players_finder()
+            except Exception as err:
+                _LOGGER.debug("all_players_finder callback failed: %s, using internal registry", err)
+                all_players = list(PlayerBase._all_instances)
+        else:
+            # Use internal registry - this is automatic, no callback needed!
+            all_players = list(PlayerBase._all_instances)
 
         if not all_players:
+            _LOGGER.debug("No players found in registry")
             return None
+
+        _LOGGER.debug(
+            "Cross-coordinator check: %s checking %d other players for master with our UUID",
+            self.player.host,
+            len(all_players),
+        )
 
         my_uuid_normalized = self._normalize_uuid(self.player.uuid)
 
@@ -677,6 +773,12 @@ class GroupOperations:
 
         # Phase 2: Query potential masters' slave lists (slower, requires API calls)
         # This handles the case where slave refreshes before master has linked it
+        _LOGGER.debug(
+            "Phase 2: Querying potential masters for slave list membership " "(my_uuid=%s, normalized=%s)",
+            self.player.uuid,
+            my_uuid_normalized,
+        )
+
         for other_player in all_players:
             # Skip self
             if other_player is self.player:
@@ -689,46 +791,94 @@ class GroupOperations:
             # Only query players that are known masters or could potentially be masters
             # A master might not have detected their role yet if they haven't refreshed
             if detected_role not in ("master", "solo"):
+                _LOGGER.debug(
+                    "Skipping %s (role=%s, not a potential master)",
+                    getattr(other_player, "host", "unknown"),
+                    detected_role,
+                )
                 continue
 
             # For known masters or potential masters, query their slave list
             client = getattr(other_player, "client", None)
             if client is None:
+                _LOGGER.debug(
+                    "Skipping %s (no client available)",
+                    getattr(other_player, "host", "unknown"),
+                )
                 continue
 
+            other_host = getattr(other_player, "host", "unknown")
             try:
                 # Query the device's slave list directly
+                _LOGGER.debug(
+                    "Querying slave list from potential master %s (role=%s)",
+                    other_host,
+                    detected_role,
+                )
                 slaves_info = await client.get_slaves_info()
+
+                if not slaves_info:
+                    _LOGGER.debug(
+                        "Potential master %s has no slaves in its list",
+                        other_host,
+                    )
+                    continue
+
+                _LOGGER.debug(
+                    "Master %s has %d slaves: %s",
+                    other_host,
+                    len(slaves_info),
+                    [s.get("uuid", "no-uuid") for s in slaves_info],
+                )
+
                 for slave_info in slaves_info:
                     slave_uuid = slave_info.get("uuid", "")
-                    if slave_uuid and self._normalize_uuid(slave_uuid) == my_uuid_normalized:
-                        _LOGGER.info(
-                            "Cross-coordinator: Found self in %s's slave list via API query (uuid: %s)",
-                            other_player.host,
-                            slave_uuid,
-                        )
-                        # Link ourselves to this master's group
-                        group = getattr(other_player, "_group", None)
-                        if group is None:
-                            # Create group on master if it doesn't exist
-                            from ..group import Group as GroupClass
+                    if slave_uuid:
+                        normalized_slave = self._normalize_uuid(slave_uuid)
+                        if normalized_slave == my_uuid_normalized:
+                            _LOGGER.info(
+                                "Cross-coordinator: Found self in %s's slave list via API query "
+                                "(uuid: %s, normalized: %s)",
+                                other_host,
+                                slave_uuid,
+                                normalized_slave,
+                            )
+                            # Link ourselves to this master's group
+                            group = getattr(other_player, "_group", None)
+                            if group is None:
+                                # Create group on master if it doesn't exist
+                                from ..group import Group as GroupClass
 
-                            group = GroupClass(other_player)
-                            other_player._group = group
-                            other_player._detected_role = "master"
+                                group = GroupClass(other_player)
+                                other_player._group = group
+                                other_player._detected_role = "master"
 
-                        if self.player not in getattr(group, "slaves", []):
-                            group.add_slave(self.player)
+                            if self.player not in getattr(group, "slaves", []):
+                                group.add_slave(self.player)
 
-                        return "slave"
+                            return "slave"
+                        else:
+                            _LOGGER.debug(
+                                "UUID mismatch with slave in %s's list: "
+                                "slave_uuid=%s (normalized=%s) vs my_uuid=%s (normalized=%s)",
+                                other_host,
+                                slave_uuid,
+                                normalized_slave,
+                                self.player.uuid,
+                                my_uuid_normalized,
+                            )
             except Exception as err:
                 _LOGGER.debug(
                     "Failed to query slave list from %s: %s",
-                    other_player.host,
+                    other_host,
                     err,
                 )
                 continue
 
+        _LOGGER.debug(
+            "Cross-coordinator check complete: %s not found in any master's slave list",
+            self.player.host,
+        )
         return None
 
     async def leave_group(self) -> None:

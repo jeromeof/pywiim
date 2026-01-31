@@ -586,6 +586,32 @@ class Player(PlayerBase):
         """Get comprehensive diagnostic information for this player."""
         return await self._diagnostics.get_diagnostics()
 
+    async def get_multiroom_diagnostics(self) -> dict[str, Any]:
+        """Get multiroom-specific diagnostic information.
+
+        This method helps debug WiFi Direct multiroom linking issues by providing
+        detailed information about:
+        - This device's role and UUID
+        - Linked Player objects (if any)
+        - Raw device API group state
+        - Available player_finder and all_players_finder callbacks
+        - Analysis of potential linking issues
+
+        Use this when multiroom groups aren't linking correctly, especially
+        for WiFi Direct setups where slaves have internal 10.10.10.x IPs.
+
+        Returns:
+            Dictionary with multiroom diagnostic information including:
+            - this_device: Identity and state info
+            - callbacks: Which callbacks are set
+            - group_object: Linked Player objects
+            - api_group_info: Raw device API group state
+            - api_slaves_info: Full slave list from API
+            - all_known_players: All players from all_players_finder
+            - linking_analysis: Issues and recommendations
+        """
+        return await self._diagnostics.get_multiroom_diagnostics()
+
     # === Bluetooth ===
 
     async def get_bluetooth_history(self) -> list[dict[str, Any]]:

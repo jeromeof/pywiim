@@ -411,6 +411,96 @@ class TestSynchronizeGroupStateIntegration:
         assert mock_player._detected_role == "solo"
 
 
+class TestInternalPlayerRegistry:
+    """Tests for the internal player registry used for automatic UUID-based lookups."""
+
+    @pytest.fixture
+    def mock_client(self):
+        """Create a mock WiiMClient."""
+        from unittest.mock import MagicMock
+
+        client = MagicMock()
+        client.host = "192.168.1.100"
+        client.capabilities = {}
+        return client
+
+    def test_player_registers_on_creation(self, mock_client):
+        """Test that Player instances are automatically registered."""
+        from pywiim.player import Player
+        from pywiim.player.base import PlayerBase
+
+        initial_count = len(PlayerBase._all_instances)
+
+        player = Player(mock_client)
+
+        assert len(PlayerBase._all_instances) == initial_count + 1
+        assert player in PlayerBase._all_instances
+
+    def test_find_slave_uses_internal_registry_without_callback(self, mock_client):
+        """Test that _find_slave_player uses internal registry when no callback provided."""
+        from unittest.mock import MagicMock
+
+        from pywiim.models import DeviceInfo
+        from pywiim.player import Player
+        from pywiim.player.groupops import GroupOperations
+
+        # Use a unique UUID that won't collide with other tests
+        unique_slave_uuid = "uuid:TEST-INTERNAL-REG-SLAVE-UNIQUE-12345"
+
+        # Create master player (no callbacks)
+        master = Player(mock_client)
+        master._device_info = DeviceInfo(uuid="uuid:MASTER-UUID")
+
+        # Create slave player with matching UUID
+        slave_client = MagicMock()
+        slave_client.host = "192.168.1.101"
+        slave_client.capabilities = {}
+
+        slave = Player(slave_client)
+        slave._device_info = DeviceInfo(uuid=unique_slave_uuid)
+
+        # Master has NO callbacks - should use internal registry
+        assert master._player_finder is None
+        assert master._all_players_finder is None
+
+        # Try to find slave by UUID (IP lookup will fail, UUID should match via registry)
+        group_ops = GroupOperations(master)
+        found = group_ops._find_slave_player("10.10.10.92", unique_slave_uuid)
+
+        assert found is slave
+
+    def test_find_slave_uuid_normalization_in_registry(self, mock_client):
+        """Test UUID normalization when searching internal registry."""
+        from unittest.mock import MagicMock
+
+        from pywiim.models import DeviceInfo
+        from pywiim.player import Player
+        from pywiim.player.groupops import GroupOperations
+
+        # Use a unique UUID that won't collide with other tests
+        unique_uuid_lowercase = "testregnorm123456789"
+
+        # Create master
+        master = Player(mock_client)
+        master._device_info = DeviceInfo(uuid="uuid:MASTER-UUID")
+
+        # Create slave with different UUID format
+        slave_client = MagicMock()
+        slave_client.host = "192.168.1.101"
+        slave_client.capabilities = {}
+
+        slave = Player(slave_client)
+        # UUID stored without prefix, lowercase
+        slave._device_info = DeviceInfo(uuid=unique_uuid_lowercase)
+
+        group_ops = GroupOperations(master)
+
+        # Search with uuid: prefix and uppercase - should still match
+        found = group_ops._find_slave_player("10.10.10.92", f"uuid:{unique_uuid_lowercase.upper()}")
+
+        assert found is slave
+
+
 class TestCrossCoordinatorRoleInference:
     """Tests for cross-coordinator role inference in WiFi Direct multiroom."""
 
