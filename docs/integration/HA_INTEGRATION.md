@@ -1180,12 +1180,14 @@ class WiiMMediaPlayer(MediaPlayerEntity):
     ) -> None:
         """Play media with optional enqueue and announcement support."""
         # Handle announcements (TTS, doorbell sounds, etc.)
-        # Uses device's built-in playPromptUrl which auto-handles volume
         announce = kwargs.get(ATTR_MEDIA_ANNOUNCE, False)
         if announce:
-            await self.coordinator.player.play_notification(media_id)
+            # Integration must resolve media_id (e.g. media_source://tts?...)
+            # to a URL the device can fetch before calling the library.
+            url = ...  # e.g. media_source.async_resolve_media() then async_process_play_media_url()
+            await self.coordinator.player.play_notification(url)
             return
-        
+
         # Handle queue management
         enqueue: MediaPlayerEnqueue | None = kwargs.get(ATTR_MEDIA_ENQUEUE)
 
@@ -1211,9 +1213,9 @@ class WiiMMediaPlayer(MediaPlayerEntity):
 
 ### Notification/Announcement Support
 
-The `play_notification()` method uses the device's built-in `playPromptUrl` command for TTS announcements, doorbell sounds, and other notifications.
+The `play_notification(url)` method uses the device's built-in `playPromptUrl` command. The library accepts only a **URL string that the device can HTTP GET** (e.g. `https://host/path/to/audio.mp3`). The integration is responsible for resolving any platform-specific IDs (e.g. Home Assistant `media_source://` or TTS proxy URLs) to such a URL before calling `play_notification(url)`.
 
-#### How It Works
+#### How It Works (device firmware)
 
 The device firmware handles everything automatically:
 1. **Lowers current playback volume** (if something is playing)
@@ -1247,8 +1249,30 @@ data:
 
 - **Only works in NETWORK or USB playback mode** - If the device is playing from Line In, Optical, or Bluetooth input, notifications may not play
 - **Requires firmware 4.6.415145+** - Older firmware may not support this command
+- **Spotify Connect** - When the device is used as a Spotify Connect target, the firmware may not support interrupting playback for announcements; this is a device limitation
 
-#### Benefits
+#### For integration authors: TTS / announcement URL must be fetchable by the device
+
+If the integration resolves a TTS or media_source ID to a URL and calls `play_notification(url)` but no audio is heard, the device may be **unable to fetch that URL** (e.g. 401 from an authenticated TTS proxy). That is an **integration and HA configuration** concern, not library behaviour: the library only sends the URL to the device. The integration should ensure the URL is reachable by the device without auth (e.g. HA trusted_networks / TTS proxy configuration). See [Home Assistant HTTP documentation](https://www.home-assistant.io/docs/configuration/http/) for auth and network options.
+
+#### Library contract
+
+- **`play_notification(url)`** accepts only a URL string that the **device** can HTTP GET. The integration must not pass `media_content_id`, `media_source://` IDs, or any other platform-specific identifier; it must resolve those to a fetchable URL before calling the library.
+
+#### What the WiiM (HA) integration must do
+
+The integration, not the library, is responsible for:
+
+1. **Resolving `media_content_id` before calling the library**  
+   When `media_player.play_media` is called with `announce: true`, `media_content_id` may be a Home Assistant media source (e.g. `media-source://tts?message=...`). The device cannot fetch that. The integration must resolve it (e.g. via `media_source.async_resolve_media()` and `async_process_play_media_url()`) to a URL the device can GET, then call `player.play_notification(url)` with that URL.
+
+2. **Using HA media_player constants and patterns**  
+   Use `ATTR_MEDIA_ANNOUNCE`, `ATTR_MEDIA_EXTRA`, and the same resolution flow for both announce and normal play (e.g. resolve media_source once at the start of `async_play_media`, then branch on announce vs play). Follow HA/Sonos-style patterns for the service schema and kwargs.
+
+3. **Ensuring the URL is reachable by the device**  
+   If the resolved URL is an HA TTS proxy or similar and requires auth, the device will get 401. The integration cannot fix that in code; the user must configure HA (e.g. trusted_networks, TTS proxy access) so the URL is fetchable by the device without cookies.
+
+#### Benefits (when the integration passes a fetchable URL)
 
 - **Simple**: Just call `play_notification(url)` - no state management needed
 - **Reliable**: Device firmware handles volume lowering and restoration
