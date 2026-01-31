@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.71] - 2026-01-31
+
+### Documentation
+- **HA integration: library/integration separation for `play_notification`** - Clarified in `HA_INTEGRATION.md` that `play_notification(url)` accepts only a URL the device can HTTP GET; the integration must resolve `media_content_id` (e.g. `media_source://tts?...`) to such a URL before calling the library
+- Added library contract and "What the WiiM (HA) integration must do" (resolve before calling library, HA constants/patterns, ensure URL is fetchable by device)
+- Reframed TTS 401/no-audio as integration and HA configuration concern, not library behaviour
+
 ## [2.1.70] - 2026-01-30
 
 ### Added
