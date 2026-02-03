@@ -342,7 +342,7 @@ class PlaybackAPI:
             WiiMError: If the HTTP request to the device fails (network error).
                 Does NOT raise for invalid/unreachable media URLs.
         """
-        encoded = quote(url, safe=":/?&=#%")
+        encoded = quote(url, safe="")
         await self._request(f"{API_ENDPOINT_PLAY_URL}{encoded}")  # type: ignore[attr-defined]
 
     async def play_playlist(self, playlist_url: str) -> None:
@@ -354,7 +354,7 @@ class PlaybackAPI:
         Raises:
             WiiMError: If the request fails.
         """
-        encoded = quote(playlist_url, safe=":/?&=#%")
+        encoded = quote(playlist_url, safe="")
         await self._request(f"{API_ENDPOINT_PLAY_M3U}{encoded}")  # type: ignore[attr-defined]
 
     async def play_notification(self, url: str) -> None:
@@ -372,7 +372,7 @@ class PlaybackAPI:
         Raises:
             WiiMError: If the request fails.
         """
-        encoded = quote(url, safe=":/?&=#%")
+        encoded = quote(url, safe="")
         await self._request(f"{API_ENDPOINT_PLAY_PROMPT_URL}{encoded}")  # type: ignore[attr-defined]
 
     # ------------------------------------------------------------------

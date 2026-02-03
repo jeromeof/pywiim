@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.72] - 2026-02-03
+
+### Fixed
+- **URL encoding for `playPromptUrl` command** - Fixed `play_notification()`, `play_url()`, and `play_playlist()` to fully encode URLs (changed `safe=":/?&=#%"` to `safe=""`). WiiM's `playPromptUrl` and related commands require fully encoded URLs where characters like `:`, `/`, `?`, `&`, `=`, `#`, `%` must all be percent-encoded.
+
 ## [2.1.71] - 2026-01-31
 
 ### Documentation
