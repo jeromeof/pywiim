@@ -12,6 +12,7 @@ Python library for WiiM and LinkPlay device control with command-line tools for 
 
 ## Key Features
 
+- **MCP Server** - Expose WiiM control to Cursor, Claude Desktop, and other MCP hosts. `pip install pywiim[mcp]` then `wiim-mcp`. Control playback, volume, and more via AI assistants.
 - **Playback Control** - Play, pause, stop, next/previous track, seek
 - **Volume & Audio** - Volume control, mute, channel balance, audio output selection (Line Out, Optical, Coax, USB Out, HDMI Out, Bluetooth/Headphones)
 - **Sources** - Intelligent model-specific source management (Bluetooth, Line In, Optical In, Coaxial, USB, HDMI ARC, Phono) and streaming services. Authoritative hardware filtering and UI-ready formatting.
