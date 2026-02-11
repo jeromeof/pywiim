@@ -168,8 +168,17 @@ class WiiMCapabilities:
         try:
             await client._request("/httpapi.asp?command=getMetaInfo")
         except WiiMError:
-            capabilities["supports_metadata"] = False
-            _LOGGER.debug("Device %s does not support getMetaInfo", client.host)
+            # Keep metadata enabled for all WiiM devices. A single probe failure can be
+            # transient and should not permanently disable metadata/artwork handling.
+            if capabilities.get("is_wiim_device", False):
+                capabilities["supports_metadata"] = True
+                _LOGGER.debug(
+                    "Device %s is WiiM; keeping supports_metadata=True despite getMetaInfo probe failure",
+                    client.host,
+                )
+            else:
+                capabilities["supports_metadata"] = False
+                _LOGGER.debug("Device %s does not support getMetaInfo", client.host)
 
         # Probe for audio output support (read-only probe)
         # If we can read audio output status, assume we can set it too

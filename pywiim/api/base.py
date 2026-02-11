@@ -1015,7 +1015,7 @@ class BaseWiiMClient:
                 and str(entity_picture).strip() != DEFAULT_WIIM_LOGO_URL
             )
 
-            if not has_valid_artwork and self._capabilities.get("supports_metadata", True):
+            if not has_valid_artwork:
                 # Check if get_meta_info method is available (from PlaybackAPI mixin)
                 if hasattr(self, "get_meta_info"):
                     try:

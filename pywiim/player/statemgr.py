@@ -595,65 +595,64 @@ class StateManager:
 
         if track_changed or needs_metadata_enrichment:
             # Track changed OR metadata needs enrichment (Bluetooth AVRCP case)
-            if self.player.client.capabilities.get("supports_metadata", False):
-                try:
-                    metadata = await self.player.client.get_meta_info()
-                    self.player._metadata = metadata if metadata else None
-                    # Track last successful/attempted getMetaInfo fetch so periodic refresh
-                    # doesn't immediately re-fetch in the same refresh cycle.
-                    self.player._last_metadata_check = time.time()
+            try:
+                metadata = await self.player.client.get_meta_info()
+                self.player._metadata = metadata if metadata else None
+                # Track last successful/attempted getMetaInfo fetch so periodic refresh
+                # doesn't immediately re-fetch in the same refresh cycle.
+                self.player._last_metadata_check = time.time()
 
-                    # Apply title/artist/album from getMetaInfo when status values are "Unknown"
-                    # This is critical for Bluetooth AVRCP sources where getPlayerStatusEx returns "Unknown"
-                    # but getMetaInfo has the actual track info
-                    if metadata and "metaData" in metadata:
-                        meta_data = metadata["metaData"]
-                        update: dict[str, Any] = {}
+                # Apply title/artist/album from getMetaInfo when status values are "Unknown"
+                # This is critical for Bluetooth AVRCP sources where getPlayerStatusEx returns "Unknown"
+                # but getMetaInfo has the actual track info
+                if metadata and "metaData" in metadata:
+                    meta_data = metadata["metaData"]
+                    update: dict[str, Any] = {}
 
-                        # Extract and apply title if status has invalid value
-                        meta_title = meta_data.get("title")
-                        if (
-                            meta_title
-                            and is_valid_metadata_value(meta_title)
-                            and (not is_valid_metadata_value(status_title))
-                        ):
-                            update["title"] = meta_title
-                            update["Title"] = meta_title
-                            if status:
-                                status.title = meta_title
+                    # Extract and apply title if status has invalid value
+                    meta_title = meta_data.get("title")
+                    if (
+                        meta_title
+                        and is_valid_metadata_value(meta_title)
+                        and (not is_valid_metadata_value(status_title))
+                    ):
+                        update["title"] = meta_title
+                        update["Title"] = meta_title
+                        if status:
+                            status.title = meta_title
 
-                        # Extract and apply artist if status has invalid value
-                        meta_artist = meta_data.get("artist")
-                        if (
-                            meta_artist
-                            and is_valid_metadata_value(meta_artist)
-                            and (not is_valid_metadata_value(status_artist))
-                        ):
-                            update["artist"] = meta_artist
-                            update["Artist"] = meta_artist
-                            if status:
-                                status.artist = meta_artist
+                    # Extract and apply artist if status has invalid value
+                    meta_artist = meta_data.get("artist")
+                    if (
+                        meta_artist
+                        and is_valid_metadata_value(meta_artist)
+                        and (not is_valid_metadata_value(status_artist))
+                    ):
+                        update["artist"] = meta_artist
+                        update["Artist"] = meta_artist
+                        if status:
+                            status.artist = meta_artist
 
-                        # Extract and apply album if status has invalid value
-                        status_album = status.album if status else None
-                        meta_album = meta_data.get("album")
-                        if (
-                            meta_album
-                            and is_valid_metadata_value(meta_album)
-                            and (not is_valid_metadata_value(status_album))
-                        ):
-                            update["album"] = meta_album
-                            update["Album"] = meta_album
-                            if status:
-                                status.album = meta_album
+                    # Extract and apply album if status has invalid value
+                    status_album = status.album if status else None
+                    meta_album = meta_data.get("album")
+                    if (
+                        meta_album
+                        and is_valid_metadata_value(meta_album)
+                        and (not is_valid_metadata_value(status_album))
+                    ):
+                        update["album"] = meta_album
+                        update["Album"] = meta_album
+                        if status:
+                            status.album = meta_album
 
-                        if update:
-                            _LOGGER.debug("Applied metadata from getMetaInfo: %s", update)
-                            # Update state synchronizer
-                            self.player._state_synchronizer.update_from_http(update, timestamp=time.time())
-                except Exception as err:
-                    _LOGGER.debug("Failed to fetch metadata for %s: %s", self.player.host, err)
-                    self.player._metadata = None
+                    if update:
+                        _LOGGER.debug("Applied metadata from getMetaInfo: %s", update)
+                        # Update state synchronizer
+                        self.player._state_synchronizer.update_from_http(update, timestamp=time.time())
+            except Exception as err:
+                _LOGGER.debug("Failed to fetch metadata for %s: %s", self.player.host, err)
+                self.player._metadata = None
 
         # EQ Info - Fetch full EQ state when preset changes
         # When EQ preset changes in status, fetch full EQ info (band values, enabled status)
@@ -691,7 +690,6 @@ class StateManager:
         # - Track-change detection can miss first track (signature not yet established) and
         #   some radio sources where title/artist are stable.
         # - Periodic refresh while playing ensures integrations see these fields reliably.
-        metadata_supported = self.player.client.capabilities.get("supports_metadata", False)
         is_playing = bool(status and status.play_state and status.play_state in PLAYING_STATES)
         should_fetch_metainfo = (
             full
@@ -702,7 +700,7 @@ class StateManager:
                 and self._polling_strategy.should_fetch_configuration(self.player._last_metadata_check, now=now)
             )
         )
-        if should_fetch_metainfo and metadata_supported and hasattr(self.player.client, "get_meta_info"):
+        if should_fetch_metainfo and hasattr(self.player.client, "get_meta_info"):
             try:
                 meta_info = await self.player.client.get_meta_info()
                 self.player._metadata = meta_info if meta_info else None

@@ -341,16 +341,23 @@ class TestCoverArtManager:
             assert cover_art_manager._artwork_fetch_task == mock_task
 
     @pytest.mark.asyncio
-    async def test_enrich_metadata_on_track_change_no_capability(self, cover_art_manager, mock_player):
-        """Test enriching metadata when device doesn't support metadata."""
+    async def test_enrich_metadata_on_track_change_best_effort_when_capability_false(
+        self, cover_art_manager, mock_player
+    ):
+        """Test enriching metadata still runs best-effort when capability is false."""
         merged = {"title": "New Track", "artist": "New Artist", "image_url": None}
         cover_art_manager._last_track_signature = "Old Track|Old Artist|Old Album"
         mock_player.client._capabilities = {"supports_metadata": False}
+        mock_player.client.get_meta_info = MagicMock()
 
-        await cover_art_manager.enrich_metadata_on_track_change(merged)
+        with patch("asyncio.get_event_loop") as mock_loop:
+            mock_task = MagicMock()
+            mock_loop.return_value.create_task = MagicMock(side_effect=lambda coro: (coro.close(), mock_task)[1])
 
-        # Should not schedule fetch
-        assert cover_art_manager._artwork_fetch_task is None
+            await cover_art_manager.enrich_metadata_on_track_change(merged)
+
+            # Should still schedule metadata fetch (best-effort path)
+            assert cover_art_manager._artwork_fetch_task == mock_task
 
     @pytest.mark.asyncio
     async def test_enrich_metadata_on_track_change_valid_artwork(self, cover_art_manager, mock_player):

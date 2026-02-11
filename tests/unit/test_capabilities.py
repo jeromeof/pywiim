@@ -302,6 +302,25 @@ class TestWiiMCapabilitiesClass:
         assert capabilities["supports_eq"] is False
 
     @pytest.mark.asyncio
+    async def test_detect_capabilities_wiim_keeps_metadata_on_probe_failure(self, mock_client):
+        """Test WiiM devices keep metadata support even if getMetaInfo probe fails."""
+        device_info = DeviceInfo(uuid="test-uuid", model="WiiM_AMP", firmware="Linkplay.5.0.739659")
+        mock_client.get_status = AsyncMock(return_value={"status": "ok"})
+
+        def request_side_effect(endpoint, **kwargs):
+            if "getMetaInfo" in endpoint:
+                raise WiiMError("Failed")
+            return {"status": "ok", "volume": 10}
+
+        mock_client._request = AsyncMock(side_effect=request_side_effect)
+
+        detector = WiiMCapabilities()
+        capabilities = await detector.detect_capabilities(mock_client, device_info)
+
+        assert capabilities["is_wiim_device"] is True
+        assert capabilities["supports_metadata"] is True
+
+    @pytest.mark.asyncio
     async def test_detect_capabilities_eq_read_only(self, mock_client):
         """Test EQ capability detection uses read-only probing - if we can read EQ, we assume we can set it."""
         device_info = DeviceInfo(uuid="test-uuid", model="ARYLIC_H50", firmware="4.6.529755")

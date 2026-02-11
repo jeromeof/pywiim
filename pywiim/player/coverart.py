@@ -269,8 +269,7 @@ class CoverArtManager:
         should_fetch_metadata = (track_changed and not has_valid_artwork) or needs_metadata_enrichment
 
         if should_fetch_metadata:
-            capabilities = self.player.client._capabilities
-            if capabilities.get("supports_metadata", True) and hasattr(self.player.client, "get_meta_info"):
+            if hasattr(self.player.client, "get_meta_info"):
                 # Cancel any existing fetch task
                 if self._artwork_fetch_task and not self._artwork_fetch_task.done():
                     self._artwork_fetch_task.cancel()
