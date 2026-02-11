@@ -691,3 +691,25 @@ class TestIsLinkplayDevice:
         with patch("aiohttp.ClientSession", return_value=mock_session):
             result = await is_linkplay_device("192.168.1.100", port=443)
             assert result is True
+
+    @pytest.mark.asyncio
+    async def test_linkplay_device_client_fallback_when_probe_inconclusive(self):
+        """Test WiiMClient fallback when lightweight endpoint probe fails."""
+        import aiohttp
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(side_effect=aiohttp.ClientError("Probe path failed"))
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        mock_client = MagicMock()
+        mock_client.get_player_status = AsyncMock(return_value={"mode": "1", "volume": "25"})
+        mock_client.base_url = "https://192.168.1.100:443"
+        mock_client.close = AsyncMock()
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            with patch("pywiim.discovery.WiiMClient", return_value=mock_client):
+                result = await is_linkplay_device("192.168.1.100", port=80)
+                assert result is True
+                mock_client.get_player_status.assert_awaited_once()
+                mock_client.close.assert_awaited_once()

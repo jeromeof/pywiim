@@ -273,7 +273,9 @@ async def is_linkplay_device(
     """Quick check if a device responds to LinkPlay API endpoints.
 
     Tries standard LinkPlay endpoints (getPlayerStatusEx, getStatusEx, getStatus).
-    If ANY returns valid JSON, the device is confirmed as LinkPlay-compatible.
+    If endpoint probing is inconclusive, falls back to a lightweight WiiMClient
+    status request. If either method succeeds, the device is confirmed as
+    LinkPlay-compatible.
 
     This is the definitive test - Samsung TVs, Sonos, and other non-LinkPlay
     devices will NOT respond to /httpapi.asp?command=getStatusEx with valid JSON.
@@ -374,6 +376,25 @@ async def is_linkplay_device(
                             continue
     except Exception as e:
         _LOGGER.debug("Failed to create session for probing %s: %s", host, e)
+
+    # Fallback: use WiiMClient's own endpoint/protocol discovery and parser logic.
+    # Some devices respond with payloads that are valid for the client path but
+    # fail strict JSON checks in the lightweight probe.
+    try:
+        client = WiiMClient(host=host, timeout=max(timeout, 5.0))
+        try:
+            status = await client.get_player_status()
+            if isinstance(status, dict) and len(status) > 0:
+                _LOGGER.debug(
+                    "LinkPlay device confirmed at %s via WiiMClient fallback (endpoint=%s)",
+                    host,
+                    client.base_url,
+                )
+                return True
+        finally:
+            await client.close()
+    except Exception as e:
+        _LOGGER.debug("WiiMClient fallback probe failed for %s: %s", host, e)
 
     _LOGGER.debug("Device %s does not respond to LinkPlay API endpoints", host)
     return False
