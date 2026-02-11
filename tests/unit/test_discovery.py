@@ -666,3 +666,28 @@ class TestIsLinkplayDevice:
         with patch("aiohttp.ClientSession", return_value=mock_session):
             result = await is_linkplay_device("192.168.1.100", port=80)
             assert result is True
+
+    @pytest.mark.asyncio
+    async def test_linkplay_device_responds_to_player_status_ex_only(self):
+        """Test device validation when only getPlayerStatusEx is supported."""
+        import aiohttp
+
+        mock_ok_response = MagicMock()
+        mock_ok_response.status = 200
+        mock_ok_response.json = AsyncMock(return_value={"mode": "1", "volume": "50"})
+        mock_ok_response.__aenter__ = AsyncMock(return_value=mock_ok_response)
+        mock_ok_response.__aexit__ = AsyncMock(return_value=None)
+
+        def mock_get(url, *args, **kwargs):
+            if "getPlayerStatusEx" in url:
+                return mock_ok_response
+            raise aiohttp.ClientError("Endpoint not supported")
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(side_effect=mock_get)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            result = await is_linkplay_device("192.168.1.100", port=443)
+            assert result is True

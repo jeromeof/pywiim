@@ -272,8 +272,8 @@ async def is_linkplay_device(
 ) -> bool:
     """Quick check if a device responds to LinkPlay API endpoints.
 
-    Tries standard LinkPlay endpoints (getStatusEx, getStatus). If ANY returns
-    valid JSON, the device is confirmed as LinkPlay-compatible.
+    Tries standard LinkPlay endpoints (getPlayerStatusEx, getStatusEx, getStatus).
+    If ANY returns valid JSON, the device is confirmed as LinkPlay-compatible.
 
     This is the definitive test - Samsung TVs, Sonos, and other non-LinkPlay
     devices will NOT respond to /httpapi.asp?command=getStatusEx with valid JSON.
@@ -288,7 +288,9 @@ async def is_linkplay_device(
         True if device responds to LinkPlay endpoints with valid JSON, False otherwise
     """
     # Standard LinkPlay endpoints to try (in order of preference)
+    # getPlayerStatusEx is widely supported across modern WiiM devices.
     endpoints = [
+        "/httpapi.asp?command=getPlayerStatusEx",  # Modern/primary
         "/httpapi.asp?command=getStatusEx",  # Modern devices
         "/httpapi.asp?command=getStatus",  # Fallback/legacy
     ]
