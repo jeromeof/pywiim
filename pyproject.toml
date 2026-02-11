@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pywiim"
-version = "2.1.72"
+version = "2.1.73"
 description = "Python library for WiiM/LinkPlay device communication"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -38,6 +38,9 @@ Repository = "https://github.com/mjcumming/pywiim"
 Issues = "https://github.com/mjcumming/pywiim/issues"
 
 [project.optional-dependencies]
+mcp = [
+    "mcp[cli]>=1.0.0",
+]
 dev = [
     "black>=23.0.0",
     "isort>=5.12.0",
@@ -51,8 +54,8 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["pywiim", "pywiim.api", "pywiim.cli", "pywiim.player", "pywiim.upnp"]
-package-data = {"pywiim" = ["py.typed", "device_capabilities.py"]}
+packages = ["pywiim", "pywiim.api", "pywiim.cli", "pywiim.mcp", "pywiim.player", "pywiim.upnp"]
+package-data = {"pywiim" = ["py.typed", "device_capabilities.py", "mcp/config.example.json"]}
 
 [project.scripts]
 wiim-diagnostics = "pywiim.cli.diagnostics:cli_main"
@@ -61,6 +64,7 @@ wiim-group-test = "pywiim.cli.group_test_cli:cli_main"
 wiim-join-test = "pywiim.cli.join_test_cli:cli_main"
 wiim-monitor = "pywiim.cli.monitor_cli:cli_main"
 wiim-verify = "pywiim.cli.verify_cli:cli_main"
+wiim-mcp = "pywiim.mcp:run"
 
 [tool.black]
 line-length = 120
