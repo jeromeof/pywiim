@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pywiim"
-version = "2.1.74"
+version = "2.1.75"
 description = "Python library for WiiM/LinkPlay device communication"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -97,6 +97,10 @@ strict_equality = true
 [[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "mcp.*"
+ignore_missing_imports = true
 
 [tool.isort]
 profile = "black"
