@@ -280,7 +280,8 @@ async def is_linkplay_device(
 
     Args:
         host: Device IP address
-        port: HTTP port (default 80)
+        port: API port hint from discovery (default 80). If probing this port fails,
+            the probe will also try the complementary standard API port (80/443).
         timeout: Request timeout in seconds
 
     Returns:
@@ -301,63 +302,74 @@ async def is_linkplay_device(
     connector = aiohttp.TCPConnector(ssl=ssl_context)
     client_timeout = aiohttp.ClientTimeout(total=timeout)
 
+    # Probe discovered port first, then complementary standard API port.
+    # SSDP discovery normalizes to port 80, but many modern devices respond
+    # to API requests on 443 (HTTPS-first). Trying both prevents false negatives.
+    probe_ports = [port]
+    if port == 80:
+        probe_ports.append(443)
+    elif port == 443:
+        probe_ports.append(80)
+
     try:
         async with aiohttp.ClientSession(connector=connector, timeout=client_timeout) as session:
-            for endpoint in endpoints:
-                # Try HTTPS first (WiiM default), then HTTP
-                for protocol in ["https", "http"]:
-                    try:
-                        url = f"{protocol}://{host}:{port}{endpoint}"
-                        async with session.get(url) as resp:
-                            if resp.status == 200:
-                                try:
-                                    data = await resp.json()
-                                    # Valid LinkPlay response = non-empty dict
-                                    if isinstance(data, dict) and len(data) > 0:
+            for probe_port in probe_ports:
+                for endpoint in endpoints:
+                    # Use likely protocol first for each port
+                    protocols = ["https", "http"] if probe_port == 443 else ["http", "https"]
+                    for protocol in protocols:
+                        try:
+                            url = f"{protocol}://{host}:{probe_port}{endpoint}"
+                            async with session.get(url) as resp:
+                                if resp.status == 200:
+                                    try:
+                                        data = await resp.json()
+                                        # Valid LinkPlay response = non-empty dict
+                                        if isinstance(data, dict) and len(data) > 0:
+                                            _LOGGER.debug(
+                                                "LinkPlay device confirmed at %s via %s (keys: %s)",
+                                                host,
+                                                endpoint,
+                                                list(data.keys())[:5],  # Log first 5 keys
+                                            )
+                                            return True
+                                    except (json.JSONDecodeError, aiohttp.ContentTypeError):
+                                        # Not JSON = not LinkPlay
                                         _LOGGER.debug(
-                                            "LinkPlay device confirmed at %s via %s (keys: %s)",
+                                            "Device %s responded to %s but not with JSON",
                                             host,
                                             endpoint,
-                                            list(data.keys())[:5],  # Log first 5 keys
                                         )
-                                        return True
-                                except (json.JSONDecodeError, aiohttp.ContentTypeError):
-                                    # Not JSON = not LinkPlay
-                                    _LOGGER.debug(
-                                        "Device %s responded to %s but not with JSON",
-                                        host,
-                                        endpoint,
-                                    )
-                                    continue
-                    except TimeoutError:
-                        _LOGGER.debug(
-                            "Timeout probing %s://%s:%d%s",
-                            protocol,
-                            host,
-                            port,
-                            endpoint,
-                        )
-                        continue
-                    except aiohttp.ClientError as e:
-                        _LOGGER.debug(
-                            "Connection error probing %s://%s:%d%s: %s",
-                            protocol,
-                            host,
-                            port,
-                            endpoint,
-                            e,
-                        )
-                        continue
-                    except Exception as e:
-                        _LOGGER.debug(
-                            "Error probing %s://%s:%d%s: %s",
-                            protocol,
-                            host,
-                            port,
-                            endpoint,
-                            e,
-                        )
-                        continue
+                                        continue
+                        except TimeoutError:
+                            _LOGGER.debug(
+                                "Timeout probing %s://%s:%d%s",
+                                protocol,
+                                host,
+                                probe_port,
+                                endpoint,
+                            )
+                            continue
+                        except aiohttp.ClientError as e:
+                            _LOGGER.debug(
+                                "Connection error probing %s://%s:%d%s: %s",
+                                protocol,
+                                host,
+                                probe_port,
+                                endpoint,
+                                e,
+                            )
+                            continue
+                        except Exception as e:
+                            _LOGGER.debug(
+                                "Error probing %s://%s:%d%s: %s",
+                                protocol,
+                                host,
+                                probe_port,
+                                endpoint,
+                                e,
+                            )
+                            continue
     except Exception as e:
         _LOGGER.debug("Failed to create session for probing %s: %s", host, e)
 

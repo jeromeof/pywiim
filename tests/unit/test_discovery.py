@@ -641,3 +641,28 @@ class TestIsLinkplayDevice:
         with patch("aiohttp.ClientSession", return_value=mock_session):
             result = await is_linkplay_device("192.168.1.100")
             assert result is False
+
+    @pytest.mark.asyncio
+    async def test_linkplay_device_responds_on_443_fallback(self):
+        """Test fallback probe to 443 when discovery-provided port 80 fails."""
+        import aiohttp
+
+        mock_ok_response = MagicMock()
+        mock_ok_response.status = 200
+        mock_ok_response.json = AsyncMock(return_value={"project": "WiiM_Amp", "uuid": "123"})
+        mock_ok_response.__aenter__ = AsyncMock(return_value=mock_ok_response)
+        mock_ok_response.__aexit__ = AsyncMock(return_value=None)
+
+        def mock_get(url, *args, **kwargs):
+            if "https://192.168.1.100:443/httpapi.asp?command=getStatusEx" in url:
+                return mock_ok_response
+            raise aiohttp.ClientError("Connection refused")
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(side_effect=mock_get)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            result = await is_linkplay_device("192.168.1.100", port=80)
+            assert result is True
