@@ -91,6 +91,20 @@ Interactive test scripts that require human interaction:
 
 These tests cannot be automated and require real-time observation.
 
+### `test_mcp_server.py`
+
+End-to-end test of the MCP server. Spawns `wiim-mcp`, sends tool calls, and prints results.
+
+```bash
+python scripts/test_mcp_server.py
+```
+
+Without a real device, runs initialize, tools/list, and wiim_discover (using configured devices). With `WIIM_TEST_DEVICE` set, also tests wiim_status, wiim_sources, wiim_volume:
+
+```bash
+WIIM_TEST_DEVICE=192.168.1.115 python scripts/test_mcp_server.py
+```
+
 ### `debug/`
 
 Debugging utilities for troubleshooting:

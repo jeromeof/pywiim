@@ -360,6 +360,63 @@ Total tests: 45
 - `0` - All tests passed
 - `1` - One or more tests failed or interrupted
 
+### MCP Server (`wiim-mcp`)
+
+Expose WiiM/LinkPlay control as an [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server for use with Cursor, Claude Desktop, and other MCP hosts.
+
+**Install:**
+```bash
+pip install pywiim[mcp]
+```
+
+**Run:**
+```bash
+wiim-mcp
+# or
+python -m pywiim.mcp
+```
+
+**Config** (config file or env vars; env overrides file):
+
+Config file: `~/.config/wiim/config.json` (or `WIIM_CONFIG_FILE` to override path). Copy from example:
+```bash
+mkdir -p ~/.config/wiim
+cp $(python -c "import pywiim.mcp, os; print(os.path.join(os.path.dirname(pywiim.mcp.__file__), 'config.example.json'))") ~/.config/wiim/config.json
+```
+Edit with your device IPs (e.g. 192.168.1.115, 192.168.1.116, 192.168.1.68).
+
+Config file keys: `default_device`, `named_devices`, `discovery_disabled`, `timeout`, `discovery_timeout`
+
+Env vars (override file): `WIIM_DEFAULT_DEVICE`, `WIIM_NAMED_DEVICES` (JSON), `WIIM_DISCOVERY_DISABLED`, `WIIM_TIMEOUT`, `WIIM_DISCOVERY_TIMEOUT`, `WIIM_CONFIG_FILE`
+
+**WSL / discovery doesn't work?** Set `discovery_disabled: true` in config and use pre-configured `named_devices` with your device IPs.
+
+**Tools:** `wiim_discover`, `wiim_status`, `wiim_play`, `wiim_pause`, `wiim_media_play_pause`, `wiim_stop`, `wiim_next_track`, `wiim_previous_track`, `wiim_volume`, `wiim_mute`, `wiim_unmute`, `wiim_sources`, `wiim_set_source`, `wiim_play_url`, `wiim_group_join`, `wiim_group_leave`
+
+**Cursor config** (add to MCP settings):
+```json
+{
+  "mcpServers": {
+    "wiim": {
+      "command": "wiim-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+**Claude Desktop config** (`claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "wiim": {
+      "command": "wiim-mcp",
+      "args": []
+    }
+  }
+}
+```
+
 ## Quick Start
 
 ```python

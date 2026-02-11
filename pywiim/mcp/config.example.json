@@ -1,0 +1,11 @@
+{
+  "default_device": "192.168.1.115",
+  "named_devices": {
+    "Living Room": "192.168.1.115",
+    "Bedroom": "192.168.1.116",
+    "Kitchen": "192.168.1.68"
+  },
+  "discovery_disabled": true,
+  "timeout": 5.0,
+  "discovery_timeout": 5
+}

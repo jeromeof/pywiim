@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [2.1.73] - 2026-02-10
+
+### Added
+- **MCP Server** - Expose WiiM/LinkPlay control as an [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server for Cursor, Claude Desktop, and other MCP hosts
+  - Install with `pip install pywiim[mcp]`, run with `wiim-mcp` or `python -m pywiim.mcp`
+  - Tools: wiim_discover, wiim_status, wiim_play, wiim_pause, wiim_media_play_pause, wiim_stop, wiim_next_track, wiim_previous_track, wiim_volume, wiim_mute, wiim_unmute, wiim_sources, wiim_set_source, wiim_play_url, wiim_group_join, wiim_group_leave
+  - Config file support (`~/.config/wiim/config.json`) with `WIIM_CONFIG_FILE` override
+  - `WIIM_DISCOVERY_DISABLED` for pre-configured devices (e.g. WSL where SSDP doesn't work)
+  - `WIIM_TIMEOUT` for HTTP client timeout
+  - Device targeting by name (fuzzy match) or IP
+  - wiim_status now includes position, duration, and time left for current track
+
 ## [2.1.72] - 2026-02-03
 
 ### Fixed
