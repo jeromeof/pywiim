@@ -78,12 +78,15 @@ class TestDiscoverViaSSDP:
     @pytest.mark.asyncio
     async def test_discover_via_ssdp_success(self):
         """Test successful SSDP discovery."""
+        captured_target = None
         mock_response = {
             "location": "http://192.168.1.100:49152/description.xml",
             "usn": "uuid:test-uuid::upnp:rootdevice",
         }
 
         async def mock_async_search(async_callback, timeout, search_target):
+            nonlocal captured_target
+            captured_target = search_target
             await async_callback(mock_response)
 
         with patch("pywiim.discovery.async_search", mock_async_search):
@@ -94,6 +97,7 @@ class TestDiscoverViaSSDP:
             assert devices[0].uuid == "test-uuid"
             assert devices[0].port == 80  # API port, not UPnP port
             assert devices[0].discovery_method == "ssdp"
+            assert captured_target == "urn:schemas-upnp-org:device:MediaRenderer:1"
 
     @pytest.mark.asyncio
     async def test_discover_via_ssdp_no_location(self):
@@ -655,6 +659,31 @@ class TestIsLinkplayDevice:
 
         def mock_get(url, *args, **kwargs):
             if "https://192.168.1.100:443/httpapi.asp?command=getStatusEx" in url:
+                return mock_ok_response
+            raise aiohttp.ClientError("Connection refused")
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(side_effect=mock_get)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            result = await is_linkplay_device("192.168.1.100", port=80)
+            assert result is True
+
+    @pytest.mark.asyncio
+    async def test_linkplay_device_responds_on_4443_fallback(self):
+        """Test fallback probe to 4443 when 80 and 443 fail."""
+        import aiohttp
+
+        mock_ok_response = MagicMock()
+        mock_ok_response.status = 200
+        mock_ok_response.json = AsyncMock(return_value={"project": "AudioPro", "uuid": "123"})
+        mock_ok_response.__aenter__ = AsyncMock(return_value=mock_ok_response)
+        mock_ok_response.__aexit__ = AsyncMock(return_value=None)
+
+        def mock_get(url, *args, **kwargs):
+            if "https://192.168.1.100:4443/httpapi.asp?command=getPlayerStatusEx" in url:
                 return mock_ok_response
             raise aiohttp.ClientError("Connection refused")
 

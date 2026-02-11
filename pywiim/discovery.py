@@ -155,8 +155,9 @@ async def discover_via_ssdp(
 
     try:
         _LOGGER.info("Starting SSDP discovery (timeout=%ds)...", timeout)
-        # HA integration uses "upnp:rootdevice" as the search target
-        search_target = target or "upnp:rootdevice"
+        # Default to MediaRenderer target (matches long-standing LinkPlay discovery pattern).
+        # A custom target can still be provided for troubleshooting.
+        search_target = target or "urn:schemas-upnp-org:device:MediaRenderer:1"
 
         # New API requires async_callback instead of async generator
         async def process_response(response: dict[str, Any]) -> None:
@@ -283,7 +284,7 @@ async def is_linkplay_device(
     Args:
         host: Device IP address
         port: API port hint from discovery (default 80). If probing this port fails,
-            the probe will also try the complementary standard API port (80/443).
+            the probe will also try standard LinkPlay API ports.
         timeout: Request timeout in seconds
 
     Returns:
@@ -306,21 +307,22 @@ async def is_linkplay_device(
     connector = aiohttp.TCPConnector(ssl=ssl_context)
     client_timeout = aiohttp.ClientTimeout(total=timeout)
 
-    # Probe discovered port first, then complementary standard API port.
-    # SSDP discovery normalizes to port 80, but many modern devices respond
-    # to API requests on 443 (HTTPS-first). Trying both prevents false negatives.
+    # Probe order aligned with established LinkPlay behavior:
+    #   1) HTTPS 443
+    #   2) HTTPS 4443 (some models)
+    #   3) HTTP 80 fallback
+    # If discovery provides a port hint, try it first, then the standard order.
     probe_ports = [port]
-    if port == 80:
-        probe_ports.append(443)
-    elif port == 443:
-        probe_ports.append(80)
+    for standard_port in [443, 4443, 80]:
+        if standard_port not in probe_ports:
+            probe_ports.append(standard_port)
 
     try:
         async with aiohttp.ClientSession(connector=connector, timeout=client_timeout) as session:
             for probe_port in probe_ports:
                 for endpoint in endpoints:
                     # Use likely protocol first for each port
-                    protocols = ["https", "http"] if probe_port == 443 else ["http", "https"]
+                    protocols = ["https", "http"] if probe_port in (443, 4443, 8443) else ["http", "https"]
                     for protocol in protocols:
                         try:
                             url = f"{protocol}://{host}:{probe_port}{endpoint}"
@@ -429,25 +431,11 @@ async def validate_device(device: DiscoveredDevice) -> DiscoveredDevice:
 
     # Phase 2: Full validation - get device info and capabilities
     try:
-        # Use discovered protocol to set initial protocol priority
-        # This ensures we try the discovered protocol first (e.g., HTTP for port 49152)
-        capabilities = {}
-        if device.protocol:
-            # Set protocol priority based on discovered protocol
-            if device.protocol == "https":
-                capabilities["protocol_priority"] = ["https", "http"]
-            else:
-                capabilities["protocol_priority"] = ["http", "https"]
-
-        # Device port should already be 80 (set during discovery)
-        # Port 49152 is only for UPnP description.xml, not for HTTP API
-        # Pass both port and protocol from discovery to avoid unnecessary probing
+        # Do not trust SSDP LOCATION protocol/port as API transport hints.
+        # Let WiiMClient perform protocol/port discovery (443/4443/80, etc.).
         client = WiiMClient(
             device.ip,
-            port=device.port,  # Should be 80 for HTTP API
-            protocol=device.protocol,  # Pass discovered protocol to avoid probing
             timeout=5.0,
-            capabilities=capabilities,
         )
 
         try:
