@@ -182,12 +182,12 @@ class TestMkIIProfile:
 class TestWiiMProfile:
     """Test WiiM specific profile settings."""
 
-    def test_wiim_uses_http_for_all_state(self):
-        """WiiM uses HTTP for all state fields."""
+    def test_wiim_uses_upnp_for_realtime_audio_state(self):
+        """WiiM uses UPnP for realtime volume/mute and HTTP for other state."""
         profile = PROFILES["wiim"]
         assert profile.state_sources.play_state == "http"
-        assert profile.state_sources.volume == "http"
-        assert profile.state_sources.mute == "http"
+        assert profile.state_sources.volume == "upnp"
+        assert profile.state_sources.mute == "upnp"
         assert profile.state_sources.title == "http"
 
     def test_wiim_supports_alarms(self):
