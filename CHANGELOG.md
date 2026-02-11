@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.77] - 2026-02-11
+
+### Fixed
+- **User-friendly WiiMConnectionError when device unreachable** - When protocol probe fails because the device is unreachable (connection refused, timeout, WSL2/firewall), pywiim now raises a clear "Device unreachable" message instead of "No working protocol/port found". Helps users distinguish connectivity issues from protocol configuration problems.
+
 ## [2.1.76] - 2026-02-11
 
 ### Fixed

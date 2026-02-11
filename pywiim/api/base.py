@@ -699,7 +699,7 @@ class BaseWiiMClient:
                 last_error = err
                 continue
 
-        # No working endpoint found
+        # No working endpoint found - craft user-friendly message for connectivity vs protocol
         device_info = {}
         try:
             if self._capabilities:
@@ -710,13 +710,57 @@ class BaseWiiMClient:
         except Exception:  # noqa: BLE001
             pass
 
+        message = self._format_probe_failure_message(last_error, tried)
         raise WiiMConnectionError(
-            f"No working protocol/port found for {self._host}. Tried: {', '.join(tried)}",
+            message,
             endpoint=test_endpoint,
             attempts=len(tried),
             last_error=last_error,
             device_info=device_info,
         )
+
+    def _is_connectivity_error(self, err: Exception | None) -> bool:
+        """Return True if the error indicates device unreachable (not protocol mismatch)."""
+        if err is None:
+            return True  # Unknown - treat as connectivity
+        err_str = str(err).lower()
+        # Connection refused, couldn't connect, network unreachable, timeout
+        if any(
+            phrase in err_str
+            for phrase in (
+                "connection refused",
+                "couldn't connect",
+                "cannot connect",
+                "network is unreachable",
+                "no route to host",
+                "connection reset",
+                "timed out",
+                "timeout",
+            )
+        ):
+            return True
+        # aiohttp.ClientConnectorError typically means connection failed
+        if isinstance(err, (aiohttp.ClientConnectorError, aiohttp.ClientError)):
+            return True
+        if isinstance(err, (asyncio.TimeoutError, aiohttp.ServerTimeoutError)):
+            return True
+        return False
+
+    def _format_probe_failure_message(self, last_error: Exception | None, tried: list[str]) -> str:
+        """Format user-friendly error message for probe failure.
+
+        When all probes fail due to connectivity (device unreachable), use a clear
+        message that helps users diagnose network issues rather than protocol selection.
+        """
+        if self._is_connectivity_error(last_error):
+            return (
+                f"Device unreachable at {self._host}. "
+                f"Connection failed on all attempted protocols. "
+                f"Check that the device is powered on, connected to your network, "
+                f"and that your host can reach {self._host} (e.g. WSL2/firewall may block access)."
+            )
+        # Protocol/SSL/response mismatch - keep technical detail
+        return f"No working protocol/port found for {self._host}. Tried: {', '.join(tried)}"
 
     def _build_probe_list(self) -> list[tuple[str, int]]:
         """Build list of protocol/port combinations to probe.

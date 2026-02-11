@@ -5,6 +5,7 @@ Tests protocol detection, SSL/TLS, retry logic, response parsing, and error hand
 
 from __future__ import annotations
 
+import ssl
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
@@ -898,8 +899,8 @@ class TestBaseWiiMClientProtocolFallback:
                 assert client._endpoint_tested is True
 
     @pytest.mark.asyncio
-    async def test_probe_and_cache_endpoint_failure(self, mock_aiohttp_session):
-        """Test _probe_and_cache_endpoint raises error when no endpoint works."""
+    async def test_probe_and_cache_endpoint_failure_connectivity(self, mock_aiohttp_session):
+        """Test _probe_and_cache_endpoint raises user-friendly error when device unreachable."""
         mock_aiohttp_session.request = AsyncMock(
             side_effect=aiohttp.ClientConnectorError(MagicMock(), OSError("Connection failed"))
         )
@@ -914,7 +915,30 @@ class TestBaseWiiMClientProtocolFallback:
                 with pytest.raises(WiiMConnectionError) as exc_info:
                     await client._probe_and_cache_endpoint("/api/status")
 
+                # Connectivity errors get user-friendly message, not protocol dump
+                assert "Device unreachable" in str(exc_info.value)
+                assert "192.168.1.100" in str(exc_info.value)
+                assert "No working protocol" not in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_probe_and_cache_endpoint_failure_protocol_mismatch(self, mock_aiohttp_session):
+        """Test _probe_and_cache_endpoint keeps technical message for non-connectivity errors."""
+        # Simulate SSL/certificate error (protocol mismatch, not unreachable)
+        mock_aiohttp_session.request = AsyncMock(side_effect=ssl.SSLError("certificate verify failed"))
+        mock_aiohttp_session.closed = False
+
+        client = BaseWiiMClient(host="192.168.1.100", session=mock_aiohttp_session)
+        client._endpoint = None
+
+        with patch.object(client, "_get_ssl_context", new_callable=AsyncMock) as mock_ssl:
+            mock_ssl.return_value = None
+            with patch("asyncio.timeout"):
+                with pytest.raises(WiiMConnectionError) as exc_info:
+                    await client._probe_and_cache_endpoint("/api/status")
+
+                # Protocol/SSL errors keep technical detail with tried URLs
                 assert "No working protocol" in str(exc_info.value)
+                assert "192.168.1.100" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_build_probe_list_user_specified_both(self):
