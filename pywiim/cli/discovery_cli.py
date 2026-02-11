@@ -68,6 +68,11 @@ Examples:
         action="store_true",
         help="Skip API validation of discovered devices",
     )
+    parser.add_argument(
+        "--validated-only",
+        action="store_true",
+        help="Show only devices that passed API validation",
+    )
 
     parser.add_argument(
         "--output",
@@ -131,6 +136,17 @@ Examples:
         if not devices:
             print("❌ No devices found")
             return 1
+
+        if args.validated_only:
+            total_devices = len(devices)
+            devices = [device for device in devices if device.validated]
+            filtered_count = total_devices - len(devices)
+            if filtered_count > 0 and args.output == "text":
+                print(f"ℹ️  Filtered out {filtered_count} unvalidated device(s)")
+                print()
+            if not devices:
+                print("❌ No validated devices found")
+                return 1
 
         # Output results
         if args.output == "json":

@@ -400,9 +400,20 @@ def parse_player_status(
             "qobuz": "qobuz",
             "tidal": "tidal",
             "deezer": "deezer",
+            # Chromecast sessions can report mode=5 (bluetooth) even when source is network.
+            "chromecast": "wifi",
+            "google cast": "wifi",
+            "googlecast": "wifi",
+            "chromecast built-in": "wifi",
         }
-        if data.get("source") in {None, "wifi", "unknown"}:
-            data["source"] = _VENDOR_MAP.get(vendor_clean.lower(), vendor_clean.lower().replace(" ", "_"))
+        vendor_source = _VENDOR_MAP.get(vendor_clean.lower(), vendor_clean.lower().replace(" ", "_"))
+        current_source = data.get("source")
+        should_override = current_source in {None, "wifi", "unknown"}
+        # Issue #6: allow known network apps to override incorrect bluetooth mode mapping.
+        if vendor_source == "wifi" and current_source == "bluetooth":
+            should_override = True
+        if should_override:
+            data["source"] = vendor_source
         data["vendor"] = vendor_clean
 
     # EQ numeric → textual preset.

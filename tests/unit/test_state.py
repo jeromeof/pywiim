@@ -438,15 +438,15 @@ class TestStateSynchronizerWithProfile:
         assert sync._get_preferred_source("play_state") == "upnp"
 
     def test_wiim_profile_uses_http(self):
-        """Test WiiM profile prefers HTTP for all state."""
+        """Test WiiM profile uses UPnP for real-time volume/mute fields."""
         from pywiim.profiles import PROFILES
 
         profile = PROFILES["wiim"]
         sync = StateSynchronizer(profile=profile)
 
         assert sync._get_preferred_source("play_state") == "http"
-        assert sync._get_preferred_source("volume") == "http"
-        assert sync._get_preferred_source("muted") == "http"
+        assert sync._get_preferred_source("volume") == "upnp"
+        assert sync._get_preferred_source("muted") == "upnp"
 
     def test_mkii_profile_uses_upnp_for_transport(self):
         """Test Audio Pro MkII profile uses UPnP for transport state."""
@@ -498,6 +498,36 @@ class TestStateSynchronizerWithProfile:
 
         # MkII profile prefers UPnP for play_state
         assert merged["play_state"] == "play"
+
+    def test_wiim_profile_volume_prefers_upnp_when_both_fresh(self):
+        """Test WiiM profile prefers UPnP for volume when both sources are fresh."""
+        from pywiim.profiles import PROFILES
+
+        profile = PROFILES["wiim"]
+        sync = StateSynchronizer(profile=profile)
+
+        now = time.time()
+        sync.update_from_http({"volume": 16}, timestamp=now)
+        sync.update_from_upnp({"volume": 75}, timestamp=now + 0.1)
+
+        merged = sync.get_merged_state()
+        assert merged["volume"] == 75
+
+    def test_wiim_profile_volume_uses_upnp_even_when_http_is_fresh(self):
+        """Test WiiM profile prevents stale-but-fresh HTTP from overriding newer UPnP volume."""
+        from pywiim.profiles import PROFILES
+
+        profile = PROFILES["wiim"]
+        sync = StateSynchronizer(profile=profile)
+
+        now = time.time()
+        # HTTP is within freshness window (10s), but represents an older value.
+        sync.update_from_http({"volume": 16}, timestamp=now - 5.0)
+        # New UPnP event has the latest value.
+        sync.update_from_upnp({"volume": 55}, timestamp=now)
+
+        merged = sync.get_merged_state()
+        assert merged["volume"] == 55
 
     def test_profile_fallback_when_preferred_unavailable(self):
         """Test fallback to other source when preferred is unavailable."""

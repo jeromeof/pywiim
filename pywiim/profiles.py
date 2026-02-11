@@ -176,7 +176,11 @@ PROFILE_WIIM = DeviceProfile(
     vendor="wiim",
     display_name="WiiM",
     loop_mode_scheme="wiim",
-    state_sources=StateSourceConfig(),  # All HTTP (defaults)
+    state_sources=StateSourceConfig(
+        # Real-time control fields should prefer UPnP events for immediate updates.
+        volume="upnp",
+        mute="upnp",
+    ),
     connection=ConnectionConfig(
         preferred_ports=(80, 443),
         protocol_priority=("http", "https"),

@@ -373,6 +373,18 @@ class TestParsePlayerStatus:
         assert parsed["source"] == "amazon"
         assert parsed["vendor"] == "amazon music"
 
+    def test_parse_chromecast_vendor_overrides_mode_5_bluetooth(self):
+        """Test Chromecast vendor fixes incorrect mode=5 bluetooth mapping (Issue #6)."""
+        raw = {
+            "mode": "5",  # Often reported during Chromecast sessions
+            "vendor": "Google Cast",
+            "state": "play",
+        }
+        parsed, _ = parse_player_status(raw)
+
+        assert parsed["source"] == "wifi"
+        assert parsed["vendor"] == "Google Cast"
+
     def test_parse_qobuz_connect_state_quirks(self):
         """Test Qobuz Connect state detection quirks."""
         # Qobuz with stopped status but rich metadata should be corrected to play

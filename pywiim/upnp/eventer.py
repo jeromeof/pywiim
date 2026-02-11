@@ -522,7 +522,8 @@ class UpnpEventer:
                             if channel == "Master" or not channel:
                                 try:
                                     vol_int = int(var_value)
-                                    changes["volume"] = vol_int / 100.0  # type: ignore[assignment]
+                                    # Keep volume scale consistent with HTTP parser (0-100).
+                                    changes["volume"] = vol_int  # type: ignore[assignment]
                                 except (ValueError, TypeError):
                                     pass
                         elif var_name == "Mute":

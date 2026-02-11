@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.76] - 2026-02-11
+
+### Fixed
+- **Discovery protocol reporting now reflects validated transport** - Discovery results now show `https` when validation confirms API connectivity on HTTPS ports (443/4443/8443), avoiding stale protocol hints from SSDP metadata.
+- **Discovery CLI filtering for validated devices** - Added `--validated-only` to `wiim-discover` to suppress unvalidated SSDP candidates and focus output on devices that pass API validation.
+- **Chromecast source classification** - Corrected source mapping so Chromecast/Google Cast sessions no longer present as Bluetooth when devices report `mode=5`; these now map to network (`wifi`) source.
+- **HTTP/UPnP volume conflict resolution for WiiM** - WiiM profile now prefers UPnP for `volume` and `mute`, so real-time UPnP events are not overridden by older-but-fresh HTTP poll values.
+- **UPnP volume unit consistency** - RenderingControl volume events now use the same internal 0-100 scale as HTTP parsing, fixing incorrect values like `0.0016` from double normalization paths.
+
 ## [2.1.73] - 2026-02-10
 
 ### Added

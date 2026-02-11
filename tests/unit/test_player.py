@@ -452,6 +452,16 @@ class TestPlayerVolumeControl:
         assert player._status_model.volume == 75
 
     @pytest.mark.asyncio
+    async def test_volume_level_from_upnp_uses_0_to_100_scale(self, mock_client):
+        """Test volume_level normalization from UPnP merged state uses 0-100 scale."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        player._state_synchronizer.update_from_upnp({"volume": 16, "muted": False})
+
+        assert player.volume_level == 0.16
+
+    @pytest.mark.asyncio
     async def test_is_muted_reflects_device_state(self, mock_client):
         """Test is_muted reflects actual device mute state (behavior: used for UI display and control logic)."""
         from pywiim.models import PlayerStatus
@@ -5360,9 +5370,9 @@ class TestPlayerSourceConflictScenarios:
         player._status_model = PlayerStatus(play_state="play", volume=50, mute=True)
 
         # Update state synchronizer with stale HTTP and fresh UPnP
-        # Note: UPnP volume is in 0.0-1.0 scale, HTTP volume is 0-100
+        # UPnP and HTTP both use 0-100 scale for internal merged state.
         player._state_synchronizer.update_from_http({"volume": 50, "muted": True}, timestamp=now - 10.0)
-        player._state_synchronizer.update_from_upnp({"volume": 0.75, "muted": False}, timestamp=now)
+        player._state_synchronizer.update_from_upnp({"volume": 75, "muted": False}, timestamp=now)
 
         # Refresh should merge states, preferring fresh UPnP
         mock_status = PlayerStatus(play_state="play", volume=50, mute=True)  # HTTP returns old values
@@ -5374,7 +5384,7 @@ class TestPlayerSourceConflictScenarios:
 
         # Merged state should prefer fresh UPnP values (UPnP has priority for volume)
         merged = player._state_synchronizer.get_merged_state()
-        assert merged["volume"] == 0.75  # From UPnP (fresh), 0.0-1.0 scale
+        assert merged["volume"] == 75  # From UPnP (fresh), 0-100 scale
         assert merged["muted"] is False  # From UPnP (fresh)
 
     @pytest.mark.asyncio
@@ -5421,13 +5431,13 @@ class TestPlayerSourceConflictScenarios:
 
         # Both sources fresh - UPnP has priority for both play_state and volume
         player._state_synchronizer.update_from_http({"play_state": "pause", "volume": 50}, timestamp=now)
-        player._state_synchronizer.update_from_upnp({"play_state": "play", "volume": 0.80}, timestamp=now)
+        player._state_synchronizer.update_from_upnp({"play_state": "play", "volume": 80}, timestamp=now)
 
         merged = player._state_synchronizer.get_merged_state()
 
         # UPnP has priority for play_state AND volume (both are real-time fields)
         assert merged["play_state"] == "play"  # UPnP priority
-        assert merged["volume"] == 0.80  # UPnP priority for volume (0.0-1.0 scale)
+        assert merged["volume"] == 80  # UPnP priority for volume (0-100 scale)
 
     @pytest.mark.asyncio
     async def test_rapid_state_changes_preserve_latest(self, mock_client):

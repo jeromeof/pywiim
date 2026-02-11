@@ -455,6 +455,8 @@ async def validate_device(device: DiscoveredDevice) -> DiscoveredDevice:
 
             # Update port to the actual API port (may differ from discovered UPnP port)
             device.port = client.port
+            # Keep displayed protocol aligned with the validated transport endpoint.
+            device.protocol = "https" if client.port in (443, 4443, 8443) else "http"
 
             # Detect vendor from capabilities (normalized)
             # Capabilities are now guaranteed to be detected

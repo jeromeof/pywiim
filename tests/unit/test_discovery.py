@@ -191,7 +191,37 @@ class TestValidateDevice:
                 assert validated.name == "Test Device"
                 assert validated.model == "WiiM Pro"
                 assert validated.vendor == "wiim"
+                assert validated.protocol == "http"
                 mock_client.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_validate_device_updates_protocol_from_validated_port(self):
+        """Test protocol is updated to match validated API transport."""
+        device = DiscoveredDevice(ip="192.168.1.100", port=80, protocol="http")
+        mock_device_info = DeviceInfo(
+            uuid="test-uuid",
+            name="Test Device",
+            model="WiiM Pro",
+            firmware="5.0.1",
+            mac="AA:BB:CC:DD:EE:FF",
+        )
+
+        mock_client = MagicMock()
+        mock_client.host = "192.168.1.100"
+        mock_client.port = 443
+        mock_client.capabilities = {"vendor": "wiim"}
+        mock_client._detect_capabilities = AsyncMock()
+        mock_client.get_device_info_model = AsyncMock(return_value=mock_device_info)
+        mock_client.get_player_status = AsyncMock()
+        mock_client.close = AsyncMock()
+
+        with patch("pywiim.discovery.is_linkplay_device", return_value=True):
+            with patch("pywiim.discovery.WiiMClient", return_value=mock_client):
+                validated = await validate_device(device)
+
+                assert validated.validated is True
+                assert validated.port == 443
+                assert validated.protocol == "https"
 
     @pytest.mark.asyncio
     async def test_validate_device_already_validated(self):

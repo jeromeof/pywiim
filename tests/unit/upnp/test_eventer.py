@@ -352,7 +352,7 @@ class TestUpnpEventer:
 
         # The parser extracts volume and mute
         if "volume" in changes:
-            assert changes["volume"] == 0.75
+            assert changes["volume"] == 75
         if "muted" in changes:
             assert changes["muted"] is True
         # At minimum, verify parsing doesn't crash
