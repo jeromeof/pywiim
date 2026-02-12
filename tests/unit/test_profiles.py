@@ -183,9 +183,9 @@ class TestWiiMProfile:
     """Test WiiM specific profile settings."""
 
     def test_wiim_uses_upnp_for_realtime_audio_state(self):
-        """WiiM uses UPnP for realtime volume/mute and HTTP for other state."""
+        """WiiM uses UPnP for realtime play_state/volume/mute."""
         profile = PROFILES["wiim"]
-        assert profile.state_sources.play_state == "http"
+        assert profile.state_sources.play_state == "upnp"
         assert profile.state_sources.volume == "upnp"
         assert profile.state_sources.mute == "upnp"
         assert profile.state_sources.title == "http"
@@ -351,8 +351,8 @@ class TestProfileIntegration:
 
         # MkII needs UPnP for play_state
         assert mkii_profile.state_sources.play_state == "upnp"
-        # WiiM uses HTTP for play_state
-        assert wiim_profile.state_sources.play_state == "http"
+        # WiiM also uses UPnP for play_state
+        assert wiim_profile.state_sources.play_state == "upnp"
 
     def test_profile_can_be_used_for_connection_config(self):
         """Profiles can be used to configure connections."""

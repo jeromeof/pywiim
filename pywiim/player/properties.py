@@ -14,6 +14,34 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+_KNOWN_SERVICE_SOURCES: tuple[tuple[str, str], ...] = (
+    ("airplay", "AirPlay"),
+    ("spotify", "Spotify"),
+    ("amazon", "Amazon Music"),
+    ("tidal", "Tidal"),
+    ("qobuz", "Qobuz"),
+    ("deezer", "Deezer"),
+    ("pandora", "Pandora"),
+    ("tunein", "TuneIn"),
+    ("iheartradio", "iHeartRadio"),
+    ("dlna", "DLNA"),
+)
+
+_HARDWARE_SOURCE_KEYS: set[str] = {
+    "network",
+    "wifi",
+    "bluetooth",
+    "line_in",
+    "line_in_2",
+    "aux",
+    "optical",
+    "coaxial",
+    "usb",
+    "hdmi",
+    "phono",
+    "rca",
+}
+
 
 class PlayerProperties:
     """Provides property access to player state and metadata."""
@@ -1153,6 +1181,139 @@ class PlayerProperties:
             normalized_sources.append(self._normalize_source_name(source))
 
         return normalized_sources
+
+    def _catalog_source_key(self, source_name: str) -> str:
+        """Normalize a source display name to canonical key."""
+        source_lower = source_name.strip().lower()
+        if not source_lower:
+            return ""
+
+        # Direct mappings for UI display names
+        direct_map = {
+            "network": "network",
+            "wifi": "network",
+            "wi-fi": "network",
+            "ethernet": "network",
+            "line in": "line_in",
+            "line in 2": "line_in_2",
+            "aux in": "aux",
+            "optical in": "optical",
+            "coaxial": "coaxial",
+            "usb": "usb",
+            "hdmi": "hdmi",
+            "phono": "phono",
+            "rca": "rca",
+            "airplay": "airplay",
+            "spotify": "spotify",
+            "amazon music": "amazon",
+            "amazon": "amazon",
+            "tidal": "tidal",
+            "qobuz": "qobuz",
+            "deezer": "deezer",
+            "pandora": "pandora",
+            "tunein": "tunein",
+            "iheartradio": "iheartradio",
+            "dlna": "dlna",
+            "bluetooth": "bluetooth",
+        }
+        if source_lower in direct_map:
+            return direct_map[source_lower]
+
+        # Fallback: alphanumeric simplification for resilient matching
+        simple = "".join(ch for ch in source_lower if ch.isalnum())
+        simple_map = {
+            "linein": "line_in",
+            "linein2": "line_in_2",
+            "auxin": "aux",
+            "opticalin": "optical",
+            "coaxialin": "coaxial",
+            "amazonmusic": "amazon",
+            "iheartradio": "iheartradio",
+            "airplay": "airplay",
+        }
+        if simple in simple_map:
+            return simple_map[simple]
+
+        return source_lower.replace(" ", "_").replace("-", "_")
+
+    def _catalog_source_kind(self, source_key: str) -> str:
+        """Return catalog kind for a canonical source key."""
+        if source_key in _HARDWARE_SOURCE_KEYS:
+            return "hardware_input"
+        if any(source_key == known_key for known_key, _ in _KNOWN_SERVICE_SOURCES):
+            return "service"
+        return "virtual"
+
+    def _catalog_entry(self, source_id: str, name: str, is_current: bool) -> dict[str, Any]:
+        """Build source catalog entry with capability flags."""
+        kind = self._catalog_source_kind(source_id)
+        selectable = kind == "hardware_input"
+
+        # Keep unknown/virtual source capabilities conservative in the catalog.
+        capabilities = get_source_capabilities(source_id) if kind != "virtual" else SourceCapability.NONE
+
+        return {
+            "id": source_id,
+            "name": name,
+            "kind": kind,
+            "selectable": selectable,
+            "is_current": is_current,
+            "supports_pause": capabilities != SourceCapability.NONE,
+            "supports_seek": SourceCapability.SEEK in capabilities,
+            "supports_next_track": SourceCapability.NEXT_TRACK in capabilities,
+            "supports_previous_track": SourceCapability.PREVIOUS_TRACK in capabilities,
+            "supports_shuffle": SourceCapability.SHUFFLE in capabilities,
+            "supports_repeat": SourceCapability.REPEAT in capabilities,
+        }
+
+    @property
+    def source_catalog(self) -> list[dict[str, Any]]:
+        """Structured source catalog for integrations.
+
+        Returns a normalized list of source entries with:
+        - Stable `id` and display `name`
+        - `kind` classification (hardware_input, service, virtual)
+        - `selectable` flag for direct source switching
+        - Source capability flags (pause/seek/next/previous/shuffle/repeat)
+        - `is_current` marker for the active source
+        """
+        if self.player._device_info is None:
+            return []
+
+        catalog: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+
+        current_name = self.source
+        current_key = self._catalog_source_key(current_name) if current_name else None
+
+        # Start with device-available sources (hardware + active source).
+        for source_name in self.available_sources:
+            source_id = self._catalog_source_key(source_name)
+            if not source_id or source_id in seen_ids:
+                continue
+            entry = self._catalog_entry(
+                source_id=source_id,
+                name=source_name,
+                is_current=current_key == source_id,
+            )
+            catalog.append(entry)
+            seen_ids.add(source_id)
+
+        # Append known service/protocol sources for integrations like Music Assistant.
+        for source_id, source_name in _KNOWN_SERVICE_SOURCES:
+            if source_id in seen_ids:
+                continue
+            entry = self._catalog_entry(
+                source_id=source_id,
+                name=source_name,
+                is_current=current_key == source_id,
+            )
+            # Service/protocol sources are not directly selectable by this source list.
+            entry["selectable"] = False
+            catalog.append(entry)
+            seen_ids.add(source_id)
+
+        return catalog
 
     @property
     def audio_output_mode(self) -> str | None:

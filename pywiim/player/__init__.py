@@ -930,6 +930,16 @@ class Player(PlayerBase):
         return self._properties.available_sources
 
     @property
+    def source_catalog(self) -> list[dict[str, Any]]:
+        """Structured source catalog for integrations.
+
+        Returns:
+            List of source dictionaries with stable IDs, source type, selectability,
+            capability flags, and current-source marker.
+        """
+        return self._properties.source_catalog
+
+    @property
     def audio_output_mode(self) -> str | None:
         """Current audio output mode as friendly name."""
         return self._properties.audio_output_mode

@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.79] - 2026-02-12
+
+### Added
+- **Structured source catalog API for integrations** - Added `player.source_catalog` to expose normalized source metadata for Music Assistant and similar integrations.
+  - Each source now includes stable `id`, display `name`, `kind` (`hardware_input`, `service`, `virtual`), `selectable`, `is_current`, and per-source capability flags (`supports_pause`, `supports_seek`, `supports_next_track`, `supports_previous_track`, `supports_shuffle`, `supports_repeat`).
+  - Added unit tests and real-device integration coverage for catalog shape and capability mapping.
+- **Dedicated multiroom join/unjoin hardware test suite** - Added focused integration tests for real-device group transitions, including:
+  - Per-slave join/leave validation against a configured master.
+  - Pairwise join/unjoin matrix coverage across configured devices.
+  - Full 3-player stress scenarios with all master/slave permutations and repeated join/leave churn, including real-time role snapshots.
+
+### Changed
+- **WiiM play-state source preference now UPnP-first** - Updated the WiiM profile to prefer UPnP for `play_state` (in addition to `volume` and `mute`) for faster UI responsiveness during playback transitions.
+- **Profile-driven UPnP conflict resolution hardened** - Removed coarse `upnp_available` gating for UPnP-preferred fields in profile mode so fresh UPnP data is not incorrectly overridden by older HTTP polls between event bursts.
+- **Group operations optimistic state updates expanded** - Improved local role/group responsiveness:
+  - `join_group()` now applies optimistic local slave linking immediately after command success and rolls back if verification fails.
+  - `leave_group()` callback signaling now fires on post-mutation state, ensuring integrations observe immediate solo/group role updates.
+
+### Fixed
+- **Audio output capability probing for USB Out devices** - Fixed a `pywiim` false-negative path where capability detection could disable `supports_audio_output` on WiiM devices and hide output options like **USB Out** (Issue [mjcumming/wiim#160](https://github.com/mjcumming/wiim/issues/160)).
+  - Probe now prefers `getAudioOutputStatus`, falls back to legacy `getNewAudioOutputHardwareMode`, and keeps WiiM audio-output support enabled on probe failures.
+  - Added regression tests for WiiM probe-failure behavior and legacy probe fallback.
+
 ## [2.1.77] - 2026-02-11
 
 ### Fixed

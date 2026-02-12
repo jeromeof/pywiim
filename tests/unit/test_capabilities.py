@@ -297,6 +297,7 @@ class TestWiiMCapabilitiesClass:
 
         assert capabilities["supports_getstatuse"] is False
         assert capabilities["supports_metadata"] is False
+        assert capabilities["supports_audio_output"] is False
         assert capabilities["supports_presets"] is False
         assert capabilities["presets_full_data"] is False
         assert capabilities["supports_eq"] is False
@@ -319,6 +320,48 @@ class TestWiiMCapabilitiesClass:
 
         assert capabilities["is_wiim_device"] is True
         assert capabilities["supports_metadata"] is True
+
+    @pytest.mark.asyncio
+    async def test_detect_capabilities_wiim_keeps_audio_output_on_probe_failure(self, mock_client):
+        """Test WiiM devices keep audio output support even if probe endpoints fail."""
+        device_info = DeviceInfo(uuid="test-uuid", model="WiiM Ultra", firmware="5.2.704452")
+        mock_client.get_status = AsyncMock(return_value={"status": "ok"})
+
+        def request_side_effect(endpoint, **kwargs):
+            if "getAudioOutputStatus" in endpoint or "getNewAudioOutputHardwareMode" in endpoint:
+                raise WiiMError("Failed")
+            return {"status": "ok"}
+
+        mock_client._request = AsyncMock(side_effect=request_side_effect)
+
+        detector = WiiMCapabilities()
+        capabilities = await detector.detect_capabilities(mock_client, device_info)
+
+        assert capabilities["is_wiim_device"] is True
+        assert capabilities["supports_audio_output"] is True
+
+    @pytest.mark.asyncio
+    async def test_detect_capabilities_audio_output_legacy_fallback(self, mock_client):
+        """Test audio output probe falls back to legacy endpoint when needed."""
+        device_info = DeviceInfo(uuid="test-uuid", model="LinkPlay Generic", firmware="4.6.1")
+        mock_client.get_status = AsyncMock(return_value={"status": "ok"})
+
+        def request_side_effect(endpoint, **kwargs):
+            if "getAudioOutputStatus" in endpoint:
+                raise WiiMError("Not supported")
+            if "getNewAudioOutputHardwareMode" in endpoint:
+                return {"hardware": "6"}
+            return {"status": "ok"}
+
+        mock_client._request = AsyncMock(side_effect=request_side_effect)
+
+        detector = WiiMCapabilities()
+        capabilities = await detector.detect_capabilities(mock_client, device_info)
+
+        assert capabilities["supports_audio_output"] is True
+        calls = [str(call) for call in mock_client._request.call_args_list]
+        assert any("getAudioOutputStatus" in str(call) for call in calls)
+        assert any("getNewAudioOutputHardwareMode" in str(call) for call in calls)
 
     @pytest.mark.asyncio
     async def test_detect_capabilities_eq_read_only(self, mock_client):

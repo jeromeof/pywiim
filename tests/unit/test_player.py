@@ -4076,6 +4076,112 @@ class TestPlayerGroupOperations:
         )
 
     @pytest.mark.asyncio
+    async def test_join_group_applies_optimistic_link_before_verification(
+        self, mock_client, mock_player_status, mock_aiohttp_session, mock_capabilities
+    ):
+        """Join should optimistically link local group state before refresh verification."""
+        from pywiim.client import WiiMClient
+        from pywiim.group import Group
+        from pywiim.models import DeviceInfo
+        from pywiim.player import Player
+
+        master_client = WiiMClient(
+            host="192.168.1.100",
+            port=80,
+            session=mock_aiohttp_session,
+            capabilities=mock_capabilities,
+        )
+        master_client._request = AsyncMock(return_value={"status": "ok"})
+
+        slave_client = WiiMClient(
+            host="192.168.1.101",
+            port=80,
+            session=mock_aiohttp_session,
+            capabilities=mock_capabilities,
+        )
+        slave_client._request = AsyncMock(return_value={"status": "ok"})
+
+        master = Player(master_client)
+        slave = Player(slave_client)
+        group = Group(master)
+
+        master._device_info = DeviceInfo(uuid="master-uuid", model="WiiM Pro", wmrm_version="4.2")
+        slave._device_info = DeviceInfo(uuid="slave-uuid", model="WiiM Mini", wmrm_version="4.2")
+
+        slave_status = mock_player_status.model_copy()
+        slave_status.group = "1"
+        slave_status.master_ip = master.host
+        slave_client.join_slave = AsyncMock()
+
+        optimistic_seen_during_refresh = {"seen": False}
+
+        async def mock_slave_refresh(full=False):
+            if not full and slave.group == group and slave in group.slaves and slave.role == "slave":
+                optimistic_seen_during_refresh["seen"] = True
+            # Verification then confirms slave role from device refresh.
+            slave._detected_role = "slave"
+            slave._status_model = slave_status
+
+        slave.refresh = AsyncMock(side_effect=mock_slave_refresh)
+
+        with patch("pywiim.player.groupops.asyncio.sleep", new=AsyncMock()):
+            await slave.join_group(master)
+
+        assert optimistic_seen_during_refresh["seen"] is True
+        assert slave.group == group
+        assert slave in group.slaves
+        assert slave.role == "slave"
+
+    @pytest.mark.asyncio
+    async def test_join_group_rolls_back_optimistic_link_when_verification_fails(
+        self, mock_client, mock_player_status, mock_aiohttp_session, mock_capabilities
+    ):
+        """Failed join verification should roll back optimistic local group state."""
+        from pywiim.client import WiiMClient
+        from pywiim.group import Group
+        from pywiim.models import DeviceInfo
+        from pywiim.player import Player
+
+        master_client = WiiMClient(
+            host="192.168.1.100",
+            port=80,
+            session=mock_aiohttp_session,
+            capabilities=mock_capabilities,
+        )
+        master_client._request = AsyncMock(return_value={"status": "ok"})
+
+        slave_client = WiiMClient(
+            host="192.168.1.101",
+            port=80,
+            session=mock_aiohttp_session,
+            capabilities=mock_capabilities,
+        )
+        slave_client._request = AsyncMock(return_value={"status": "ok"})
+
+        master = Player(master_client)
+        slave = Player(slave_client)
+        group = Group(master)
+
+        master._device_info = DeviceInfo(uuid="master-uuid", model="WiiM Pro", wmrm_version="4.2")
+        slave._device_info = DeviceInfo(uuid="slave-uuid", model="WiiM Mini", wmrm_version="4.2")
+
+        # Device command succeeds, but refresh never confirms non-solo state.
+        slave_client.join_slave = AsyncMock()
+
+        async def mock_slave_refresh(full=False):
+            slave._detected_role = "solo"
+
+        slave.refresh = AsyncMock(side_effect=mock_slave_refresh)
+
+        with patch("pywiim.player.groupops.asyncio.sleep", new=AsyncMock()):
+            await slave.join_group(master)
+
+        assert slave.group is None
+        assert slave not in group.slaves
+        assert slave.role == "solo"
+        assert master.role == "solo"
+
+    @pytest.mark.asyncio
     async def test_leave_group_as_slave(self, mock_client, mock_player_status):
         """Test leaving group as slave."""
         from pywiim.group import Group
@@ -4100,6 +4206,33 @@ class TestPlayerGroupOperations:
         # Should call _request for leave, then disband calls _request again
         assert mock_client._request.call_count >= 1
         mock_client._request.assert_any_call("/httpapi.asp?command=multiroom:Ungroup")
+
+    @pytest.mark.asyncio
+    async def test_leave_group_as_slave_notifies_post_leave_state(self, mock_client, mock_player_status):
+        """Leaving slave should notify callbacks with post-leave solo state."""
+        from pywiim.group import Group
+        from pywiim.player import Player
+
+        callback_states: list[tuple[str, bool, bool]] = []
+
+        def on_state_changed_for_slave():
+            callback_states.append((slave.role, slave.is_solo, slave.group is None))
+
+        mock_client.get_player_status_model = AsyncMock(return_value=mock_player_status)
+        master = Player(mock_client)
+        master._detected_role = "master"
+        slave = Player(mock_client, on_state_changed=on_state_changed_for_slave)
+        slave._detected_role = "slave"
+        group = Group(master)
+        group.add_slave(slave)
+
+        mock_client._request = AsyncMock(return_value={"status": "ok"})
+
+        await slave.leave_group()
+
+        assert slave.group is None
+        assert slave.role == "solo"
+        assert any(state == ("solo", True, True) for state in callback_states)
 
     @pytest.mark.asyncio
     async def test_leave_group_as_slave_with_multiple_slaves(

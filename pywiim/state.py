@@ -612,7 +612,11 @@ class StateSynchronizer:
         if preferred_source == "upnp":
             primary, fallback = upnp_field, http_field
             primary_fresh, fallback_fresh = upnp_fresh, http_fresh
-            primary_available = upnp_available
+            # IMPORTANT: In profile-driven mode, don't use coarse global UPnP availability
+            # as a hard gate for UPnP-preferred real-time fields. UPnP has no heartbeat,
+            # and the global availability timeout can flip false between event bursts.
+            # Freshness already protects us from stale values.
+            primary_available = True
         else:  # "http" (default)
             primary, fallback = http_field, upnp_field
             primary_fresh, fallback_fresh = http_fresh, upnp_fresh

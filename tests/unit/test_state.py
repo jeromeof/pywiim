@@ -444,7 +444,7 @@ class TestStateSynchronizerWithProfile:
         profile = PROFILES["wiim"]
         sync = StateSynchronizer(profile=profile)
 
-        assert sync._get_preferred_source("play_state") == "http"
+        assert sync._get_preferred_source("play_state") == "upnp"
         assert sync._get_preferred_source("volume") == "upnp"
         assert sync._get_preferred_source("muted") == "upnp"
 
@@ -468,7 +468,7 @@ class TestStateSynchronizerWithProfile:
         """Test that profile-driven resolution uses preferred source."""
         from pywiim.profiles import PROFILES
 
-        # WiiM profile prefers HTTP
+        # WiiM profile prefers UPnP for play_state
         profile = PROFILES["wiim"]
         sync = StateSynchronizer(profile=profile)
 
@@ -479,8 +479,8 @@ class TestStateSynchronizerWithProfile:
 
         merged = sync.get_merged_state()
 
-        # WiiM profile prefers HTTP for play_state
-        assert merged["play_state"] == "pause"
+        # WiiM profile prefers UPnP for play_state
+        assert merged["play_state"] == "play"
 
     def test_mkii_profile_resolution_prefers_upnp(self):
         """Test MkII profile prefers UPnP for play_state."""
@@ -526,6 +526,30 @@ class TestStateSynchronizerWithProfile:
         # New UPnP event has the latest value.
         sync.update_from_upnp({"volume": 55}, timestamp=now)
 
+        merged = sync.get_merged_state()
+        assert merged["volume"] == 55
+
+    def test_wiim_profile_upnp_preferred_ignores_coarse_upnp_availability_timeout(self):
+        """Fresh UPnP value should still win for UPnP-preferred fields in profile mode.
+
+        Regression case: when playing, global UPnP availability may flip false after 5s
+        without events. That coarse health signal should not override a fresh UPnP field
+        for UPnP-preferred fields like volume/play_state.
+        """
+        from pywiim.profiles import PROFILES
+
+        profile = PROFILES["wiim"]
+        sync = StateSynchronizer(profile=profile)
+
+        now = time.time()
+        # Keep device in "playing" mode so UPnP availability uses the short timeout path.
+        sync.update_from_http({"play_state": "play"}, timestamp=now - 1.0)
+
+        # HTTP and UPnP volume are both within freshness window (10s), but UPnP is newer.
+        sync.update_from_http({"volume": 16}, timestamp=now - 9.0)
+        sync.update_from_upnp({"volume": 55}, timestamp=now - 6.0)
+
+        # Under old behavior, upnp_available=false while playing could force HTTP fallback.
         merged = sync.get_merged_state()
         assert merged["volume"] == 55
 

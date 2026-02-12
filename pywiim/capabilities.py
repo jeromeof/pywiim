@@ -181,24 +181,48 @@ class WiiMCapabilities:
                 _LOGGER.debug("Device %s does not support getMetaInfo", client.host)
 
         # Probe for audio output support (read-only probe)
-        # If we can read audio output status, assume we can set it too
-        # We don't probe setting to avoid changing device state during initialization
+        # If we can read audio output status, assume we can set it too.
+        # Prefer getAudioOutputStatus (canonical endpoint used by runtime methods),
+        # then fall back to legacy getNewAudioOutputHardwareMode for older firmware.
+        # We don't probe setting to avoid changing device state during initialization.
         # See: https://github.com/mjcumming/wiim/issues/144
+        audio_output_supported = False
         try:
-            result = await client._request("/httpapi.asp?command=getNewAudioOutputHardwareMode")
-            capabilities["supports_audio_output"] = True
+            result = await client._request("/httpapi.asp?command=getAudioOutputStatus")
+            audio_output_supported = True
             _LOGGER.debug(
-                "Device %s supports audio output control (getNewAudioOutputHardwareMode), result: %s",
+                "Device %s supports audio output control (getAudioOutputStatus), result: %s",
                 client.host,
                 result,
             )
-        except (WiiMError, Exception) as e:
-            capabilities["supports_audio_output"] = False
-            _LOGGER.debug(
-                "Device %s does not support audio output control (%s)",
-                client.host,
-                type(e).__name__,
-            )
+        except (WiiMError, Exception):
+            try:
+                legacy_result = await client._request("/httpapi.asp?command=getNewAudioOutputHardwareMode")
+                audio_output_supported = True
+                _LOGGER.debug(
+                    "Device %s supports audio output control via legacy endpoint "
+                    "(getNewAudioOutputHardwareMode), result: %s",
+                    client.host,
+                    legacy_result,
+                )
+            except (WiiMError, Exception) as e:
+                # Keep WiiM default support on probe failure to avoid transient false negatives
+                # hiding output controls in integrations.
+                if capabilities.get("is_wiim_device", False):
+                    audio_output_supported = True
+                    _LOGGER.debug(
+                        "Device %s is WiiM; keeping supports_audio_output=True despite probe failure (%s)",
+                        client.host,
+                        type(e).__name__,
+                    )
+                else:
+                    _LOGGER.debug(
+                        "Device %s does not support audio output control (%s)",
+                        client.host,
+                        type(e).__name__,
+                    )
+
+        capabilities["supports_audio_output"] = audio_output_supported
 
         # Probe for preset support (getPresetInfo)
         # If getPresetInfo fails, fall back to checking preset_key from device info

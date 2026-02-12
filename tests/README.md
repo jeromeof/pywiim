@@ -199,9 +199,31 @@ pytest tests/integration/test_multiroom_group.py::TestGroupEdgeCases::test_slave
 
 # Use -s to see real-time logging output
 pytest tests/integration/test_multiroom_group.py -v -m integration -s --tb=short
+
+# Run focused join/unjoin suite (good for larger labs, e.g. 6 devices)
+pytest tests/integration/test_multiroom_join_unjoin.py -v -m integration -s --tb=short
+
+# Run exhaustive pairwise join/unjoin matrix only
+pytest tests/integration/test_multiroom_join_unjoin.py -v -m "integration and slow" -s --tb=short
+
+# Run full 3-player stress sequence (all master/slave combinations + churn)
+pytest tests/integration/test_multiroom_join_unjoin.py::TestJoinUnjoinRealDevices::test_three_player_full_join_unjoin_stress -v -m "integration and slow" -s --tb=short
 ```
 
 > **Note**: The default pytest configuration (`pyproject.toml`) excludes integration tests with `-m 'not integration'`. You must explicitly add `-m integration` to run them.
+
+#### 6-Device Join/Unjoin Validation Example
+
+```bash
+export WIIM_TEST_GROUP_MASTER=192.168.6.201
+export WIIM_TEST_GROUP_SLAVES="192.168.6.202,192.168.6.203,192.168.6.204,192.168.6.205,192.168.6.206"
+
+# Focused join/unjoin checks
+pytest tests/integration/test_multiroom_join_unjoin.py::TestJoinUnjoinRealDevices::test_each_slave_can_join_and_leave_master -v -m integration -s
+
+# Exhaustive pairwise matrix (slow)
+pytest tests/integration/test_multiroom_join_unjoin.py::TestJoinUnjoinRealDevices::test_pairwise_join_unjoin_matrix -v -m "integration and slow" -s
+```
 
 #### Test Classes
 

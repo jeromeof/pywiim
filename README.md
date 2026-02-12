@@ -16,6 +16,7 @@ Python library for WiiM and LinkPlay device control with command-line tools for 
 - **Playback Control** - Play, pause, stop, next/previous track, seek
 - **Volume & Audio** - Volume control, mute, channel balance, audio output selection (Line Out, Optical, Coax, USB Out, HDMI Out, Bluetooth/Headphones)
 - **Sources** - Intelligent model-specific source management (Bluetooth, Line In, Optical In, Coaxial, USB, HDMI ARC, Phono) and streaming services. Authoritative hardware filtering and UI-ready formatting.
+- **Source Catalog** - Structured source metadata via `player.source_catalog` (source type, selectability, and per-source capability flags) for integrations like Music Assistant.
 - **Multiroom Audio** - Create/join/leave groups, synchronized volume and playback
 - **EQ & Presets** - 10-band EQ with presets, 20 preset stations
 - **Timers & Alarms** - Sleep timers and alarm clocks (WiiM devices)

@@ -163,40 +163,62 @@ player.input_list         # list[str] - Raw input list from device ([] if unavai
 
 ```python
 player.available_sources  # list[str] - Returns [] if unavailable
+player.source_catalog     # list[dict[str, Any]] - Structured source metadata for integrations
 ```
 
-Returns list of user-selectable physical inputs plus the current source (when active):
+`available_sources` returns a UI-ready list of source names:
 
-1. **Always included**: Physical/hardware sources (Bluetooth, USB, Line In, Optical, Coax, AUX, HDMI) - user-selectable
-2. **Conditionally included**: Current source (when active) - includes streaming services (AirPlay, Spotify, etc.) and multi-room follower sources. NOT user-selectable but included for correct UI state display
-3. **NOT included**: Inactive streaming services - can't be manually selected and aren't currently playing
-4. **Always excluded**: WiFi (it's the network connection, not a selectable source)
+1. **Always included**: Physical/hardware inputs (`Bluetooth`, `Line In`, `Optical In`, etc.) and `Network`
+2. **Conditionally included**: Current active source (for example `Spotify`, `AirPlay`, or a multi-room follower name)
+3. **Not included**: Inactive streaming services that are not currently active
 
-**Smart Detection Logic:**
-- If `InputList` is provided: Filters device's `InputList` to remove unconfigured services
-- If `plm_support` is available: Parses bitmask to detect physical inputs
-- Fallback: Uses model-based detection for common inputs
+Use `source_catalog` when an integration needs structured source metadata (for example Music Assistant).
 
-**Why this matters**: Devices report all possible sources in their `InputList`, but streaming services aren't actually usable until you've logged in. This property returns only the sources that will actually work.
+`source_catalog` entry schema:
 
-**Example:**
 ```python
-await player.refresh()
-sources = player.available_sources
+# One catalog entry
+{
+    "id": "spotify",                      # Stable source key
+    "name": "Spotify",                    # Display name
+    "kind": "service",                    # "hardware_input" | "service" | "virtual"
+    "selectable": False,                  # Directly selectable via set_source
+    "is_current": True,                   # Active source marker
+    "supports_pause": True,
+    "supports_seek": True,
+    "supports_next_track": True,
+    "supports_previous_track": True,
+    "supports_shuffle": True,
+    "supports_repeat": True,
+}
+```
 
-# When idle (nothing playing):
-# Returns: ["bluetooth", "line_in", "optical"]
+`kind` semantics:
+- `hardware_input`: Physical or connection-level input (`Network`, `Bluetooth`, `Line In`, `Optical In`, etc.)
+- `service`: Known streaming/cast services (`Spotify`, `AirPlay`, `DLNA`, `TuneIn`, etc.)
+- `virtual`: Non-standard active source names (for example a multi-room follower source label)
 
-# When playing from AirPlay:
-# Returns: ["bluetooth", "line_in", "optical", "AirPlay"]
+`selectable` semantics:
+- `True` for `hardware_input` entries
+- `False` for `service` and `virtual` entries
 
-# When playing from Spotify:
-# Returns: ["bluetooth", "line_in", "optical", "Spotify"]
+**Example usage:**
+```python
+await player.refresh(full=True)
 
-# When following another device in multi-room:
-# Returns: ["bluetooth", "line_in", "optical", "Master Bedroom"]
+# Existing UI-ready source list
+source_names = player.available_sources
 
-# Note: Source names preserve their original casing for proper UI display
+# New structured catalog for integrations
+catalog = player.source_catalog
+
+# Example: build selectable source options
+selectable = [item for item in catalog if item["selectable"]]
+
+# Example: discover source capabilities for UI controls
+spotify = next((item for item in catalog if item["id"] == "spotify"), None)
+if spotify and spotify["supports_shuffle"]:
+    print("Spotify supports shuffle control")
 ```
 
 #### EQ Presets

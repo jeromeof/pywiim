@@ -571,6 +571,16 @@ class GroupOperations:
             master_wifi_channel=master_wifi_channel,
         )
 
+        # Optimistic local state update for immediate UI feedback.
+        # Keep verification below (device can still reject silently), but reflect the
+        # intended grouping state right away so coordinators don't wait for retries.
+        optimistic_group = master.group
+        optimistic_link_applied = False
+        if optimistic_group is not None and self.player not in optimistic_group.slaves:
+            optimistic_group.add_slave(self.player)
+            optimistic_link_applied = True
+            self._notify_all_group_members(optimistic_group)
+
         # CRITICAL: join_slave() always returns "OK" even when it fails
         # For Gen1 devices (especially WiFi Direct), the device needs time to:
         # 1. Process the join command
@@ -644,6 +654,11 @@ class GroupOperations:
                     "join_slave() returned success but %s is still solo - join may have failed.",
                     self.player.host,
                 )
+
+            # Roll back optimistic local link if verification failed.
+            if optimistic_link_applied and optimistic_group is not None and self.player in optimistic_group.slaves:
+                optimistic_group.remove_slave(self.player)
+                self._notify_all_group_members(optimistic_group)
             return
 
         if old_group is not None:
@@ -905,9 +920,6 @@ class GroupOperations:
 
         master = group.master if group else None
 
-        # Notify all members BEFORE disbanding/leaving (while group structure is intact)
-        self._notify_all_group_members(group)
-
         if self.player.is_master:
             # Master leaving = disband the entire group
             _LOGGER.debug("Player %s is master, disbanding group", self.player.host)
@@ -923,10 +935,21 @@ class GroupOperations:
                 await self.player.client._request("/httpapi.asp?command=multiroom:Ungroup")
 
             group.remove_slave(self.player)
+            # The leaving slave is no longer part of the group, so notify it explicitly.
+            # This ensures integrations immediately see the post-leave solo state.
+            if self.player._on_state_changed:
+                try:
+                    self.player._on_state_changed()
+                except Exception as err:
+                    _LOGGER.debug("Error calling on_state_changed callback for %s: %s", self.player.host, err)
 
             if len(group.slaves) == 0:
                 _LOGGER.debug("Group is now empty, auto-disbanding (master: %s)", master.host if master else "unknown")
                 await group.disband()
+            else:
+                # Notify remaining members after state mutation so callbacks observe
+                # post-operation group membership/roles.
+                self._notify_all_group_members(group)
 
     async def get_master_name(self) -> str | None:
         """Get master device name.
