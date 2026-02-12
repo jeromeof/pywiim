@@ -94,23 +94,26 @@ ifndef VERSION
 endif
 	@echo "🚀 Starting release v$(VERSION)..."
 	@echo ""
-	@echo "📋 Step 0: Verifying and updating version in pyproject.toml..."
+	@echo "📋 Step 0: Verifying and updating version in pyproject.toml and pywiim/__init__.py..."
 	@CURRENT_VERSION=$$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/'); \
-	if [ "$$CURRENT_VERSION" != "$(VERSION)" ]; then \
+	CURRENT_INIT_VERSION=$$(grep '^__version__ = ' pywiim/__init__.py | sed 's/__version__ = "\(.*\)"/\1/'); \
+	if [ "$$CURRENT_VERSION" != "$(VERSION)" ] || [ "$$CURRENT_INIT_VERSION" != "$(VERSION)" ]; then \
 		echo "⚠️  Version mismatch detected!"; \
 		echo "   pyproject.toml has: $$CURRENT_VERSION"; \
+		echo "   pywiim/__init__.py has: $$CURRENT_INIT_VERSION"; \
 		echo "   Release version: $(VERSION)"; \
 		echo ""; \
-		echo "📝 Updating pyproject.toml to version $(VERSION)..."; \
+		echo "📝 Updating version files to $(VERSION)..."; \
 		sed -i 's/^version = ".*"/version = "$(VERSION)"/' pyproject.toml; \
-		echo "✅ Version updated in pyproject.toml"; \
+		sed -i 's/^__version__ = ".*"/__version__ = "$(VERSION)"/' pywiim/__init__.py; \
+		echo "✅ Versions updated in pyproject.toml and pywiim/__init__.py"; \
 		echo "📝 Staging version update..."; \
-		git add pyproject.toml; \
+		git add pyproject.toml pywiim/__init__.py; \
 		echo "💾 Committing version bump..."; \
 		git commit -m "chore: bump version to $(VERSION)" || true; \
 		echo "✅ Version bump committed"; \
 	else \
-		echo "✅ Version in pyproject.toml matches release version ($(VERSION))"; \
+		echo "✅ Version files match release version ($(VERSION))"; \
 	fi
 	@echo ""
 	@echo "📋 Step 1: Running all CI checks..."
@@ -127,16 +130,18 @@ endif
 		echo "✅ Working directory clean (no changes to commit)"; \
 	fi
 	@echo ""
-	@echo "📋 Step 3: Verifying version still matches before tagging..."
+	@echo "📋 Step 3: Verifying version files still match before tagging..."
 	@CURRENT_VERSION=$$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/'); \
-	if [ "$$CURRENT_VERSION" != "$(VERSION)" ]; then \
+	CURRENT_INIT_VERSION=$$(grep '^__version__ = ' pywiim/__init__.py | sed 's/__version__ = "\(.*\)"/\1/'); \
+	if [ "$$CURRENT_VERSION" != "$(VERSION)" ] || [ "$$CURRENT_INIT_VERSION" != "$(VERSION)" ]; then \
 		echo "❌ ERROR: Version mismatch after commits!"; \
 		echo "   pyproject.toml has: $$CURRENT_VERSION"; \
+		echo "   pywiim/__init__.py has: $$CURRENT_INIT_VERSION"; \
 		echo "   Release version: $(VERSION)"; \
 		echo "   This will cause PyPI publish to fail!"; \
 		exit 1; \
 	fi
-	@echo "✅ Version verified: pyproject.toml = $(VERSION)"
+	@echo "✅ Version verified: pyproject.toml and pywiim/__init__.py = $(VERSION)"
 	@echo ""
 	@echo "📋 Step 4: Pushing commits..."
 	@git push origin main

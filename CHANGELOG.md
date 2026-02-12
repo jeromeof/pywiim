@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.80] - 2026-02-12
+
+### Fixed
+- **`timeSync` non-JSON/empty response handling** - Added `timeSync` to the non-JSON/empty-response success handling path so devices returning plain text or empty bodies no longer raise `WiiMResponseError` during `sync_time()`.
+- **Version string drift in package runtime** - Updated `pywiim.__version__` to match the current release line and added release-time version synchronization between `pyproject.toml` and `pywiim/__init__.py` to prevent future mismatches.
+
 ## [2.1.79] - 2026-02-12
 
 ### Added

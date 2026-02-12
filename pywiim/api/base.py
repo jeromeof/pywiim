@@ -562,6 +562,7 @@ class BaseWiiMClient:
                                 or "setloopmode" in endpoint_lower
                                 or "switchmode" in endpoint_lower
                                 or "setalarmclock" in endpoint_lower
+                                or "timesync" in endpoint_lower
                             ):
                                 _LOGGER.debug("Command sent successfully (empty response expected): %s", endpoint)
                                 return {"raw": "OK"}
@@ -583,6 +584,7 @@ class BaseWiiMClient:
                                 or "setloopmode" in endpoint_lower
                                 or "switchmode" in endpoint_lower
                                 or "setalarmclock" in endpoint_lower
+                                or "timesync" in endpoint_lower
                             ):
                                 _LOGGER.debug("Command sent successfully (non-JSON response): %s", endpoint)
                                 return {"raw": "OK"}
