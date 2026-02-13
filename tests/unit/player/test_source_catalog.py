@@ -107,3 +107,20 @@ class TestSourceCatalog:
         assert virtual["supports_seek"] is False
         assert virtual["supports_next_track"] is False
         assert virtual["supports_shuffle"] is False
+
+    @pytest.mark.asyncio
+    async def test_source_catalog_respects_capability_non_selectable_sources(self, mock_client):
+        """Catalog selectability follows capability overrides for known quirks."""
+        from pywiim.player import Player
+
+        mock_client.capabilities["non_selectable_source_ids"] = ["line_in"]
+        player = Player(mock_client)
+        player._device_info = DeviceInfo(uuid="test", input_list=["wifi", "line_in"])
+        player._status_model = PlayerStatus(source="wifi", play_state="play")
+
+        catalog = player.source_catalog
+        line_in = _get_entry(catalog, "line_in")
+        network = _get_entry(catalog, "network")
+
+        assert line_in["selectable"] is False
+        assert network["selectable"] is True

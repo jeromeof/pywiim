@@ -202,6 +202,7 @@ class TestDeviceCapabilitiesDetection:
         assert capabilities["preferred_ports"] == [4443, 8443, 443]
         assert capabilities["supports_presets"] is False
         assert capabilities["supports_eq"] is False
+        assert capabilities["non_selectable_source_ids"] == ["line_in", "aux", "rca"]
 
     def test_detect_device_capabilities_audio_pro_w_generation(self):
         """Test detecting capabilities for Audio Pro W-generation."""

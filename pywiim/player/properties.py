@@ -1249,6 +1249,15 @@ class PlayerProperties:
         kind = self._catalog_source_kind(source_id)
         selectable = kind == "hardware_input"
 
+        # Apply capability-driven selectability overrides for known device quirks.
+        blocked_ids: set[str] = set()
+        if self.player.client:
+            raw_blocked = self.player.client.capabilities.get("non_selectable_source_ids", [])
+            if isinstance(raw_blocked, list):
+                blocked_ids = {str(item).lower() for item in raw_blocked}
+        if source_id.lower() in blocked_ids:
+            selectable = False
+
         # Keep unknown/virtual source capabilities conservative in the catalog.
         capabilities = get_source_capabilities(source_id) if kind != "virtual" else SourceCapability.NONE
 

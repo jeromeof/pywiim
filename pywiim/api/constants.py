@@ -136,6 +136,7 @@ MODE_MAP: dict[str, str] = {
     "47": "line_in_2",
     "49": "hdmi",
     "51": "usb",
+    "60": "line_in",
     "99": "follower",
 }
 

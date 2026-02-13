@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from typing import TYPE_CHECKING, Any
+
+from ..exceptions import WiiMError
 
 if TYPE_CHECKING:
     from . import Player
@@ -29,17 +33,28 @@ class AudioConfiguration:
             source: Source to switch to. Accepts various formats (e.g., "Line In", "Line-in", "line_in", "linein")
                    and normalizes to API format (lowercase with hyphens for multi-word sources).
         """
-        import time
-
         # Normalize source name to API format (lowercase with hyphens for multi-word)
         # Handles variations: "Line In", "Line-in", "line_in", "linein" → "line-in"
         normalized_source = self._normalize_source_for_api(source)
+        source_id = self._source_id_for_capabilities(source)
+
+        # Capability-driven blocklist for device-specific switchmode quirks.
+        blocked_ids = self._get_non_selectable_source_ids()
+        if source_id in blocked_ids:
+            raise ValueError(
+                f"Source '{source}' is not directly selectable on this device " f"(blocked source id: {source_id})"
+            )
 
         # Call API (raises on failure)
         await self.player.client.set_source(normalized_source)
 
+        # Verify switch if device reports source promptly.
+        # Some firmwares return "OK" for switchmode but do nothing.
+        if not await self._verify_source_switch(normalized_source):
+            raise WiiMError(f"Device acknowledged source switch to '{source}' but did not change source state.")
+
         # Update cached state immediately (optimistic)
-        # If API returns success, we trust the device changed
+        # Command verified/sent, so use normalized source for immediate UI response.
         if self.player._status_model:
             self.player._status_model.source = normalized_source
 
@@ -171,6 +186,59 @@ class AudioConfiguration:
 
         # For unknown sources, return lowercase with hyphens (safer default for API)
         return normalized
+
+    def _get_non_selectable_source_ids(self) -> set[str]:
+        """Get capability-driven non-selectable source IDs."""
+        raw_blocked = self.player.client.capabilities.get("non_selectable_source_ids", [])
+        if not isinstance(raw_blocked, list):
+            return set()
+        return {str(item).strip().lower() for item in raw_blocked if str(item).strip()}
+
+    def _source_id_for_capabilities(self, source: str) -> str:
+        """Convert user source string to canonical source ID for capability checks."""
+        source_lower = source.strip().lower()
+        normalized_source = self._normalize_source_for_api(source)
+        normalized_lower = normalized_source.strip().lower()
+
+        if source_lower in ("network", "wifi", "wi-fi", "ethernet") or normalized_lower == "wifi":
+            return "network"
+        if normalized_lower in ("line-in", "line_in", "linein"):
+            return "line_in"
+        if normalized_lower in ("line-in-2", "line_in_2", "linein2"):
+            return "line_in_2"
+        if normalized_lower in ("optical", "optical-in", "optical_in"):
+            return "optical"
+        if normalized_lower in ("coaxial", "coax", "coaxial-in", "coaxial_in"):
+            return "coaxial"
+        if normalized_lower in ("rca",):
+            return "rca"
+        if normalized_lower in ("aux", "aux-in", "aux_in"):
+            return "aux"
+        return normalized_lower.replace("-", "_")
+
+    async def _verify_source_switch(self, expected_source: str) -> bool:
+        """Verify switchmode by checking fresh status for source change.
+
+        Returns:
+            True when verified or inconclusive; False only on confirmed no-op.
+        """
+        expected = self._source_id_for_capabilities(expected_source)
+        # Short retries keep this fast while catching silent no-op responses.
+        for _ in range(3):
+            await asyncio.sleep(0.3)
+            try:
+                status = await self.player.client.get_player_status_model()
+            except Exception as err:
+                _LOGGER.debug("Source switch verification skipped (status fetch failed): %s", err)
+                return True
+            observed_raw = status.source if status else None
+            if not observed_raw:
+                # Inconclusive: keep optimistic behavior.
+                return True
+            observed = self._source_id_for_capabilities(observed_raw)
+            if observed == expected:
+                return True
+        return False
 
     async def set_audio_output_mode(self, mode: str | int) -> None:
         """Set audio output mode by friendly name or integer.

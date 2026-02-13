@@ -385,6 +385,9 @@ def detect_device_capabilities(device_info: DeviceInfo) -> dict[str, Any]:
         "response_timeout": 5.0,
         "retry_count": 3,
         "protocol_priority": ["https", "http"],  # Default: try HTTPS first
+        # Canonical source IDs from Player.source_catalog that should not be treated
+        # as directly selectable for this device (device/firmware-specific quirks).
+        "non_selectable_source_ids": [],
     }
 
     if capabilities["is_wiim_device"]:
@@ -406,6 +409,7 @@ def detect_device_capabilities(device_info: DeviceInfo) -> dict[str, Any]:
         vendor = capabilities.get("vendor", "")
         if vendor == "audio_pro":
             generation = capabilities["audio_pro_generation"]
+            model_lower = (device_info.model or "").lower()
             if generation == "mkii":
                 capabilities["response_timeout"] = 6.0
                 capabilities["retry_count"] = 3
@@ -421,6 +425,13 @@ def detect_device_capabilities(device_info: DeviceInfo) -> dict[str, Any]:
                 # "unknown command"/404 gracefully.
                 capabilities["supports_metadata"] = True
                 capabilities["status_endpoint"] = "/httpapi.asp?command=getStatusEx"
+
+                # Audio Pro A10 MkII WiiM Edition firmware quirk:
+                # AUX/Line In can be active (mode 60) but switchmode source
+                # selection is not implemented and returns silent no-op.
+                # Keep source visible, but don't expose as directly selectable.
+                if "a10" in model_lower:
+                    capabilities["non_selectable_source_ids"] = ["line_in", "aux", "rca"]
             elif generation == "w_generation":
                 capabilities["response_timeout"] = 4.0
                 capabilities["retry_count"] = 2

@@ -1767,6 +1767,42 @@ class TestPlayerSourceConflicts:
         assert len(callback_called) == 1
 
     @pytest.mark.asyncio
+    async def test_set_source_blocked_by_capabilities(self, mock_client):
+        """Test capability-driven non-selectable source block."""
+        from pywiim.models import DeviceInfo, PlayerStatus
+        from pywiim.player import Player
+
+        mock_client.capabilities["non_selectable_source_ids"] = ["line_in"]
+        mock_client.set_source = AsyncMock()
+        mock_client.get_player_status_model = AsyncMock(return_value=PlayerStatus(play_state="play", source="wifi"))
+        mock_client.get_device_info_model = AsyncMock(return_value=DeviceInfo(uuid="test"))
+
+        player = Player(mock_client)
+        player._status_model = PlayerStatus(play_state="play", source="wifi")
+
+        with pytest.raises(ValueError, match="not directly selectable"):
+            await player.set_source("Line In")
+
+        mock_client.set_source.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_set_source_raises_on_confirmed_noop_switch(self, mock_client):
+        """Test silent switchmode no-op detection raises WiiMError."""
+        from pywiim.models import DeviceInfo, PlayerStatus
+        from pywiim.player import Player
+
+        mock_client.set_source = AsyncMock()
+        # Device keeps reporting wifi after switch command, confirming no-op.
+        mock_client.get_player_status_model = AsyncMock(return_value=PlayerStatus(play_state="play", source="wifi"))
+        mock_client.get_device_info_model = AsyncMock(return_value=DeviceInfo(uuid="test"))
+
+        player = Player(mock_client)
+        player._status_model = PlayerStatus(play_state="play", source="wifi")
+
+        with pytest.raises(WiiMError, match="did not change source state"):
+            await player.set_source("bluetooth")
+
+    @pytest.mark.asyncio
     async def test_set_audio_output_mode(self, mock_client):
         """Test set audio output mode command."""
         from pywiim.models import DeviceInfo, PlayerStatus

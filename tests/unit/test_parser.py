@@ -245,6 +245,11 @@ class TestParsePlayerStatus:
         parsed3, _ = parse_player_status(raw3)
         assert parsed3["source"] == "bluetooth"
 
+        # Mode 60 = line_in (Audio Pro A10 MkII WiiM Edition)
+        raw_mode60 = {"mode": "60"}
+        parsed_mode60, _ = parse_player_status(raw_mode60)
+        assert parsed_mode60["source"] == "line_in"
+
         # Mode 99 = multiroom (special handling)
         raw4 = {"mode": "99"}
         parsed4, _ = parse_player_status(raw4)

@@ -469,7 +469,7 @@ class StateManager:
 
         # Preserve optimistic source if it was recently set
         # Device status endpoint may return stale source data after a switch
-        source_preservation_window = 30.0  # seconds to preserve optimistic source
+        source_preservation_window = 5.0  # seconds to preserve optimistic source
         if (
             status
             and self.player._status_model
