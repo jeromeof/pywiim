@@ -72,6 +72,9 @@ The diagnostic report includes:
 - Device type (WiiM vs Legacy)
 - Generation (for Audio Pro devices)
 - Supported features list
+- UPnP `description.xml` enrichment (when available):
+  - `upnp_friendly_name`, `upnp_model_name`, `upnp_udn`
+  - Advertised service flags: `upnp_has_playqueue`, `upnp_has_qplay`, `upnp_has_content_directory`
 - Protocol preferences
 - Timeout settings
 

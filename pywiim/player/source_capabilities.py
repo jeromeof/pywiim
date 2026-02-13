@@ -19,7 +19,9 @@ __all__ = [
     "SourceCapability",
     "SOURCE_CAPABILITIES",
     "DEFAULT_CAPABILITIES",
+    "NATIVE_NOTIFICATION_PROMPT_SOURCES",
     "get_source_capabilities",
+    "source_supports_native_notification_prompt",
 ]
 
 
@@ -113,6 +115,25 @@ SOURCE_CAPABILITIES: dict[str, SourceCapability] = {
 # either work or fail gracefully on the device
 DEFAULT_CAPABILITIES = SourceCapability.FULL_CONTROL
 
+# Sources where firmware-native playPromptUrl notifications are expected to work.
+# These sources are device-controlled playback contexts where LinkPlay can duck
+# and restore audio around the prompt.
+NATIVE_NOTIFICATION_PROMPT_SOURCES: set[str] = {
+    "wifi",
+    "network",
+    "http",
+    "usb",
+    "udisk",
+    "tunein",
+    "iheartradio",
+    "radio",
+    "internetradio",
+    "webradio",
+    "custompushurl",
+    "preset",
+    "playlist",
+}
+
 
 def get_source_capabilities(source: str | None) -> SourceCapability:
     """Get capabilities for a given source.
@@ -139,3 +160,18 @@ def get_source_capabilities(source: str | None) -> SourceCapability:
         return SourceCapability.NONE
 
     return SOURCE_CAPABILITIES.get(source.lower(), DEFAULT_CAPABILITIES)
+
+
+def source_supports_native_notification_prompt(source: str | None) -> bool:
+    """Return whether source supports native playPromptUrl behavior.
+
+    Args:
+        source: Current source name from player status.
+
+    Returns:
+        True when source is known to support firmware-native prompt playback.
+    """
+    if not source:
+        return False
+
+    return source.lower() in NATIVE_NOTIFICATION_PROMPT_SOURCES

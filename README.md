@@ -143,6 +143,7 @@ Comprehensive diagnostic tool for troubleshooting device issues and gathering in
 
 **What it does:**
 - Gathers complete device information (model, firmware, MAC, UUID, capabilities)
+- Includes UPnP `description.xml` capability enrichment (advertised services like PlayQueue/QPlay)
 - Tests all API endpoints to verify functionality
 - Tests feature support (presets, EQ, multiroom, Bluetooth, etc.)
 - Generates detailed JSON reports for sharing with developers
@@ -445,6 +446,28 @@ asyncio.run(main())
 
 See [API Reference](docs/integration/API_REFERENCE.md) for complete Player API documentation.
 
+
+## Notification Playback Limitations
+
+`play_notification()` uses a source-aware strategy so notifications are audible across more real-world scenarios:
+
+- Native prompt path (`playPromptUrl`) on device-controlled sources where firmware duck/resume is expected.
+- Fallback path (`play_url`) on unsupported or unknown sources to ensure audio is heard.
+- Returned result object reports what happened:
+  - `method_used`: `"prompt"` or `"play_url"`
+  - `source_before`: source observed before decision
+  - `likely_interrupted`: `True` for fallback path
+  - `reason`: optional fallback reason
+
+### Why this is needed
+
+Some firmware/source combinations return `OK` for `playPromptUrl` but produce no audible prompt. In those cases, pywiim chooses fallback playback to prioritize audible notifications.
+
+### Practical limitations
+
+- Fallback playback is interruptive by design and may stop/replace the previous source session.
+- Unknown/unmapped sources default to fallback for reliability.
+- Native prompt behavior remains firmware-dependent even on documented-compatible sources.
 
 ## Documentation
 

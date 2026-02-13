@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Source-aware `play_notification()` fallback with structured result** - `player.play_notification(url)` now chooses firmware-native `playPromptUrl` only on known native prompt sources and falls back to `play_url` on unsupported/unknown sources (including Spotify and AirPlay behavior validated on real devices), returning `NotificationPlaybackResult` with `method_used`, `source_before`, `likely_interrupted`, and optional `reason`.
+- **UPnP description capability enrichment surfaced in diagnostics** - first-time capability detection now augments capabilities with best-effort UPnP `description.xml` metadata (`upnp_*` keys), and CLI diagnostics/verification output now includes these fields when available.
+
+### Documentation
+- Updated `API_REFERENCE.md` notification section with source-handling policy, fallback semantics, and `NotificationPlaybackResult` contract details.
+- Added a README section documenting notification limitations, fallback behavior, and interruption expectations for unsupported sources.
+- Updated diagnostics docs/API reference to document the new UPnP `description.xml` capability fields and where they appear.
+
 ## [2.1.80] - 2026-02-12
 
 ### Fixed

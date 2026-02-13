@@ -2,9 +2,11 @@
 
 from pywiim.player.source_capabilities import (
     DEFAULT_CAPABILITIES,
+    NATIVE_NOTIFICATION_PROMPT_SOURCES,
     SOURCE_CAPABILITIES,
     SourceCapability,
     get_source_capabilities,
+    source_supports_native_notification_prompt,
 )
 
 
@@ -132,3 +134,23 @@ class TestGetSourceCapabilities:
         """Test line_in has no capabilities (passthrough)."""
         caps = get_source_capabilities("line_in")
         assert caps == SourceCapability.NONE
+
+
+class TestNotificationPromptSupport:
+    """Test native playPromptUrl source support helper."""
+
+    def test_native_notification_sources_supported(self):
+        """Known native prompt sources return True."""
+        for source in NATIVE_NOTIFICATION_PROMPT_SOURCES:
+            assert source_supports_native_notification_prompt(source) is True
+            assert source_supports_native_notification_prompt(source.upper()) is True
+
+    def test_non_native_notification_sources_not_supported(self):
+        """Known non-native and unknown sources return False."""
+        for source in ("spotify", "airplay", "bluetooth", "line_in", "dlna", "unknown_service"):
+            assert source_supports_native_notification_prompt(source) is False
+
+    def test_none_or_empty_not_supported(self):
+        """None/empty source returns False."""
+        assert source_supports_native_notification_prompt(None) is False
+        assert source_supports_native_notification_prompt("") is False

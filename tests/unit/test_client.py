@@ -145,3 +145,107 @@ class TestWiiMClient:
 
             assert result == mock_status
             assert mock_client._detect_capabilities.called
+
+    @pytest.mark.asyncio
+    async def test_detect_capabilities_merges_upnp_description_data(self, mock_client):
+        """Test capability detection merges UPnP description.xml enrichment."""
+        from pywiim.api.base import BaseWiiMClient
+        from pywiim.models import DeviceInfo
+
+        mock_client._capabilities_detected = False
+        mock_client._capabilities = {}
+
+        mock_device_info = DeviceInfo(
+            uuid="test-uuid",
+            model="WiiM Pro",
+            firmware="5.0.1",
+        )
+
+        with patch.object(BaseWiiMClient, "get_device_info_model", new_callable=AsyncMock) as mock_base:
+            mock_base.return_value = mock_device_info
+            mock_client._capability_detector.detect_capabilities = AsyncMock(
+                return_value={"vendor": "wiim", "is_wiim_device": True}
+            )
+            mock_client._safe_collect_upnp_description_capabilities = AsyncMock(
+                return_value={
+                    "upnp_description_available": True,
+                    "upnp_has_playqueue": True,
+                    "upnp_has_qplay": True,
+                    "upnp_service_types": [
+                        "urn:schemas-upnp-org:service:AVTransport:1",
+                        "urn:schemas-wiimu-com:service:PlayQueue:1",
+                    ],
+                }
+            )
+
+            capabilities = await mock_client._detect_capabilities()
+
+        assert capabilities["vendor"] == "wiim"
+        assert capabilities["upnp_description_available"] is True
+        assert capabilities["upnp_has_playqueue"] is True
+        assert capabilities["upnp_has_qplay"] is True
+        assert "urn:schemas-wiimu-com:service:PlayQueue:1" in capabilities["upnp_service_types"]
+
+    @pytest.mark.asyncio
+    async def test_detect_capabilities_ignores_upnp_enrichment_errors(self, mock_client):
+        """Test capability detection continues when UPnP enrichment fails."""
+        from pywiim.api.base import BaseWiiMClient
+        from pywiim.models import DeviceInfo
+
+        mock_client._capabilities_detected = False
+        mock_client._capabilities = {}
+
+        mock_device_info = DeviceInfo(
+            uuid="test-uuid",
+            model="WiiM Pro",
+            firmware="5.0.1",
+        )
+
+        with patch.object(BaseWiiMClient, "get_device_info_model", new_callable=AsyncMock) as mock_base:
+            mock_base.return_value = mock_device_info
+            mock_client._capability_detector.detect_capabilities = AsyncMock(
+                return_value={"vendor": "wiim", "is_wiim_device": True}
+            )
+            mock_client._safe_collect_upnp_description_capabilities = AsyncMock(return_value={})
+
+            capabilities = await mock_client._detect_capabilities()
+
+        assert capabilities["vendor"] == "wiim"
+        assert capabilities["is_wiim_device"] is True
+        assert "upnp_description_available" not in capabilities
+
+    def test_parse_upnp_description_xml_extracts_service_flags(self):
+        """Test UPnP description parser extracts service flags and metadata."""
+        xml_text = """
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+  <device>
+    <friendlyName>Master Bedroom</friendlyName>
+    <modelName>WiiM Pro Receiver</modelName>
+    <UDN>uuid:1234-5678</UDN>
+    <serviceList>
+      <service>
+        <serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>
+      </service>
+      <service>
+        <serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType>
+      </service>
+      <service>
+        <serviceType>urn:schemas-wiimu-com:service:PlayQueue:1</serviceType>
+      </service>
+      <service>
+        <serviceType>urn:schemas-tencent-com:service:QPlay:1</serviceType>
+      </service>
+    </serviceList>
+  </device>
+</root>
+""".strip()
+
+        parsed = WiiMClient._parse_upnp_description_xml(xml_text)
+
+        assert parsed["upnp_description_available"] is True
+        assert parsed["upnp_has_playqueue"] is True
+        assert parsed["upnp_has_qplay"] is True
+        assert parsed["upnp_has_content_directory"] is True
+        assert parsed["upnp_friendly_name"] == "Master Bedroom"
+        assert parsed["upnp_model_name"] == "WiiM Pro Receiver"
+        assert parsed["upnp_udn"] == "uuid:1234-5678"

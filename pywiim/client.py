@@ -6,8 +6,10 @@ into a single, unified interface for communicating with WiiM and LinkPlay device
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import ssl
+import xml.etree.ElementTree as ET
 from typing import Any
 
 from aiohttp import ClientSession
@@ -175,6 +177,13 @@ class WiiMClient(
                 vendor = detect_vendor(device_info)
                 capabilities["vendor"] = normalize_vendor(vendor)
 
+            # Best-effort enrichment from UPnP description.xml.
+            # This augments capabilities with advertised UPnP services and metadata.
+            # It never blocks or fails capability detection if unavailable.
+            upnp_caps = await self._safe_collect_upnp_description_capabilities()
+            if upnp_caps:
+                capabilities.update(upnp_caps)
+
             # Update client capabilities
             self._capabilities.update(capabilities)
 
@@ -213,6 +222,9 @@ class WiiMClient(
                     capabilities["vendor"] = normalize_vendor(vendor)
                 else:
                     capabilities["vendor"] = normalize_vendor(capabilities["vendor"])
+                upnp_caps = await self._safe_collect_upnp_description_capabilities()
+                if upnp_caps:
+                    capabilities.update(upnp_caps)
                 self._capabilities.update(capabilities)
                 self._capabilities_detected = True
                 return self._capabilities
@@ -220,6 +232,106 @@ class WiiMClient(
                 # If even static detection fails, use empty capabilities
                 self._capabilities_detected = True
                 return self._capabilities
+
+    async def _safe_collect_upnp_description_capabilities(self) -> dict[str, Any]:
+        """Collect UPnP description.xml metadata without raising on errors."""
+        try:
+            return await self._collect_upnp_description_capabilities()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("UPnP description enrichment skipped for %s: %s", self.host, err)
+            return {}
+
+    async def _collect_upnp_description_capabilities(self) -> dict[str, Any]:
+        """Fetch and parse UPnP description.xml to augment capabilities."""
+        xml_text = await self._fetch_upnp_description_xml()
+        if not xml_text:
+            return {}
+        parsed = self._parse_upnp_description_xml(xml_text)
+        if parsed:
+            _LOGGER.debug(
+                "Collected UPnP description capabilities for %s: services=%d",
+                self.host,
+                len(parsed.get("upnp_service_types", [])),
+            )
+        return parsed
+
+    async def _fetch_upnp_description_xml(self) -> str | None:
+        """Best-effort fetch of UPnP description.xml with short timeout."""
+        host_url = self._host_url
+        preferred_scheme = "https" if self.is_https else "http"
+        schemes = [preferred_scheme, "https" if preferred_scheme == "http" else "http"]
+        urls = [f"{scheme}://{host_url}:49152/description.xml" for scheme in schemes]
+
+        for url in urls:
+            try:
+                request_kwargs: dict[str, Any] = {}
+                if url.startswith("https://"):
+                    request_kwargs["ssl"] = await self._get_ssl_context()
+                else:
+                    request_kwargs["ssl"] = False
+
+                async with asyncio.timeout(2):
+                    resp = await self._session_request("GET", url, **request_kwargs)
+                    async with resp:
+                        if resp.status != 200:
+                            continue
+                        text = await resp.text()
+                        if text and "<root" in text and "device" in text:
+                            return text
+            except Exception:  # noqa: BLE001
+                continue
+
+        return None
+
+    @staticmethod
+    def _parse_upnp_description_xml(xml_text: str) -> dict[str, Any]:
+        """Parse selected fields and service flags from UPnP description.xml."""
+        try:
+            root = ET.fromstring(xml_text)
+        except ET.ParseError:
+            return {}
+
+        device = root.find(".//{*}device")
+        if device is None:
+            return {}
+
+        def get_text(tag: str) -> str | None:
+            el = device.find(f"{{*}}{tag}")
+            if el is None or el.text is None:
+                return None
+            value = el.text.strip()
+            return value or None
+
+        service_types: list[str] = []
+        for service in device.findall(".//{*}service"):
+            service_type = service.find("{*}serviceType")
+            if service_type is not None and service_type.text:
+                value = service_type.text.strip()
+                if value:
+                    service_types.append(value)
+
+        unique_service_types = sorted(set(service_types))
+        service_set = set(unique_service_types)
+
+        capabilities: dict[str, Any] = {
+            "upnp_description_available": True,
+            "upnp_service_types": unique_service_types,
+            "upnp_has_playqueue": "urn:schemas-wiimu-com:service:PlayQueue:1" in service_set,
+            "upnp_has_qplay": "urn:schemas-tencent-com:service:QPlay:1" in service_set,
+            "upnp_has_content_directory": "urn:schemas-upnp-org:service:ContentDirectory:1" in service_set,
+        }
+
+        friendly_name = get_text("friendlyName")
+        model_name = get_text("modelName")
+        udn = get_text("UDN")
+        if friendly_name:
+            capabilities["upnp_friendly_name"] = friendly_name
+        if model_name:
+            capabilities["upnp_model_name"] = model_name
+        if udn:
+            capabilities["upnp_udn"] = udn
+
+        return capabilities
 
     async def get_device_info_model(self) -> DeviceInfo:
         """Get device information as a Pydantic model.

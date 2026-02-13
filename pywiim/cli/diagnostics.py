@@ -118,6 +118,25 @@ class DeviceDiagnostics:
             if features:
                 print(f"   ✓ Supported features: {', '.join(features)}")
 
+            # Show UPnP description.xml enrichment if available
+            if self.client.capabilities.get("upnp_description_available"):
+                upnp_flags = []
+                if self.client.capabilities.get("upnp_has_playqueue"):
+                    upnp_flags.append("PlayQueue")
+                if self.client.capabilities.get("upnp_has_qplay"):
+                    upnp_flags.append("QPlay")
+                if self.client.capabilities.get("upnp_has_content_directory"):
+                    upnp_flags.append("ContentDirectory")
+
+                upnp_model = self.client.capabilities.get("upnp_model_name")
+                upnp_name = self.client.capabilities.get("upnp_friendly_name")
+                if upnp_model:
+                    print(f"   ✓ UPnP model: {upnp_model}")
+                if upnp_name:
+                    print(f"   ✓ UPnP friendly name: {upnp_name}")
+                if upnp_flags:
+                    print(f"   ✓ UPnP advertised services: {', '.join(upnp_flags)}")
+
         except Exception as err:
             error_msg = f"Failed to detect capabilities: {err}"
             self.report["errors"].append(error_msg)

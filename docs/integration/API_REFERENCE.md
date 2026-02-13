@@ -712,7 +712,7 @@ await player.set_shuffle(enabled: bool)  # Preserves repeat state
 await player.play_url(url: str, enqueue: str = "replace")  # Play URL directly
 await player.play_playlist(playlist_url: str)  # Play M3U playlist
 await player.play_preset(preset: int)  # Play preset by number (1-20)
-await player.play_notification(url: str)  # Play notification (auto volume handling)
+result = await player.play_notification(url: str)  # Returns NotificationPlaybackResult
 
 # EQ control
 await player.set_eq_preset(preset: str)
@@ -914,25 +914,42 @@ asyncio.run(monitor_playback())
 
 ### Notification Playback
 
-The `play_notification()` method uses the device's built-in `playPromptUrl` command for playing notification sounds (TTS, doorbell, alerts, etc.):
+The `play_notification()` method is source-aware:
+- Uses firmware-native `playPromptUrl` when current source supports prompt ducking.
+- Falls back to `play_url` when source is unsupported or unknown, so audio is still heard.
 
 ```python
-await player.play_notification("https://example.com/doorbell.mp3")
+result = await player.play_notification("https://example.com/doorbell.mp3")
+print(result.method_used)         # "prompt" or "play_url"
+print(result.likely_interrupted)  # True when fallback path was used
 ```
 
-#### How It Works
+#### Return Value
 
-The device firmware handles everything automatically:
-1. **Lowers current playback volume** (if something is playing)
-2. **Plays the notification audio**
-3. **Restores original volume** after completion
+`play_notification()` returns `NotificationPlaybackResult`:
+- `method_used`: `"prompt"` or `"play_url"`
+- `source_before`: Source observed before playback decision (lowercase) or `None`
+- `likely_interrupted`: `True` when fallback playback was used
+- `reason`: Optional fallback reason (for example `unsupported_source`)
 
-No timing logic, state saving, or manual restoration is needed - the device handles it internally.
+#### Behavior Notes
+
+- On native prompt sources, firmware handles duck -> prompt -> restore internally.
+- On fallback sources, the device plays the URL as normal media (`play_url`), which may stop/replace the previous source session.
+- Unknown sources default to fallback (`play_url`) to prioritize audible notifications.
+
+#### Source Handling Policy
+
+- Native prompt path (`method_used="prompt"`): `wifi`, `network`, `http`, `usb`, `udisk`, `tunein`, `iheartradio`, `radio`, `internetradio`, `webradio`, `custompushurl`, `preset`, `playlist`
+- Fallback path (`method_used="play_url"`): external/pass-through sources such as `spotify`, `airplay`, `dlna`, `bluetooth`, `line_in`, `optical`, and unknown/unmapped sources
+- Real-device validation: Spotify and AirPlay on modern firmware may return `OK` for `playPromptUrl` while producing no audible prompt; fallback path addresses this by forcing audible playback
 
 #### Limitations
 
-- **Only works in NETWORK or USB playback mode** - If the device is in a different mode (e.g., Line In, Optical), the notification may not play
-- **Requires firmware 4.6.415145+** - Older firmware versions may not support this command
+- Native prompt behavior remains firmware-dependent.
+- Fallback playback is interruptive by design on unsupported sources.
+- Requires firmware 4.6.415145+ for prompt command support.
+- Device API uses HTTPS on many newer devices; command URLs are still passed as encoded media URLs.
 
 #### Use Cases
 
@@ -941,7 +958,7 @@ No timing logic, state saving, or manual restoration is needed - the device hand
 - Alert notifications
 - Timer/alarm sounds
 
-This is the recommended approach for integrations that need to play announcements without interrupting the current audio source.
+This is the recommended approach for integrations that need audible announcements and explicit visibility into whether fallback interruption likely occurred.
 
 ### Firmware Updates
 
@@ -1379,6 +1396,12 @@ async def main():
     
     if player.shuffle_supported:
         print("Shuffle is supported for current source")
+
+    # Access low-level capability metadata (advanced/integration use)
+    caps = player.client.capabilities
+    if caps.get("upnp_description_available"):
+        print(f"UPnP model: {caps.get('upnp_model_name')}")
+        print(f"UPnP has PlayQueue: {caps.get('upnp_has_playqueue')}")
     
     await player.client.close()
 ```

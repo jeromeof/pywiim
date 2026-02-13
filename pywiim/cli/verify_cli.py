@@ -1079,6 +1079,7 @@ class FeatureTester:
                     k: v
                     for k, v in self.client.capabilities.items()
                     if k.startswith("supports_")
+                    or k.startswith("upnp_")
                     or k in ["vendor", "device_type", "firmware_version", "audio_pro_generation"]
                 }
                 self._print_data("Capabilities", caps_to_show, show_always=True)

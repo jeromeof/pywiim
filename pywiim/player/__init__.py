@@ -17,7 +17,7 @@ from .bluetooth import BluetoothControl
 from .coverart import CoverArtManager
 from .diagnostics import DiagnosticsCollector
 from .groupops import GroupOperations
-from .media import MediaControl
+from .media import MediaControl, NotificationPlaybackResult
 from .playback import PlaybackControl
 from .properties import PlayerProperties
 from .statemgr import StateManager
@@ -204,20 +204,20 @@ class Player(PlayerBase):
         """Play a playlist (M3U) URL."""
         await self._media_ctrl.play_playlist(playlist_url)
 
-    async def play_notification(self, url: str) -> None:
+    async def play_notification(self, url: str) -> NotificationPlaybackResult:
         """Play a notification sound from URL.
 
-        Uses the device's built-in playPromptUrl command which automatically
-        lowers the current playback volume, plays the notification, and
-        restores volume afterwards. No timing logic or state management needed.
-
-        Note: Only works in NETWORK or USB playback mode.
-        Requires firmware 4.6.415145 or newer.
+        Uses native playPromptUrl on supported sources and automatically
+        falls back to play_url on unsupported/unknown sources so notification
+        audio is still heard.
 
         Args:
             url: URL to notification audio file.
+
+        Returns:
+            NotificationPlaybackResult with method_used and interruption hint.
         """
-        await self._media_ctrl.play_notification(url)
+        return await self._media_ctrl.play_notification(url)
 
     async def add_to_queue(self, url: str, metadata: str = "") -> None:
         """Add URL to end of queue (requires UPnP client)."""
@@ -1296,4 +1296,4 @@ class Player(PlayerBase):
 
 
 # Export Player class
-__all__ = ["Player"]
+__all__ = ["Player", "NotificationPlaybackResult"]

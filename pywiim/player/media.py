@@ -3,16 +3,28 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from html import unescape
 from typing import TYPE_CHECKING, Any, Literal
 from xml.etree import ElementTree as ET
 
 from ..exceptions import WiiMError
+from .source_capabilities import SOURCE_CAPABILITIES, source_supports_native_notification_prompt
 
 if TYPE_CHECKING:
     from . import Player
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class NotificationPlaybackResult:
+    """Outcome details for play_notification source-aware execution."""
+
+    method_used: Literal["prompt", "play_url"]
+    source_before: str | None
+    likely_interrupted: bool
+    reason: str | None = None
 
 
 class MediaControl:
@@ -315,24 +327,53 @@ class MediaControl:
         if self.player._on_state_changed:
             self.player._on_state_changed()
 
-    async def play_notification(self, url: str) -> None:
+    async def play_notification(self, url: str) -> NotificationPlaybackResult:
         """Play a notification sound from URL.
 
-        Uses the device's built-in playPromptUrl command which automatically
-        lowers the current playback volume, plays the notification, and
-        restores volume afterwards.
+        For sources with native prompt support, this uses playPromptUrl so the
+        firmware can duck and restore audio. For unsupported (or unknown)
+        sources, it falls back to play_url so the notification remains audible.
 
-        Note: Only works in NETWORK or USB playback mode.
+        Note: fallback playback may interrupt the current source.
 
         Args:
             url: URL to notification audio file.
+
+        Returns:
+            NotificationPlaybackResult describing which playback path was used.
         """
-        # Call API (raises on failure)
-        await self.player.client.play_notification(url)
+        source_before: str | None = None
+        if self.player._status_model and self.player._status_model.source:
+            source_before = self.player._status_model.source.lower()
+
+        if source_supports_native_notification_prompt(source_before):
+            await self.player.client.play_notification(url)
+            result = NotificationPlaybackResult(
+                method_used="prompt",
+                source_before=source_before,
+                likely_interrupted=False,
+            )
+        else:
+            await self.player.client.play_url(url)
+            # Mirror play_url behavior: keep last URL for media_content_id fallback.
+            self.player._last_played_url = url
+            reason = "unsupported_source"
+            if source_before is None:
+                reason = "unknown_source_default_fallback"
+            elif source_before not in SOURCE_CAPABILITIES:
+                reason = "unknown_source_default_fallback"
+            result = NotificationPlaybackResult(
+                method_used="play_url",
+                source_before=source_before,
+                likely_interrupted=True,
+                reason=reason,
+            )
 
         # Call callback to notify state change
         if self.player._on_state_changed:
             self.player._on_state_changed()
+
+        return result
 
     async def add_to_queue(self, url: str, metadata: str = "") -> None:
         """Add URL to end of queue (requires UPnP client).

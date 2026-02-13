@@ -1632,19 +1632,101 @@ class TestPlayerSourceConflicts:
         mock_client.clear_playlist.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_play_notification(self, mock_client):
-        """Test play notification command."""
+    async def test_play_notification_uses_prompt_on_native_source(self, mock_client):
+        """Test play_notification uses native prompt path on supported sources."""
+        from pywiim.models import DeviceInfo, PlayerStatus
+        from pywiim.player import NotificationPlaybackResult, Player
+
+        mock_client.play_notification = AsyncMock()
+        mock_client.play_url = AsyncMock()
+        mock_client.get_player_status_model = AsyncMock(return_value=PlayerStatus(play_state="play"))
+        mock_client.get_device_info_model = AsyncMock(return_value=DeviceInfo(uuid="test"))
+
+        callback_called = []
+        player = Player(mock_client, on_state_changed=lambda: callback_called.append(True))
+        player._status_model = PlayerStatus(play_state="play", source="wifi")
+
+        result = await player.play_notification("http://example.com/notification.mp3")
+
+        assert result == NotificationPlaybackResult(
+            method_used="prompt",
+            source_before="wifi",
+            likely_interrupted=False,
+            reason=None,
+        )
+        mock_client.play_notification.assert_called_once_with("http://example.com/notification.mp3")
+        mock_client.play_url.assert_not_called()
+        assert len(callback_called) == 1
+
+    @pytest.mark.asyncio
+    async def test_play_notification_falls_back_on_spotify(self, mock_client):
+        """Test play_notification falls back to play_url on Spotify source."""
         from pywiim.models import DeviceInfo, PlayerStatus
         from pywiim.player import Player
 
         mock_client.play_notification = AsyncMock()
+        mock_client.play_url = AsyncMock()
         mock_client.get_player_status_model = AsyncMock(return_value=PlayerStatus(play_state="play"))
         mock_client.get_device_info_model = AsyncMock(return_value=DeviceInfo(uuid="test"))
 
         player = Player(mock_client)
-        await player.play_notification("http://example.com/notification.mp3")
+        player._status_model = PlayerStatus(play_state="play", source="spotify")
 
-        mock_client.play_notification.assert_called_once_with("http://example.com/notification.mp3")
+        result = await player.play_notification("http://example.com/notification.mp3")
+
+        assert result.method_used == "play_url"
+        assert result.source_before == "spotify"
+        assert result.likely_interrupted is True
+        assert result.reason == "unsupported_source"
+        mock_client.play_url.assert_called_once_with("http://example.com/notification.mp3")
+        mock_client.play_notification.assert_not_called()
+        assert player._last_played_url == "http://example.com/notification.mp3"
+
+    @pytest.mark.asyncio
+    async def test_play_notification_falls_back_on_unknown_source(self, mock_client):
+        """Test play_notification falls back for unknown sources."""
+        from pywiim.models import DeviceInfo, PlayerStatus
+        from pywiim.player import Player
+
+        mock_client.play_notification = AsyncMock()
+        mock_client.play_url = AsyncMock()
+        mock_client.get_player_status_model = AsyncMock(return_value=PlayerStatus(play_state="play"))
+        mock_client.get_device_info_model = AsyncMock(return_value=DeviceInfo(uuid="test"))
+
+        player = Player(mock_client)
+        player._status_model = PlayerStatus(play_state="play", source="some_new_source")
+
+        result = await player.play_notification("http://example.com/notification.mp3")
+
+        assert result.method_used == "play_url"
+        assert result.source_before == "some_new_source"
+        assert result.likely_interrupted is True
+        assert result.reason == "unknown_source_default_fallback"
+        mock_client.play_url.assert_called_once_with("http://example.com/notification.mp3")
+        mock_client.play_notification.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_play_notification_falls_back_when_source_missing(self, mock_client):
+        """Test play_notification falls back when source is unavailable."""
+        from pywiim.models import DeviceInfo, PlayerStatus
+        from pywiim.player import Player
+
+        mock_client.play_notification = AsyncMock()
+        mock_client.play_url = AsyncMock()
+        mock_client.get_player_status_model = AsyncMock(return_value=PlayerStatus(play_state="play"))
+        mock_client.get_device_info_model = AsyncMock(return_value=DeviceInfo(uuid="test"))
+
+        player = Player(mock_client)
+        player._status_model = PlayerStatus(play_state="play")
+
+        result = await player.play_notification("http://example.com/notification.mp3")
+
+        assert result.method_used == "play_url"
+        assert result.source_before is None
+        assert result.likely_interrupted is True
+        assert result.reason == "unknown_source_default_fallback"
+        mock_client.play_url.assert_called_once_with("http://example.com/notification.mp3")
+        mock_client.play_notification.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_play_preset(self, mock_client):
