@@ -61,7 +61,7 @@ from .group import Group
 from .group_helpers import build_group_state_from_players
 from .models import DeviceInfo, PlayerStatus
 from .normalize import normalize_device_info
-from .player import Player
+from .player import NotificationPlaybackResult, Player
 from .polling import PollingStrategy, TrackChangeDetector, fetch_parallel
 from .profiles import (
     PROFILES,
@@ -72,12 +72,13 @@ from .profiles import (
 from .role import RoleDetectionResult, detect_role
 from .state import GroupStateSynchronizer, StateSynchronizer
 
-__version__ = "2.1.80"
+__version__ = "2.1.81"
 __all__ = [
     # Main client
     "WiiMClient",
     # Player and Group
     "Player",
+    "NotificationPlaybackResult",
     "Group",
     # Exceptions
     "WiiMError",
