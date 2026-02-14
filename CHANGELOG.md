@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.83] - 2026-02-14
+
 ### Fixed
 - **USB Out mode number corrected from 6 to 8** (Issue [mjcumming/wiim#160](https://github.com/mjcumming/wiim/issues/160)) - Real-world testing on a WiiM Ultra confirmed that USB Out is hardware mode 8, not mode 6 as documented in the WiiM API spec. Modes 5-7 all silently revert to mode 4 (headphones) on Ultra. Setting "USB Out" from Home Assistant now sends the correct mode and the device properly switches output.
 - **HDMI Out removed from WiiM Ultra output list** - HDMI on WiiM Ultra is input-only, not output. Removed "HDMI Out" from `available_output_modes` for WiiM Ultra (HDMI Out remains available for WiiM Amp Ultra where it is a valid output).
