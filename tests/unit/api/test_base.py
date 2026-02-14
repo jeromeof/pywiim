@@ -698,6 +698,35 @@ class TestBaseWiiMClientRequest:
             assert result == {"raw": "OK"}
 
     @pytest.mark.asyncio
+    async def test_request_eqoff_unknown_command_graceful(self, mock_aiohttp_session):
+        """Test EQOff command when device returns 'unknown command' (no EQOff support).
+
+        Some devices (e.g. Arylic UP2STREAM) do not support EQOff and return plain
+        text 'unknown command' instead of JSON. Scene restoration with sound_mode
+        'Off' must not fail. See: https://github.com/mjcumming/wiim/issues/116
+        """
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.text = AsyncMock(return_value="unknown command")
+        mock_response.raise_for_status = MagicMock()
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_aiohttp_session.request = AsyncMock(return_value=mock_response)
+        mock_aiohttp_session.closed = False
+
+        client = BaseWiiMClient(host="192.168.1.100", session=mock_aiohttp_session)
+        client._endpoint = "https://192.168.1.100:443"
+
+        with patch.object(client, "_get_ssl_context", new_callable=AsyncMock) as mock_ssl:
+            mock_ssl.return_value = None
+
+            result = await client._request("/httpapi.asp?command=EQOff")
+
+            # Should not raise - treat as success (device doesn't support EQOff)
+            assert result == {"raw": "OK"}
+
+    @pytest.mark.asyncio
     async def test_request_timesync_empty_response(self, mock_aiohttp_session):
         """Test timeSync command with empty response (returns OK)."""
         mock_response = MagicMock()

@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Breaking: `player.source` now returns stable ids** - `player.source` now returns a canonical source id that matches `player.source_catalog[*]["id"]` (e.g., `"network"`, `"line_in"`, `"spotify"`), enabling clean round-tripping when storing catalog ids. The UI-ready display name is now available via `player.source_name` (e.g., `"Network"`, `"Line In"`, `"Spotify"`). `player.source_id` remains as an alias for `player.source`.
+
+### Fixed
+- **EQOff "unknown command" handling for scene restoration** (Issue [mjcumming/wiim#116](https://github.com/mjcumming/wiim/issues/116)) - Some devices (e.g. Arylic UP2STREAM) do not support the `EQOff` command and return plain text "unknown command" instead of JSON. Added `EQOff` to the non-JSON success-handling path so scene restoration with sound mode "Off" no longer fails with `Invalid JSON response`. The command is treated as best-effort (device does not support disabling EQ).
+
+### Changed
 - **Source-aware `play_notification()` fallback with structured result** - `player.play_notification(url)` now chooses firmware-native `playPromptUrl` only on known native prompt sources and falls back to `play_url` on unsupported/unknown sources (including Spotify and AirPlay behavior validated on real devices), returning `NotificationPlaybackResult` with `method_used`, `source_before`, `likely_interrupted`, and optional `reason`.
 - **UPnP description capability enrichment surfaced in diagnostics** - first-time capability detection now augments capabilities with best-effort UPnP `description.xml` metadata (`upnp_*` keys), and CLI diagnostics/verification output now includes these fields when available.
 

@@ -881,6 +881,16 @@ class Player(PlayerBase):
         return self._properties.source
 
     @property
+    def source_id(self) -> str | None:
+        """Alias for `source` (stable catalog id)."""
+        return self._properties.source_id
+
+    @property
+    def source_name(self) -> str | None:
+        """Current source display name (UI-ready)."""
+        return self._properties.source_name
+
+    @property
     def shuffle_supported(self) -> bool:
         """Whether shuffle can be controlled by the device in current state."""
         return self._properties.shuffle_supported

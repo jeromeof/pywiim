@@ -334,7 +334,9 @@ class TestPlaybackAPIAudioOutput:
         assert mock_client.audio_output_mode_to_name(0) == "Line Out"
         assert mock_client.audio_output_mode_to_name(1) == "Optical Out"
         assert mock_client.audio_output_mode_to_name(4) == "Bluetooth Out"  # Default for mode 4
+        assert mock_client.audio_output_mode_to_name(6) == "USB Out"  # Mode 6 - legacy compat
         assert mock_client.audio_output_mode_to_name(7) == "HDMI Out"  # Mode 7 - WiiM Amp Ultra
+        assert mock_client.audio_output_mode_to_name(8) == "USB Out"  # Mode 8 - confirmed USB (Issue #160)
         assert mock_client.audio_output_mode_to_name(None) is None
 
     @pytest.mark.asyncio
@@ -344,6 +346,8 @@ class TestPlaybackAPIAudioOutput:
         assert mock_client.audio_output_name_to_mode("Optical Out") == 1  # Maps to SPDIF
         assert mock_client.audio_output_name_to_mode("Headphone Out") == 4  # Mode 4
         assert mock_client.audio_output_name_to_mode("Bluetooth Out") == 4  # Mode 4
+        assert mock_client.audio_output_name_to_mode("USB Out") == 8  # Mode 8 - confirmed (Issue #160)
+        assert mock_client.audio_output_name_to_mode("usb") == 8  # Case insensitive
         assert mock_client.audio_output_name_to_mode("HDMI Out") == 7  # Mode 7 - WiiM Amp Ultra
         assert mock_client.audio_output_name_to_mode("hdmi") == 7  # Case insensitive
         assert mock_client.audio_output_name_to_mode("hdmi arc") == 7  # Alias
@@ -358,6 +362,15 @@ class TestPlaybackAPIAudioOutput:
         await mock_client.set_audio_output_mode("Line Out")
 
         mock_client.set_audio_output_hardware_mode.assert_called_once_with(2)  # AUX mode per official API
+
+    @pytest.mark.asyncio
+    async def test_set_audio_output_mode_usb_out(self, mock_client):
+        """Test setting USB Out sends mode 8 (Issue #160)."""
+        mock_client.set_audio_output_hardware_mode = AsyncMock()
+
+        await mock_client.set_audio_output_mode("USB Out")
+
+        mock_client.set_audio_output_hardware_mode.assert_called_once_with(8)  # Mode 8 confirmed
 
     @pytest.mark.asyncio
     async def test_set_audio_output_mode_by_int(self, mock_client):

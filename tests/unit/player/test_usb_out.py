@@ -37,7 +37,8 @@ class TestUSBOutput:
         assert "Optical Out" in outputs
         assert "Coax Out" in outputs
         assert "Headphone Out" in outputs
-        assert "HDMI Out" in outputs
+        # HDMI is input-only on WiiM Ultra (not output) - confirmed via Issue #160
+        assert "HDMI Out" not in outputs
 
     def test_available_output_modes_excludes_usb_out_for_pro(self, mock_player):
         """Test that available_output_modes excludes USB Out for WiiM Pro (non-Amp)."""
@@ -85,14 +86,24 @@ class TestUSBOutput:
         # Should call set_audio_output_mode with friendly name
         mock_player.client.set_audio_output_mode.assert_called_once_with("USB Out")
 
-    def test_audio_output_mode_property_returns_usb_out(self, mock_player):
-        """Test that audio_output_mode property returns USB Out when mode 6 is active."""
-        mock_player._audio_output_status = {"hardware": 6, "source": 0}
+    def test_audio_output_mode_property_returns_usb_out_mode_8(self, mock_player):
+        """Test that audio_output_mode property returns USB Out when mode 8 is active.
 
-        # The property uses client.audio_output_mode_to_name which we should test via the actual property
+        Mode 8 is the confirmed USB Out mode on WiiM Ultra (Issue #160).
+        """
+        mock_player._audio_output_status = {"hardware": 8, "source": 0}
         assert mock_player.audio_output_mode == "USB Out"
 
-    def test_audio_output_mode_int_returns_6(self, mock_player):
-        """Test that audio_output_mode_int property returns 6 when USB Out is active."""
+    def test_audio_output_mode_property_returns_usb_out_mode_6_compat(self, mock_player):
+        """Test that audio_output_mode property returns USB Out when mode 6 is reported.
+
+        Mode 6 was the originally documented USB mode. Keep backward compat for
+        any devices that might report it.
+        """
         mock_player._audio_output_status = {"hardware": 6, "source": 0}
-        assert mock_player.audio_output_mode_int == 6
+        assert mock_player.audio_output_mode == "USB Out"
+
+    def test_audio_output_mode_int_returns_8(self, mock_player):
+        """Test that audio_output_mode_int property returns 8 when USB Out is active."""
+        mock_player._audio_output_status = {"hardware": 8, "source": 0}
+        assert mock_player.audio_output_mode_int == 8

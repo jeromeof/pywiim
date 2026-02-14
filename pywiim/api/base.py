@@ -559,6 +559,7 @@ class BaseWiiMClient:
                             if (
                                 "reboot" in endpoint_lower
                                 or "eqload" in endpoint_lower
+                                or "eqoff" in endpoint_lower
                                 or "setloopmode" in endpoint_lower
                                 or "switchmode" in endpoint_lower
                                 or "setalarmclock" in endpoint_lower
@@ -578,9 +579,13 @@ class BaseWiiMClient:
                             return data
                         except json.JSONDecodeError as json_err:
                             endpoint_lower = endpoint.lower()
+                            # EQOff: Some devices (e.g. Arylic UP2STREAM) return "unknown command"
+                            # instead of JSON. Treat as success - device doesn't support disabling EQ.
+                            # See: https://github.com/mjcumming/wiim/issues/116
                             if (
                                 "reboot" in endpoint_lower
                                 or "eqload" in endpoint_lower
+                                or "eqoff" in endpoint_lower
                                 or "setloopmode" in endpoint_lower
                                 or "switchmode" in endpoint_lower
                                 or "setalarmclock" in endpoint_lower

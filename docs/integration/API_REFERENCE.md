@@ -174,6 +174,28 @@ player.source_catalog     # list[dict[str, Any]] - Structured source metadata fo
 
 Use `source_catalog` when an integration needs structured source metadata (for example Music Assistant).
 
+If you need a stable identifier for the current source (to compare/store), use:
+
+```python
+current_source_id = player.source
+# Examples: "network", "line_in", "optical", "spotify", "master_bedroom"
+```
+
+If you need the UI-ready display name for the current source, use:
+
+```python
+current_source_name = player.source_name
+# Examples: "Network", "Line In", "Optical In", "Spotify"
+```
+
+`set_source()` accepts either UI names *or* catalog ids:
+
+```python
+await player.set_source("Line In")   # UI display name
+await player.set_source("line_in")   # source_catalog id
+await player.set_source("network")   # source_catalog id (maps to device "wifi" mode)
+```
+
 `source_catalog` entry schema:
 
 ```python
@@ -574,11 +596,14 @@ progress = (player.media_position / player.media_duration) * 100  # May raise Ty
 player.volume_level  # float | None (0.0-1.0)
 player.is_muted  # bool | None
 player.play_state  # str | None ("play", "pause", "idle", "load")
-player.source  # str | None (normalized to Title Case, e.g., "AirPlay", "Spotify", "Line In")
+player.source  # str | None (stable id, e.g., "airplay", "spotify", "line_in", "network")
+player.source_id  # str | None (alias for player.source)
+player.source_name  # str | None (UI name, e.g., "AirPlay", "Spotify", "Line In", "Network")
 player.media_title  # str | None (falls back to URL filename if no title)
 player.media_artist  # str | None
 player.media_album  # str | None
 player.media_content_id  # str | None (URL if playing from play_url())
+# media_content_id enables scene/snapshot restoration: capture when saving, pass to play_url() when restoring
 player.media_image_url  # str | None (cover art URL)
 player.media_sample_rate  # int | None (Hz)
 player.media_bit_depth  # int | None (bits)

@@ -756,22 +756,36 @@ class PlayerProperties:
 
     @property
     def source(self) -> str | None:
-        """Current source name from cached status.
+        """Current source as a stable identifier.
 
-        Normalized to Title Case for consistent UI display. Handles acronyms
-        (DLNA, USB, HDMI) and multi-word sources (Line In, AirPlay) correctly.
+        This returns a canonical source key that matches the `id` field in
+        `player.source_catalog` entries. Use this for stable comparisons and
+        storing state in integrations.
+
+        For the UI-ready display name, use `player.source_name`.
         """
-        # Get source from state synchronizer (merges HTTP + UPnP)
         merged = self.player._state_synchronizer.get_merged_state()
         source = merged.get("source")
-
-        # Fallback to status model if synchronizer has no data
         if source is None and self.player._status_model is not None:
             source = self.player._status_model.source
-
         if not source:
             return None
+        return self._catalog_source_key(str(source))
 
+    @property
+    def source_id(self) -> str | None:
+        """Alias for `source` (stable catalog id)."""
+        return self.source
+
+    @property
+    def source_name(self) -> str | None:
+        """Current source display name from cached status (UI-ready)."""
+        merged = self.player._state_synchronizer.get_merged_state()
+        source = merged.get("source")
+        if source is None and self.player._status_model is not None:
+            source = self.player._status_model.source
+        if not source:
+            return None
         return self._normalize_source_name(str(source))
 
     def _normalize_source_name(self, source: str) -> str:
@@ -1292,8 +1306,8 @@ class PlayerProperties:
         catalog: list[dict[str, Any]] = []
         seen_ids: set[str] = set()
 
-        current_name = self.source
-        current_key = self._catalog_source_key(current_name) if current_name else None
+        current_id = self.source
+        current_key = current_id if current_id else None
 
         # Start with device-available sources (hardware + active source).
         for source_name in self.available_sources:
@@ -1438,7 +1452,8 @@ class PlayerProperties:
             return ["Line Out", "USB Out", "HDMI Out"]
         elif "ultra" in model_lower:
             # WiiM Ultra (non-Amp): Has USB Out, Headphone Out, multiple digital outputs
-            return ["Line Out", "Optical Out", "Coax Out", "USB Out", "Headphone Out", "HDMI Out"]
+            # Note: HDMI on WiiM Ultra is INPUT only (not output) - confirmed via Issue #160
+            return ["Line Out", "Optical Out", "Coax Out", "USB Out", "Headphone Out"]
         elif "amp pro" in model_lower or ("pro" in model_lower and "amp" in model_lower):
             # WiiM Amp Pro: Has USB Out
             return ["Line Out", "USB Out"]

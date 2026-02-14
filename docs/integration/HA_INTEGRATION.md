@@ -769,7 +769,8 @@ async def _async_update_data(self):
 
 **Note on `source`, `available_sources`, `presets`, and `eq_presets`:**
 
-- **`source`**: Current source name, normalized to Title Case for consistent UI display (e.g., "AirPlay", "Spotify", "Line In", "Bluetooth"). This ensures professional casing in Home Assistant's UI. For comparisons, use `.lower()` (e.g., `player.source.lower() == "airplay"`).
+- **`source`**: Current source id (stable identifier, e.g., `"airplay"`, `"spotify"`, `"line_in"`, `"network"`). For comparisons, compare ids (e.g., `player.source == "airplay"`).
+- **`source_name`**: Current source display name (UI-ready, e.g., "AirPlay", "Spotify", "Line In", "Network").
 
 - **`available_sources`**: Returns user-selectable physical inputs plus the current source (when active):
 

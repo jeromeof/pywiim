@@ -182,26 +182,27 @@ class WiiMCapabilities:
 
         # Probe for audio output support (read-only probe)
         # If we can read audio output status, assume we can set it too.
-        # Prefer getAudioOutputStatus (canonical endpoint used by runtime methods),
-        # then fall back to legacy getNewAudioOutputHardwareMode for older firmware.
+        # Try getNewAudioOutputHardwareMode first (works on all tested devices including
+        # WiiM Ultra which returns "unknown command" for getAudioOutputStatus - Issue #160).
+        # Fall back to getAudioOutputStatus for devices that may only support that endpoint.
         # We don't probe setting to avoid changing device state during initialization.
         # See: https://github.com/mjcumming/wiim/issues/144
         audio_output_supported = False
         try:
-            result = await client._request("/httpapi.asp?command=getAudioOutputStatus")
+            result = await client._request("/httpapi.asp?command=getNewAudioOutputHardwareMode")
             audio_output_supported = True
             _LOGGER.debug(
-                "Device %s supports audio output control (getAudioOutputStatus), result: %s",
+                "Device %s supports audio output control (getNewAudioOutputHardwareMode), result: %s",
                 client.host,
                 result,
             )
         except (WiiMError, Exception):
             try:
-                legacy_result = await client._request("/httpapi.asp?command=getNewAudioOutputHardwareMode")
+                legacy_result = await client._request("/httpapi.asp?command=getAudioOutputStatus")
                 audio_output_supported = True
                 _LOGGER.debug(
-                    "Device %s supports audio output control via legacy endpoint "
-                    "(getNewAudioOutputHardwareMode), result: %s",
+                    "Device %s supports audio output control via fallback endpoint "
+                    "(getAudioOutputStatus), result: %s",
                     client.host,
                     legacy_result,
                 )

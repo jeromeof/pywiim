@@ -64,7 +64,9 @@ These are the sources to show in Home Assistant's `source_list` dropdown. **`pyw
   - **"Coaxial", "HDMI", "Phono", "USB"**: Stable names WITHOUT "In" suffix.
   - **Acronyms**: Proper capitalization for `USB`, `HDMI`, `SPDIF`, `RCA`, `DLNA`.
 - **Essential Source Injection**: The **"Network"** source is always injected, ensuring users on a physical input (like Optical) always have a way to switch back to streaming mode.
-- **Match Requirement**: The current `player.source` string is guaranteed to exactly match one of the items in `player.available_sources`, ensuring the Home Assistant UI can correctly highlight the active selection.
+- **Current Source**:
+  - `player.source` returns a stable source id (matches `source_catalog[*]["id"]`)
+  - `player.source_name` returns the UI-ready display name (and is guaranteed to match an entry in `player.available_sources`)
 
 ## Implementation Pattern: "Thin Integration"
 
@@ -80,8 +82,11 @@ By moving this logic into `pywiim`, we follow a "Thin Integration" pattern where
 available_sources = player.available_sources
 # Result: ["Network", "Bluetooth", "Line In", "Optical In", "Coaxial"]
 
-# Get current source (guaranteed match)
-current = player.source
+# Get current source
+current_id = player.source
+# Result: "network" or "line_in" or "spotify"
+
+current_name = player.source_name
 # Result: "Network" or "Line In" or "Spotify"
 
 # Selection is highly resilient (Smart Normalization)

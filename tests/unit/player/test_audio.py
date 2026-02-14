@@ -43,21 +43,16 @@ class TestAudioConfiguration:
         # Also set on properties mock
         player._properties.audio_output_mode = PropertyMock(side_effect=audio_output_mode_getter)
 
-        # Mock source property to read from state synchronizer or _status_model
-        def source_getter():
-            # First try state synchronizer
-            if hasattr(player, "_state_synchronizer") and player._state_synchronizer:
-                merged = player._state_synchronizer.get_merged_state()
-                source = merged.get("source") if isinstance(merged, dict) else None
-                if source is not None:
-                    return source
-            # Fallback to _status_model
-            if player._status_model:
-                return player._status_model.source
-            return None
+        # Mock source property to match Player's current semantics:
+        # - player.source -> stable id (matches source_catalog ids)
+        # - computed from state synchronizer / status_model
+        def source_id_getter():
+            from pywiim.player.properties import PlayerProperties
 
-        type(player).source = PropertyMock(side_effect=source_getter)
-        player._properties.source = PropertyMock(side_effect=source_getter)
+            return PlayerProperties(player).source
+
+        type(player).source = PropertyMock(side_effect=source_id_getter)
+        player._properties.source = PropertyMock(side_effect=source_id_getter)
         return player
 
     @pytest.fixture
@@ -115,7 +110,8 @@ class TestAudioConfiguration:
 
         # After: source property should reflect the change (reads from _status_model as fallback)
         assert mock_player._status_model.source == "wifi"
-        assert mock_player.source == "wifi"
+        # `source` is stable id; wifi maps to network
+        assert mock_player.source == "network"
 
     @pytest.mark.asyncio
     async def test_set_source_refresh_updates_state_synchronizer(self, audio_config, mock_player):
@@ -150,7 +146,7 @@ class TestAudioConfiguration:
         # Verify state synchronizer was updated
         mock_player._state_synchronizer.update_from_http.assert_called()
         # Verify source property now reads from state synchronizer
-        assert mock_player.source == "wifi"
+        assert mock_player.source == "network"
 
     @pytest.mark.asyncio
     async def test_set_source_propagates_api_errors(self, audio_config, mock_player):

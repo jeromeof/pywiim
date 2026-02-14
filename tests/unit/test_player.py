@@ -1766,6 +1766,31 @@ class TestPlayerSourceConflicts:
         # Verify callback was triggered
         assert len(callback_called) == 1
 
+    def test_source_id_property(self, mock_client):
+        """Test that source/source_id return stable ids and source_name is UI-ready."""
+        from pywiim.models import PlayerStatus
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+
+        # "wifi" is presented as "Network" in UI, but stable id should be "network"
+        player._status_model = PlayerStatus(play_state="play", source="wifi")
+        assert player.source == "network"
+        assert player.source_id == "network"
+        assert player.source_name == "Network"
+
+        # API form "line-in" should map to stable "line_in"
+        player._status_model = PlayerStatus(play_state="play", source="line-in")
+        assert player.source == "line_in"
+        assert player.source_id == "line_in"
+        assert player.source_name == "Line In"
+
+        # Virtual/follower labels should be normalized in a stable way
+        player._status_model = PlayerStatus(play_state="play", source="Master Bedroom")
+        assert player.source == "master_bedroom"
+        assert player.source_id == "master_bedroom"
+        assert player.source_name == "Master Bedroom"
+
     @pytest.mark.asyncio
     async def test_set_source_blocked_by_capabilities(self, mock_client):
         """Test capability-driven non-selectable source block."""
@@ -2149,8 +2174,9 @@ class TestPlayerMediaMetadata:
         # Ensure state synchronizer has source data (property reads from synchronizer first)
         player._state_synchronizer.update_from_http({"source": "wifi"})
 
-        # Property normalizes to Title Case (Network is the standardized name)
-        assert player.source == "Network"
+        # `source` is stable id, `source_name` is UI-ready
+        assert player.source == "network"
+        assert player.source_name == "Network"
 
     @pytest.mark.asyncio
     async def test_media_duration_zero(self, mock_client):
@@ -3614,9 +3640,11 @@ class TestPlayerMediaMetadata:
 
         modes = player.available_output_modes
 
-        assert "HDMI Out" in modes
+        # HDMI is input-only on WiiM Ultra (not output) - confirmed via Issue #160
+        assert "HDMI Out" not in modes
         assert "Headphone Out" in modes
         assert "Line Out" in modes
+        assert "USB Out" in modes
         # "Bluetooth Out" is not in available_output_modes - only specific BT devices shown
         assert "Bluetooth Out" not in modes
 
@@ -5008,7 +5036,7 @@ class TestPlayerBluetoothOutputs:
 
     @pytest.mark.asyncio
     async def test_available_outputs_wiim_ultra(self, mock_client):
-        """Test available_outputs for WiiM Ultra with all outputs including HDMI and Headphone."""
+        """Test available_outputs for WiiM Ultra with all outputs and Headphone."""
         from pywiim.models import DeviceInfo
         from pywiim.player import Player
 
@@ -5020,12 +5048,14 @@ class TestPlayerBluetoothOutputs:
         player._bluetooth_history = []
 
         outputs = player.available_outputs
-        # Ultra has all standard outputs plus HDMI and Headphone
+        # Ultra has standard outputs plus USB Out and Headphone (no HDMI - input only on Ultra)
         assert "Line Out" in outputs
         assert "Optical Out" in outputs
         assert "Coax Out" in outputs
+        assert "USB Out" in outputs
         assert "Headphone Out" in outputs
-        assert "HDMI Out" in outputs
+        # HDMI is input-only on WiiM Ultra (confirmed via Issue #160)
+        assert "HDMI Out" not in outputs
         assert len([o for o in outputs if o.startswith("BT: ")]) == 0
 
     @pytest.mark.asyncio
@@ -5046,7 +5076,9 @@ class TestPlayerBluetoothOutputs:
         outputs = player.available_outputs
         # Ultra-specific outputs
         assert "Headphone Out" in outputs
-        assert "HDMI Out" in outputs
+        assert "USB Out" in outputs
+        # HDMI is input-only on WiiM Ultra (confirmed via Issue #160)
+        assert "HDMI Out" not in outputs
         # Standard outputs
         assert "Line Out" in outputs
         assert "Optical Out" in outputs
