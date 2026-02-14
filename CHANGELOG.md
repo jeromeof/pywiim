@@ -7,15 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **USB Out mode number corrected from 6 to 8** (Issue [mjcumming/wiim#160](https://github.com/mjcumming/wiim/issues/160)) - Real-world testing on a WiiM Ultra confirmed that USB Out is hardware mode 8, not mode 6 as documented in the WiiM API spec. Modes 5-7 all silently revert to mode 4 (headphones) on Ultra. Setting "USB Out" from Home Assistant now sends the correct mode and the device properly switches output.
+- **HDMI Out removed from WiiM Ultra output list** - HDMI on WiiM Ultra is input-only, not output. Removed "HDMI Out" from `available_output_modes` for WiiM Ultra (HDMI Out remains available for WiiM Amp Ultra where it is a valid output).
+- **Audio output capability probe order optimized** - Swapped probe order to try `getNewAudioOutputHardwareMode` first (works on all tested devices including WiiM Ultra), falling back to `getAudioOutputStatus` which returns "unknown command" on some devices.
+
+## [2.1.82] - 2026-02-13
+
 ### Changed
 - **Breaking: `player.source` now returns stable ids** - `player.source` now returns a canonical source id that matches `player.source_catalog[*]["id"]` (e.g., `"network"`, `"line_in"`, `"spotify"`), enabling clean round-tripping when storing catalog ids. The UI-ready display name is now available via `player.source_name` (e.g., `"Network"`, `"Line In"`, `"Spotify"`). `player.source_id` remains as an alias for `player.source`.
+- **Source-aware `play_notification()` fallback with structured result** - `player.play_notification(url)` now chooses firmware-native `playPromptUrl` only on known native prompt sources and falls back to `play_url` on unsupported/unknown sources (including Spotify and AirPlay behavior validated on real devices), returning `NotificationPlaybackResult` with `method_used`, `source_before`, `likely_interrupted`, and optional `reason`.
+- **UPnP description capability enrichment surfaced in diagnostics** - first-time capability detection now augments capabilities with best-effort UPnP `description.xml` metadata (`upnp_*` keys), and CLI diagnostics/verification output now includes these fields when available.
 
 ### Fixed
 - **EQOff "unknown command" handling for scene restoration** (Issue [mjcumming/wiim#116](https://github.com/mjcumming/wiim/issues/116)) - Some devices (e.g. Arylic UP2STREAM) do not support the `EQOff` command and return plain text "unknown command" instead of JSON. Added `EQOff` to the non-JSON success-handling path so scene restoration with sound mode "Off" no longer fails with `Invalid JSON response`. The command is treated as best-effort (device does not support disabling EQ).
-
-### Changed
-- **Source-aware `play_notification()` fallback with structured result** - `player.play_notification(url)` now chooses firmware-native `playPromptUrl` only on known native prompt sources and falls back to `play_url` on unsupported/unknown sources (including Spotify and AirPlay behavior validated on real devices), returning `NotificationPlaybackResult` with `method_used`, `source_before`, `likely_interrupted`, and optional `reason`.
-- **UPnP description capability enrichment surfaced in diagnostics** - first-time capability detection now augments capabilities with best-effort UPnP `description.xml` metadata (`upnp_*` keys), and CLI diagnostics/verification output now includes these fields when available.
 
 ### Documentation
 - Updated `API_REFERENCE.md` notification section with source-handling policy, fallback semantics, and `NotificationPlaybackResult` contract details.

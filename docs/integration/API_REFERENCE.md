@@ -746,8 +746,8 @@ await player.get_eq_presets()  # Returns list[str]
 await player.get_eq_status()  # Returns bool
 
 # Audio output control
-# Official WiiM API: 1=SPDIF (Optical), 2=AUX (Line Out), 3=COAX
-await player.set_audio_output_mode(mode: str | int)  # "Line Out", "Optical Out", etc.
+# Confirmed modes: 1=SPDIF (Optical), 2=AUX (Line Out), 3=COAX, 4=BT/Headphone, 7=HDMI (Amp Ultra), 8=USB
+await player.set_audio_output_mode(mode: str | int)  # "Line Out", "Optical Out", "USB Out", etc.
 
 # LED control
 await player.set_led(enabled: bool)
