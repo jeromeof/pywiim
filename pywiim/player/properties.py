@@ -16,6 +16,7 @@ _LOGGER = logging.getLogger(__name__)
 
 _KNOWN_SERVICE_SOURCES: tuple[tuple[str, str], ...] = (
     ("airplay", "AirPlay"),
+    ("lyrion", "Lyrion"),
     ("spotify", "Spotify"),
     ("amazon", "Amazon Music"),
     ("tidal", "Tidal"),

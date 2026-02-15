@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.84] - 2026-02-15
+
+### Fixed
+- **Position > duration log spam on Lyrion/LMS (mode 34)** (Issue [mjcumming/wiim#188](https://github.com/mjcumming/wiim/issues/188)) - WiiM Pro used as Lyrion endpoint reported odd curpos/totlen payloads causing "impossible media position" warnings on every poll and resetting position to 0. Parser now: (1) never resets position to 0, preferring to hide unreliable duration instead; (2) adds 2-second tolerance for small clock drift; (3) rate-limits warnings to once per track/source per 60 seconds; (4) maps mode 34 to "lyrion" in MODE_MAP.
+
 ## [2.1.83] - 2026-02-14
 
 ### Fixed

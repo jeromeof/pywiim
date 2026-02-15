@@ -79,6 +79,7 @@ SOURCE_CAPABILITIES: dict[str, SourceCapability] = {
     "airplay": SourceCapability.TRACK_CONTROL,
     "bluetooth": SourceCapability.TRACK_CONTROL,
     "dlna": SourceCapability.TRACK_CONTROL,
+    "lyrion": SourceCapability.FULL_CONTROL,  # Lyrion Music Server / LMS (Squeezelite)
     "cast": SourceCapability.TRACK_CONTROL,  # Chromecast
     "chromecast": SourceCapability.TRACK_CONTROL,
     # =========================================================================

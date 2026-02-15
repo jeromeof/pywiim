@@ -129,6 +129,7 @@ MODE_MAP: dict[str, str] = {
     "11": "usb",
     "20": "wifi",
     "31": "spotify",
+    "34": "lyrion",  # Lyrion Music Server / LMS (Squeezelite) - Issue mjcumming/wiim#188
     "36": "qobuz",
     "40": "line_in",
     "41": "bluetooth",

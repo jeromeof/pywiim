@@ -26,6 +26,11 @@ from .constants import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Rate-limit position>duration warnings (Issue mjcumming/wiim#188)
+_POSITION_DURATION_WARNING_LAST: dict[str, float] = {}
+_POSITION_DURATION_WARNING_INTERVAL = 60.0  # seconds
+_POSITION_DURATION_TOLERANCE = 2  # seconds - ignore small clock drift
+
 
 def _normalize_time_value(value: int, field_name: str, source: str | None = None) -> int:
     """Normalize time values that may be in milliseconds or microseconds.
@@ -200,36 +205,40 @@ def parse_player_status(
         except (ValueError, TypeError):
             _LOGGER.debug("Invalid duration value: %s", duration_val)
 
-    # Validate position vs duration - detect impossible scenarios
+    # Validate position vs duration - detect impossible scenarios (Issue mjcumming/wiim#188)
+    # Never reset position to 0 - prefer hiding unreliable duration. Add tolerance for
+    # small clock drift (e.g. Lyrion mode=34). Rate-limit warnings to avoid log spam.
     if data.get("position") is not None and data.get("duration") is not None:
         position = data["position"]
         duration = data["duration"]
-        if position > duration and duration > 0:
-            # Check if duration seems too short (likely firmware bug)
-            # If position is reasonable (> 30 seconds) but duration is very short (< 2 minutes),
-            # the duration is likely wrong, not the position
-            if position > 30 and duration < 120:
-                _LOGGER.warning(
-                    "🚨 Impossible media position detected: %d seconds elapsed > %d seconds duration "
-                    "(device: %s, source: %s). Duration appears too short - likely firmware bug "
-                    "Hiding duration to prevent UI confusion",
-                    position,
-                    duration,
-                    raw.get("device_name", "unknown"),
-                    source_hint or "unknown",
-                )
-                data["duration"] = None  # Hide duration instead of resetting position
+        if duration > 0 and position > duration + _POSITION_DURATION_TOLERANCE:
+            # Duration unreliable (firmware/source quirk) - hide it, keep position
+            data["duration"] = None
+
+            # Rate-limited warning: once per (mode, track) per interval
+            device_name = raw.get("device_name", "unknown")
+            source = source_hint or "unknown"
+            track_key = f"{source}:{data.get('title', '')}:{data.get('artist', '')}"
+            now = time.time()
+            last_log = _POSITION_DURATION_WARNING_LAST.get(track_key, 0)
+            use_warning = (now - last_log) >= _POSITION_DURATION_WARNING_INTERVAL
+            if use_warning:
+                _POSITION_DURATION_WARNING_LAST[track_key] = now
+                # Prune old entries (keep dict bounded)
+                if len(_POSITION_DURATION_WARNING_LAST) > 50:
+                    cutoff = now - _POSITION_DURATION_WARNING_INTERVAL * 2
+                    for k in list(_POSITION_DURATION_WARNING_LAST.keys()):
+                        if _POSITION_DURATION_WARNING_LAST[k] < cutoff:
+                            del _POSITION_DURATION_WARNING_LAST[k]
+
+            msg = (
+                f"Position {position} > duration {duration} (device: {device_name}, source: {source}). "
+                "Hiding duration; keeping position."
+            )
+            if use_warning:
+                _LOGGER.warning("🚨 Impossible media position detected: %s", msg)
             else:
-                _LOGGER.warning(
-                    "🚨 Impossible media position detected: %d seconds elapsed > %d seconds duration "
-                    "(device: %s, source: %s). This appears to be a device firmware bug "
-                    "Setting position to 0 to prevent UI confusion",
-                    position,
-                    duration,
-                    raw.get("device_name", "unknown"),
-                    source_hint or "unknown",
-                )
-                data["position"] = 0
+                _LOGGER.debug("Position/duration mismatch: %s", msg)
 
     # Mute → bool.
     if "mute" in data:

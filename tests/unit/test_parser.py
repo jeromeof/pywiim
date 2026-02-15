@@ -245,6 +245,11 @@ class TestParsePlayerStatus:
         parsed3, _ = parse_player_status(raw3)
         assert parsed3["source"] == "bluetooth"
 
+        # Mode 34 = lyrion (Lyrion Music Server / LMS - Issue mjcumming/wiim#188)
+        raw_mode34 = {"mode": "34"}
+        parsed_mode34, _ = parse_player_status(raw_mode34)
+        assert parsed_mode34["source"] == "lyrion"
+
         # Mode 60 = line_in (Audio Pro A10 MkII WiiM Edition)
         raw_mode60 = {"mode": "60"}
         parsed_mode60, _ = parse_player_status(raw_mode60)
@@ -353,12 +358,18 @@ class TestParsePlayerStatus:
         assert parsed1["position"] == 60
         assert parsed1["duration"] == 240
 
-        # Invalid: position > duration (but duration seems reasonable)
+        # Invalid: position > duration (Issue mjcumming/wiim#188 - prefer hide duration)
         raw2 = {"curpos": 300000, "totlen": 120000}  # 300s > 120s
         parsed2, _ = parse_player_status(raw2)
-        # Position should be reset to 0
-        assert parsed2["position"] == 0
-        assert parsed2["duration"] == 120
+        # Hide duration, keep position (never reset to 0)
+        assert parsed2["position"] == 300
+        assert parsed2.get("duration") is None
+
+        # Tolerance: position exceeds duration by <=2 seconds (clock drift) - no correction
+        raw_tol = {"curpos": 242000, "totlen": 241000}  # 242s vs 241s
+        parsed_tol, _ = parse_player_status(raw_tol)
+        assert parsed_tol["position"] == 242
+        assert parsed_tol["duration"] == 241
 
         # Invalid: position > duration (but duration seems too short)
         raw3 = {"curpos": 60000, "totlen": 30000}  # 60s > 30s, but duration < 2min
