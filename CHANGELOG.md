@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.86] - 2026-02-22
+
+### Fixed
+- **Lyrion position>duration log spam** (Issue [mjcumming/wiim#188](https://github.com/mjcumming/wiim/issues/188)) - "Impossible media position" for Lyrion (mode 34) is now logged at DEBUG instead of WARNING. Lyrion has a known firmware quirk with curpos/totlen; the parser already handles it by hiding duration. No user action needed.
+
 ## [2.1.85] - 2026-02-22
 
 ### Added

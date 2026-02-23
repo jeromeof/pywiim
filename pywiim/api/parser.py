@@ -235,7 +235,11 @@ def parse_player_status(
                 f"Position {position} > duration {duration} (device: {device_name}, source: {source}). "
                 "Hiding duration; keeping position."
             )
-            if use_warning:
+            # Lyrion (mode 34) has known firmware quirk - log at DEBUG to avoid spam (Issue mjcumming/wiim#188)
+            is_lyrion = str(source_hint) == "34" if source_hint is not None else False
+            if is_lyrion:
+                _LOGGER.debug("Position/duration mismatch (Lyrion): %s", msg)
+            elif use_warning:
                 _LOGGER.warning("🚨 Impossible media position detected: %s", msg)
             else:
                 _LOGGER.debug("Position/duration mismatch: %s", msg)
