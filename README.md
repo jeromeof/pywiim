@@ -431,7 +431,7 @@ async def main():
     await player.refresh()  # Load initial state
     
     # Access device properties
-    print(f"Device: {player.name} ({player.model})")
+    print(f"Device: {player.name} ({player.model_name or player.model})")
     print(f"Playing: {player.play_state}")
     print(f"Volume: {player.volume}")
     

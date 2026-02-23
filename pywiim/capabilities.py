@@ -34,6 +34,7 @@ from .api.constants import (
     API_ENDPOINT_EQ_STATUS,
 )
 from .exceptions import WiiMError
+from .model_names import is_known_wiim_model
 from .models import DeviceInfo
 from .normalize import normalize_vendor
 from .profiles import get_device_profile
@@ -473,9 +474,9 @@ def detect_vendor(device_info: DeviceInfo) -> str:
     model_lower = device_info.model.lower()
     name_lower = (device_info.name or "").lower()
 
-    # WiiM devices - check for "wiim" anywhere in model or name
-    # This catches: "WiiM Pro", "WiiM_Pro_with_gc4a", "WiiMU", etc.
-    if "wiim" in model_lower or "wiimu" in model_lower:
+    # WiiM devices - include known raw model aliases (e.g., "Muzo_Mini")
+    # and project variants like "WiiM_Pro_with_gc4a".
+    if is_known_wiim_model(device_info.model) or "wiim" in model_lower:
         return "wiim"
     if "wiim" in name_lower:
         return "wiim"
@@ -508,17 +509,7 @@ def is_wiim_device(device_info: DeviceInfo) -> bool:
         return False
 
     model_lower = device_info.model.lower()
-    wiim_models = [
-        "wiim",
-        "wiim mini",
-        "wiim pro",
-        "wiim pro plus",
-        "wiim amp",
-        "wiim ultra",
-        "wiimu",
-    ]
-
-    return any(wiim_model in model_lower for wiim_model in wiim_models)
+    return is_known_wiim_model(device_info.model) or "wiim" in model_lower
 
 
 def detect_audio_pro_generation(device_info: DeviceInfo) -> str:

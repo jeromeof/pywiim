@@ -147,7 +147,8 @@ player = Player(
 
 ```python
 player.name               # str | None - Device name (e.g., "Living Room")
-player.model              # str | None - Device model (e.g., "WiiM Pro Plus")
+player.model              # str | None - Raw project model (e.g., "WiiM_Pro_with_gc4a")
+player.model_name         # str | None - Friendly model name (e.g., "WiiM Pro")
 player.firmware           # str | None - Firmware version
 player.firmware_update_available  # bool - True if update is available and ready
 player.latest_firmware_version    # str | None - Latest available firmware version
@@ -1665,4 +1666,3 @@ from pywiim import (
 | Other LinkPlay | ❌ None | Not supported |
 
 **Note**: These endpoints are undocumented and were discovered through reverse engineering. The library auto-detects support on first poll. Always check `player.supports_subwoofer` before using these features.
-

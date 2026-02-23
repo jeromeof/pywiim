@@ -40,6 +40,12 @@ class TestVendorDetection:
         vendor = detect_vendor(device_info)
         assert vendor == "wiim"
 
+    def test_detect_vendor_wiim_muzo_alias(self):
+        """Test detecting WiiM vendor from Muzo_Mini model alias."""
+        device_info = DeviceInfo(uuid="test", model="Muzo_Mini", name="Bedroom")
+        vendor = detect_vendor(device_info)
+        assert vendor == "wiim"
+
     def test_detect_vendor_arylic(self):
         """Test detecting Arylic vendor."""
         device_info = DeviceInfo(uuid="test", model="Up2Stream", name="Arylic Device")
@@ -77,6 +83,11 @@ class TestDeviceTypeDetection:
     def test_is_wiim_device_true(self):
         """Test identifying WiiM device."""
         device_info = DeviceInfo(uuid="test", model="WiiM Pro")
+        assert is_wiim_device(device_info) is True
+
+    def test_is_wiim_device_muzo_alias(self):
+        """Test identifying WiiM device from Muzo_Mini alias."""
+        device_info = DeviceInfo(uuid="test", model="Muzo_Mini")
         assert is_wiim_device(device_info) is True
 
     def test_is_wiim_device_false(self):

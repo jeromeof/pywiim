@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.85] - 2026-02-22
+
+### Added
+- **Friendly model naming** (Issue [mjcumming/wiim#11](https://github.com/mjcumming/wiim/issues/11)) - New `player.model_name` property provides branding-friendly names (e.g. "WiiM Pro", "Arylic S10+") while `player.model` retains raw project identifiers (e.g. `Muzo_Mini`, `WiiM_Amp_4layer`). New helper module `pywiim.model_names` with `is_known_wiim_model()` and `to_friendly_model_name()`.
+
+### Fixed
+- **WiiM vendor detection for legacy/raw model aliases** (Issue [mjcumming/wiim#10](https://github.com/mjcumming/wiim/issues/10)) - `Muzo_Mini` and other WiiM raw variants now correctly classify as `wiim` instead of `linkplay_generic`. Updated detection in `capabilities.py` and `profiles.py`.
+- **Reduced wrong-device probe noise during discovery** (Issue [mjcumming/wiim#9](https://github.com/mjcumming/wiim/issues/9)) - `discover_devices()` now uses `is_likely_non_linkplay()` pre-filter before HTTP validation when `validate=True`, skipping obvious non-LinkPlay devices (Sonos, Chromecast, etc.) and keeping HTTP validation for ambiguous devices.
+
+### Documentation
+- `API_REFERENCE.md`: documents `player.model` (raw) and `player.model_name` (friendly).
+- `README.md`: quick-start example prefers `player.model_name or player.model`.
+
 ## [2.1.84] - 2026-02-15
 
 ### Fixed

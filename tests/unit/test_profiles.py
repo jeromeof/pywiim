@@ -60,7 +60,7 @@ class TestVendorDetection:
 
     def test_wiim_by_model_variant(self):
         """WiiM variants detected correctly."""
-        for model in ["WiiM Mini", "WiiM Amp", "WiiM Ultra", "WiiM_Pro_with_gc4a"]:
+        for model in ["WiiM Mini", "WiiM Amp", "WiiM Ultra", "WiiM_Pro_with_gc4a", "Muzo_Mini"]:
             device_info = DeviceInfo(uuid="test", name="Test", model=model)
             profile = get_device_profile(device_info)
             assert profile.vendor == "wiim", f"Failed for model: {model}"

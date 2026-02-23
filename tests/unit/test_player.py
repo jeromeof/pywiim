@@ -3305,6 +3305,18 @@ class TestPlayerMediaMetadata:
         assert player.model == "WiiM Pro"
 
     @pytest.mark.asyncio
+    async def test_model_name_property_friendly_alias(self, mock_client):
+        """Test getting model_name property for friendly branding output."""
+        from pywiim.player import Player
+
+        player = Player(mock_client)
+        device_info = DeviceInfo(uuid="test", model="Muzo_Mini")
+        player._device_info = device_info
+
+        assert player.model == "Muzo_Mini"
+        assert player.model_name == "WiiM Mini"
+
+    @pytest.mark.asyncio
     async def test_firmware_property(self, mock_client):
         """Test getting firmware property."""
         from pywiim.player import Player

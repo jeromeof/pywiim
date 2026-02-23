@@ -434,6 +434,35 @@ class TestDiscoverDevices:
                     assert len(devices) == 1
                     assert devices[0].ip == "192.168.1.101"
 
+    @pytest.mark.asyncio
+    async def test_discover_devices_skips_known_non_linkplay_before_validation(self):
+        """Known non-LinkPlay SSDP matches should be skipped before validation."""
+        sonos_device = DiscoveredDevice(
+            ip="192.168.1.100",
+            discovery_method="ssdp",
+            ssdp_response={
+                "SERVER": "Linux UPnP/1.0 Sonos/70.1-82030",
+                "st": "urn:schemas-upnp-org:device:ZonePlayer:1",
+            },
+        )
+        candidate = DiscoveredDevice(
+            ip="192.168.1.101",
+            discovery_method="ssdp",
+            ssdp_response={"SERVER": "Linux", "st": "upnp:rootdevice"},
+        )
+
+        async def mock_validate(device):
+            device.validated = True
+            return device
+
+        with patch("pywiim.discovery.discover_via_ssdp", return_value=[sonos_device, candidate]):
+            with patch("pywiim.discovery.validate_device", side_effect=mock_validate) as mock_validate_fn:
+                devices = await discover_devices(methods=["ssdp"], validate=True)
+
+                assert len(devices) == 1
+                assert devices[0].ip == "192.168.1.101"
+                assert mock_validate_fn.await_count == 1
+
 
 class TestIsLikelyNonLinkplay:
     """Test is_likely_non_linkplay filtering function."""

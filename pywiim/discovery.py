@@ -512,10 +512,18 @@ async def discover_devices(
         _LOGGER.info("Discovering devices via SSDP...")
         ssdp_devices = await discover_via_ssdp(timeout=ssdp_timeout)
 
-        # Collect all discovered devices - HTTP probe will be the definitive filter
-        # (like velleman linkplay library - probe every device, don't rely on SSDP headers)
+        # Collect discovered devices.
+        # HTTP probe remains the definitive filter for ambiguous devices.
         for device in ssdp_devices:
             if device.ip in seen_ips:
+                continue
+            # Skip obvious non-LinkPlay devices before HTTP probe when validation is enabled.
+            # This avoids unnecessary network noise for devices such as Sonos/Chromecast.
+            if validate and device.ssdp_response and is_likely_non_linkplay(device.ssdp_response):
+                _LOGGER.debug(
+                    "Skipping %s - SSDP headers indicate non-LinkPlay device",
+                    device.ip,
+                )
                 continue
             all_devices.append(device)
             seen_ips.add(device.ip)

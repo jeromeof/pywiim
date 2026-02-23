@@ -32,6 +32,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
+from .model_names import is_known_wiim_model
+
 if TYPE_CHECKING:
     from .models import DeviceInfo
 
@@ -365,8 +367,8 @@ def _detect_vendor(device_info: DeviceInfo) -> str:
     model_lower = device_info.model.lower()
     name_lower = (device_info.name or "").lower()
 
-    # WiiM devices - check for "wiim" anywhere in model or name
-    if "wiim" in model_lower or "wiimu" in model_lower:
+    # WiiM devices - include known raw model aliases (e.g., "Muzo_Mini")
+    if is_known_wiim_model(device_info.model) or "wiim" in model_lower:
         return "wiim"
     if "wiim" in name_lower:
         return "wiim"

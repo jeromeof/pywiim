@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from ..client import WiiMClient
+from ..model_names import to_friendly_model_name
 from ..models import DeviceInfo, PlayerStatus
 from ..profiles import DeviceProfile, get_device_profile
 from ..state import StateSynchronizer
@@ -208,6 +209,13 @@ class PlayerBase:
         if self._device_info:
             return self._device_info.model
         return None
+
+    @property
+    def model_name(self) -> str | None:
+        """Friendly branding model name derived from raw project model."""
+        if not self._device_info:
+            return None
+        return to_friendly_model_name(self._device_info.model)
 
     @property
     def firmware(self) -> str | None:
