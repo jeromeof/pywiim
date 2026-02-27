@@ -12,16 +12,33 @@ All commands operate on a per-source basis (wifi, bluetooth, line-in, etc.).
 
 It assumes the base client provides the ``_request`` coroutine.  No state is
 stored – all results come from the device on each call.
+
+.. note::
+    This API targets the WiiM LV2 PEQ system (``EQGetLV2BandEx``,
+    ``EQSetLV2Band``, etc.) and is **not** available on Audio Pro, Arylic, or
+    generic LinkPlay devices.  The client detects support via the
+    ``supports_peq`` capability flag populated at connect time.
+
+# pragma: allow-long-file peq-cohesive
+# This file exceeds the 600 LOC hard limit but is kept as a cohesive unit
+# because the data-models (PEQBand, PEQSettings, PEQPresetInfo), private
+# helpers, and the PEQAPI mixin are all tightly coupled and small in
+# isolation.  Splitting into peq_models.py would add an extra import layer
+# for no practical maintainability gain.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import quote
 
+_LOGGER = logging.getLogger(__name__)
+
 from .constants import (
+    API_ENDPOINT_EQ_OFF,
     API_ENDPOINT_PEQ_CHANGE_FX,
     API_ENDPOINT_PEQ_CHANGE_SOURCE_FX,
     API_ENDPOINT_PEQ_DELETE,
@@ -183,7 +200,10 @@ def _parse_eq_band_array(band_array: list[dict[str, Any]]) -> list[PEQBand]:
         pname = entry.get("param_name")
         val = entry.get("value")
         if pname and val is not None:
-            param_map[str(pname)] = float(val)
+            try:
+                param_map[str(pname)] = float(val)
+            except (ValueError, TypeError):
+                _LOGGER.debug("PEQ: skipping unreadable param %r = %r", pname, val)
 
     bands: list[PEQBand] = []
     for letter in PEQ_BAND_LETTERS:
@@ -230,6 +250,10 @@ class PEQAPI:
     async def get_peq_bands(self, source_name: str | None = None) -> PEQSettings:
         """Get the PEQ settings for the current (or specified) source.
 
+        .. note::
+            Requires a WiiM device.  Check ``capabilities["supports_peq"]``
+            before calling on unknown hardware.
+
         Args:
             source_name: Optional input source (e.g. ``"wifi"``, ``"line-in"``).
                          If *None*, uses the device's current active source.
@@ -239,8 +263,13 @@ class PEQAPI:
             enabled status populated.
 
         Raises:
-            WiiMError: If the request fails.
+            WiiMError: If the request fails or the device does not support PEQ.
         """
+        if hasattr(self, "_capabilities") and self._capabilities:  # type: ignore[attr-defined]
+            if not self._capabilities.get("supports_peq", True):  # type: ignore[attr-defined]
+                from ..exceptions import WiiMError  # type: ignore[attr-defined]
+                raise WiiMError("Device does not support the WiiM LV2 PEQ API (supports_peq=False)")
+        _LOGGER.debug("get_peq_bands source=%s", source_name)
         if source_name is not None:
             payload = {"source_name": source_name, "pluginURI": PEQ_PLUGIN_URI}
             endpoint = API_ENDPOINT_PEQ_GET_SOURCE_BAND + _encode_json_param(payload)
@@ -406,6 +435,7 @@ class PEQAPI:
         Raises:
             WiiMError: If the request fails.
         """
+        _LOGGER.debug("set_peq_enabled enabled=%s source=%s", enabled, source_name)
         if enabled:
             if source_name is not None:
                 payload = {"source_name": source_name, "pluginURI": PEQ_PLUGIN_URI}
@@ -417,8 +447,14 @@ class PEQAPI:
                 payload = {"source_name": source_name, "pluginURI": PEQ_PLUGIN_URI}
                 endpoint = API_ENDPOINT_PEQ_SOURCE_OFF + _encode_json_param(payload)
             else:
-                # EQOff applies to current source (reuse existing endpoint)
-                from .constants import API_ENDPOINT_EQ_OFF
+                # No source_name supplied: fall back to the legacy EQOff command,
+                # which turns off EQ for the device's currently-active source.
+                # Note: this sends the generic EQOff rather than the LV2-specific
+                # EQSourceOff because we do not know the current source name without
+                # an extra round-trip.  On all tested WiiM firmware versions EQOff
+                # reliably disables the active PEQ plugin.  If you need to disable
+                # PEQ for a specific source, pass source_name explicitly.
+                _LOGGER.debug("PEQ disable via legacy EQOff (no source_name given)")
                 endpoint = API_ENDPOINT_EQ_OFF
         await self._request(endpoint)  # type: ignore[attr-defined]
 

@@ -32,6 +32,8 @@ from .api.constants import (
     API_ENDPOINT_EQ_GET,
     API_ENDPOINT_EQ_LIST,
     API_ENDPOINT_EQ_STATUS,
+    API_ENDPOINT_PEQ_GET_LIST,
+    PEQ_PLUGIN_URI,
 )
 from .exceptions import WiiMError
 from .model_names import is_known_wiim_model
@@ -287,6 +289,20 @@ class WiiMCapabilities:
                 "Device %s does not support EQ (tried EQGetBand, EQGetList, EQGetStat)",
                 client.host,
             )
+
+        # Probe for WiiM LV2 PEQ support (read-only probe)
+        # PEQ is a WiiM-specific feature not available on Audio Pro, Arylic, or generic
+        # LinkPlay devices.  We use the preset-list endpoint as a lightweight read probe.
+        peq_supported = False
+        try:
+            from urllib.parse import quote
+            await client._request(API_ENDPOINT_PEQ_GET_LIST + quote(PEQ_PLUGIN_URI, safe=""))
+            peq_supported = True
+            _LOGGER.debug("Device %s supports WiiM LV2 PEQ (EQv2GetList probe succeeded)", client.host)
+        except WiiMError:
+            _LOGGER.debug("Device %s does not support WiiM LV2 PEQ (EQv2GetList probe failed)", client.host)
+
+        capabilities["supports_peq"] = peq_supported
 
         # Get device profile for profile-specific settings (like reboot command)
         # Profile provides device-specific command variations
