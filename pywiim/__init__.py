@@ -30,6 +30,20 @@ from .api.constants import (
     ALARM_TRIGGER_ONCE,
     ALARM_TRIGGER_WEEKLY,
     ALARM_TRIGGER_WEEKLY_BITMASK,
+    PEQ_CHANNEL_MODE_LR,
+    PEQ_CHANNEL_MODE_STEREO,
+    PEQ_DEFAULT_FREQUENCIES,
+    PEQ_FREQ_MAX,
+    PEQ_FREQ_MIN,
+    PEQ_GAIN_MAX,
+    PEQ_GAIN_MIN,
+    PEQ_MODE_HIGH_SHELF,
+    PEQ_MODE_LOW_SHELF,
+    PEQ_MODE_OFF,
+    PEQ_MODE_PEAK,
+    PEQ_PLUGIN_URI,
+    PEQ_Q_MAX,
+    PEQ_Q_MIN,
     SUBWOOFER_CROSSOVER_MAX,
     SUBWOOFER_CROSSOVER_MIN,
     SUBWOOFER_DELAY_MAX,
@@ -39,6 +53,7 @@ from .api.constants import (
     SUBWOOFER_PHASE_0,
     SUBWOOFER_PHASE_180,
 )
+from .api.peq import PEQBand, PEQPresetInfo, PEQSettings
 from .api.subwoofer import SubwooferStatus
 from .backoff import BackoffController
 from .client import WiiMClient
@@ -137,6 +152,24 @@ __all__ = [
     "SUBWOOFER_DELAY_MAX",
     "SUBWOOFER_PHASE_0",
     "SUBWOOFER_PHASE_180",
+    # PEQ (Parametric EQ) models and constants
+    "PEQBand",
+    "PEQSettings",
+    "PEQPresetInfo",
+    "PEQ_PLUGIN_URI",
+    "PEQ_MODE_OFF",
+    "PEQ_MODE_LOW_SHELF",
+    "PEQ_MODE_PEAK",
+    "PEQ_MODE_HIGH_SHELF",
+    "PEQ_CHANNEL_MODE_STEREO",
+    "PEQ_CHANNEL_MODE_LR",
+    "PEQ_FREQ_MIN",
+    "PEQ_FREQ_MAX",
+    "PEQ_Q_MIN",
+    "PEQ_Q_MAX",
+    "PEQ_GAIN_MIN",
+    "PEQ_GAIN_MAX",
+    "PEQ_DEFAULT_FREQUENCIES",
     # Version
     "__version__",
 ]

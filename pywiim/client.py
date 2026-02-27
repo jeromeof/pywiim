@@ -20,6 +20,7 @@ from .api.bluetooth import BluetoothAPI
 from .api.device import DeviceAPI
 from .api.diagnostics import DiagnosticsAPI
 from .api.eq import EQAPI
+from .api.peq import PEQAPI
 from .api.firmware import FirmwareAPI
 from .api.group import GroupAPI
 from .api.lms import LMSAPI
@@ -51,6 +52,7 @@ class WiiMClient(
     DeviceAPI,
     PlaybackAPI,
     EQAPI,
+    PEQAPI,
     GroupAPI,
     PresetAPI,
     DiagnosticsAPI,

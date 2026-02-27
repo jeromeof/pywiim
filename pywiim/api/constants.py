@@ -417,6 +417,68 @@ API_ENDPOINT_GET_SHUTDOWN = "/httpapi.asp?command=getShutdown"
 API_ENDPOINT_SUBWOOFER_STATUS = "/httpapi.asp?command=getSubLPF"
 API_ENDPOINT_SUBWOOFER_SET = "/httpapi.asp?command=setSubLPF:"
 
+# PEQ (Parametric Equalizer) endpoints - official WiiM LV2 PEQ API
+# pluginURI: http://moddevices.com/plugins/caps/EqNp
+API_ENDPOINT_PEQ_GET_BAND = "/httpapi.asp?command=EQGetLV2BandEx:"
+API_ENDPOINT_PEQ_GET_SOURCE_BAND = "/httpapi.asp?command=EQGetLV2SourceBandEx:"
+API_ENDPOINT_PEQ_SET_BAND = "/httpapi.asp?command=EQSetLV2Band:"
+API_ENDPOINT_PEQ_SET_SOURCE_BAND = "/httpapi.asp?command=EQSetLV2SourceBand:"
+API_ENDPOINT_PEQ_CHANGE_FX = "/httpapi.asp?command=EQChangeFX:"
+API_ENDPOINT_PEQ_CHANGE_SOURCE_FX = "/httpapi.asp?command=EQChangeSourceFX:"
+API_ENDPOINT_PEQ_SOURCE_OFF = "/httpapi.asp?command=EQSourceOff:"
+API_ENDPOINT_PEQ_GET_LIST = "/httpapi.asp?command=EQv2GetList:"
+API_ENDPOINT_PEQ_GET_NEW_LIST = "/httpapi.asp?command=EQv2GetNewList:"
+API_ENDPOINT_PEQ_SAVE = "/httpapi.asp?command=EQSave:"
+API_ENDPOINT_PEQ_SOURCE_SAVE = "/httpapi.asp?command=EQSourceSave:"
+API_ENDPOINT_PEQ_LOAD = "/httpapi.asp?command=EQv2Load:"
+API_ENDPOINT_PEQ_SOURCE_LOAD = "/httpapi.asp?command=EQv2SourceLoad:"
+API_ENDPOINT_PEQ_DELETE = "/httpapi.asp?command=EQv2Delete:"
+API_ENDPOINT_PEQ_RENAME = "/httpapi.asp?command=EQv2Rename:"
+API_ENDPOINT_PEQ_SET_CHANNEL_MODE = "/httpapi.asp?command=EQSetChannelMode:"
+
+# PEQ plugin URI (Parametric Equalizer)
+PEQ_PLUGIN_URI = "http://moddevices.com/plugins/caps/EqNp"
+
+# PEQ band letters (10 active bands: a-j; k-l exist but default to Off)
+PEQ_BAND_LETTERS = ("a", "b", "c", "d", "e", "f", "g", "h", "i", "j")
+
+# PEQ default frequencies by band letter (1-octave spacing)
+PEQ_DEFAULT_FREQUENCIES: dict[str, float] = {
+    "a": 31.25,
+    "b": 62.5,
+    "c": 125.0,
+    "d": 250.0,
+    "e": 500.0,
+    "f": 1000.0,
+    "g": 2000.0,
+    "h": 4000.0,
+    "i": 8000.0,
+    "j": 16000.0,
+}
+
+# PEQ filter mode values
+PEQ_MODE_OFF = -1
+PEQ_MODE_LOW_SHELF = 0
+PEQ_MODE_PEAK = 1
+PEQ_MODE_HIGH_SHELF = 2
+
+# PEQ parameter ranges
+PEQ_FREQ_MIN = 10.0
+PEQ_FREQ_MAX = 22000.0
+PEQ_Q_MIN = 0.01
+PEQ_Q_MAX = 24.0
+PEQ_GAIN_MIN = -12.0
+PEQ_GAIN_MAX = 12.0
+
+# PEQ parameter defaults
+PEQ_DEFAULT_MODE = PEQ_MODE_PEAK
+PEQ_DEFAULT_Q = 0.25
+PEQ_DEFAULT_GAIN = 0.0
+
+# PEQ channel mode values
+PEQ_CHANNEL_MODE_STEREO = "Stereo"
+PEQ_CHANNEL_MODE_LR = "L/R"
+
 # Subwoofer setting constants
 SUBWOOFER_CROSSOVER_MIN = 30
 SUBWOOFER_CROSSOVER_MAX = 250
@@ -601,4 +663,39 @@ __all__ = [
     "SUBWOOFER_DELAY_MAX",
     "SUBWOOFER_PHASE_0",
     "SUBWOOFER_PHASE_180",
+    # PEQ (Parametric EQ) endpoints and constants
+    "API_ENDPOINT_PEQ_GET_BAND",
+    "API_ENDPOINT_PEQ_GET_SOURCE_BAND",
+    "API_ENDPOINT_PEQ_SET_BAND",
+    "API_ENDPOINT_PEQ_SET_SOURCE_BAND",
+    "API_ENDPOINT_PEQ_CHANGE_FX",
+    "API_ENDPOINT_PEQ_CHANGE_SOURCE_FX",
+    "API_ENDPOINT_PEQ_SOURCE_OFF",
+    "API_ENDPOINT_PEQ_GET_LIST",
+    "API_ENDPOINT_PEQ_GET_NEW_LIST",
+    "API_ENDPOINT_PEQ_SAVE",
+    "API_ENDPOINT_PEQ_SOURCE_SAVE",
+    "API_ENDPOINT_PEQ_LOAD",
+    "API_ENDPOINT_PEQ_SOURCE_LOAD",
+    "API_ENDPOINT_PEQ_DELETE",
+    "API_ENDPOINT_PEQ_RENAME",
+    "API_ENDPOINT_PEQ_SET_CHANNEL_MODE",
+    "PEQ_PLUGIN_URI",
+    "PEQ_BAND_LETTERS",
+    "PEQ_DEFAULT_FREQUENCIES",
+    "PEQ_MODE_OFF",
+    "PEQ_MODE_LOW_SHELF",
+    "PEQ_MODE_PEAK",
+    "PEQ_MODE_HIGH_SHELF",
+    "PEQ_FREQ_MIN",
+    "PEQ_FREQ_MAX",
+    "PEQ_Q_MIN",
+    "PEQ_Q_MAX",
+    "PEQ_GAIN_MIN",
+    "PEQ_GAIN_MAX",
+    "PEQ_DEFAULT_MODE",
+    "PEQ_DEFAULT_Q",
+    "PEQ_DEFAULT_GAIN",
+    "PEQ_CHANNEL_MODE_STEREO",
+    "PEQ_CHANNEL_MODE_LR",
 ]
