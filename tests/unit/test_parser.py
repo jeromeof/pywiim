@@ -401,6 +401,29 @@ class TestParsePlayerStatus:
         assert parsed["source"] == "wifi"
         assert parsed["vendor"] == "Google Cast"
 
+    def test_parse_bbc_sounds_vendor_overrides_mode_5_bluetooth(self):
+        """Test BBC Sounds (Chromecast app) vendor overrides mode=5 bluetooth to wifi (Issue #6)."""
+        raw = {
+            "mode": "5",
+            "vendor": "BBC Sounds",
+            "state": "play",
+        }
+        parsed, _ = parse_player_status(raw)
+
+        assert parsed["source"] == "wifi"
+        assert parsed["vendor"] == "BBC Sounds"
+
+    def test_parse_chromecast_artwork_fallback_when_vendor_missing(self):
+        """Test artwork URL fallback overrides bluetooth to wifi when vendor not reported (Issue #6)."""
+        raw = {
+            "mode": "5",
+            "state": "play",
+            "cover": "https://ichef.bbci.co.uk/images/ic/1280x720/p0lxyycc.jpg",
+        }
+        parsed, _ = parse_player_status(raw)
+
+        assert parsed["source"] == "wifi"
+
     def test_parse_qobuz_connect_state_quirks(self):
         """Test Qobuz Connect state detection quirks."""
         # Qobuz with stopped status but rich metadata should be corrected to play

@@ -413,11 +413,15 @@ def parse_player_status(
             "qobuz": "qobuz",
             "tidal": "tidal",
             "deezer": "deezer",
-            # Chromecast sessions can report mode=5 (bluetooth) even when source is network.
+            # Chromecast sessions can report mode=5 (bluetooth) even when source is network (Issue #6).
             "chromecast": "wifi",
             "google cast": "wifi",
             "googlecast": "wifi",
             "chromecast built-in": "wifi",
+            # Apps that cast via Chromecast may report app name instead of "Chromecast".
+            "bbc sounds": "wifi",
+            "bbc iplayer": "wifi",
+            "bbc": "wifi",
         }
         vendor_source = _VENDOR_MAP.get(vendor_clean.lower(), vendor_clean.lower().replace(" ", "_"))
         current_source = data.get("source")
@@ -428,6 +432,15 @@ def parse_player_status(
         if should_override:
             data["source"] = vendor_source
         data["vendor"] = vendor_clean
+
+    # Issue #6: Chromecast fallback when vendor is missing - use artwork URL to detect network streaming.
+    # BBC Sounds and other cast apps sometimes don't report vendor; artwork domain is a reliable signal.
+    if data.get("source") == "bluetooth":
+        _chromecast_artwork_domains = ("bbci.co.uk", "bbc.co.uk")
+        artwork_url = raw.get("cover") or raw.get("albumArtURI") or data.get("entity_picture") or data.get("cover")
+        if isinstance(artwork_url, str) and any(d in artwork_url.lower() for d in _chromecast_artwork_domains):
+            data["source"] = "wifi"
+            _LOGGER.debug("Issue #6: source bluetooth overridden to wifi (artwork URL suggests Chromecast/network)")
 
     # EQ numeric → textual preset.
     eq_raw = data.get("eq_preset")

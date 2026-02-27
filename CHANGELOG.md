@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.87] - 2026-02-26
+
+### Fixed
+- **Chromecast input source reported as Bluetooth** (Issue [#6](https://github.com/mjcumming/pywiim/issues/6)) - When casting via Chromecast (e.g. BBC Sounds), the device can report mode=5 (Bluetooth). Parser now treats vendor "BBC Sounds", "BBC iPlayer", "BBC" as network and overrides source to wifi; if vendor is missing, artwork URL domains (bbci.co.uk, bbc.co.uk) are used to detect Chromecast/network and correct source to wifi.
+
 ## [2.1.86] - 2026-02-22
 
 ### Fixed
